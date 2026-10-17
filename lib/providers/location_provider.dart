@@ -512,6 +512,22 @@ class LocationProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Da doc du lieu tren may ([loadLocal] xong).
+  bool get isLocalLoaded => _localLoaded;
+
+  /// Dong bo tai khoan: thay danh sach da luu (giu trang dang xem).
+  void importSaved(List<SavedPlace> list) {
+    final before = selectedPage;
+    final seen = <String>{};
+    _saved = [
+      for (final s in list)
+        if (seen.add(s.locationId)) s,
+    ];
+    _keepSelection(before);
+    _saveSaved();
+    notifyListeners();
+  }
+
   void setLabel(int index, PlaceLabel label, {String? customName}) {
     final list = [..._saved];
     list[index] = SavedPlace(

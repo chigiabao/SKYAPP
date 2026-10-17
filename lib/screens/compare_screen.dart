@@ -12,6 +12,7 @@ import 'package:provider/provider.dart';
 import '../models/place.dart';
 import '../models/weather.dart';
 import '../providers/location_provider.dart';
+import '../providers/preferences_provider.dart';
 import '../providers/weather_provider.dart';
 import '../services/api_service.dart';
 import '../ui/weather/app_scene.dart';
@@ -345,7 +346,7 @@ class _CompareColumn extends StatelessWidget {
             metric('Mưa 3 giờ tới', rain == null ? '--' : '$rain%'),
             metric(
               'Gió',
-              c.windSpeed == null ? '--' : '${c.windSpeed!.round()} km/h',
+              PreferencesProvider.unitsOf(context).windText(c.windSpeed),
             ),
             metric('AQI (US)', c.usAqi == null ? '--' : '${c.usAqi}'),
           ],

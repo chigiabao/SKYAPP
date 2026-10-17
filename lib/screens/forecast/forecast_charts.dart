@@ -9,6 +9,7 @@ import '../../ui/weather/widgets/glass_page.dart';
 import '../../utils/constants.dart';
 import '../../utils/formatters.dart';
 import 'forecast_format.dart';
+import '../../providers/preferences_provider.dart';
 
 /// Mau va chu dung chung cho cac bieu do (theo theme sang/toi).
 class ChartPalette {
@@ -523,11 +524,13 @@ class HourlyWindChart extends StatelessWidget {
           ),
         );
 
+    final u = PreferencesProvider.unitsOf(context);
     return ChartFrame(
       height: 170,
       semanticsLabel:
-          'Biểu đồ gió theo giờ, tốc độ lớn nhất ${maxSpeed.round()} km/h'
-          '${hasGusts ? ', gió giật lớn nhất ${maxValue.round()} km/h' : ''}',
+          'Biểu đồ gió theo giờ (trục km/h), tốc độ lớn nhất '
+          '${u.windText(maxSpeed.toDouble())}'
+          '${hasGusts ? ', gió giật lớn nhất ${u.windText(maxValue.toDouble())}' : ''}',
       footer: ChartLegend(
         items: [
           (p.wind, 'Tốc độ gió', false),
@@ -607,8 +610,8 @@ class HourlyWindChart extends StatelessWidget {
                   LineTooltipItem(
                     s.barIndex == 0
                         ? '${ForecastFormat.hourMinute(hours[s.x.round()].time)}\n'
-                              'Gió ${s.y.round()} km/h'
-                        : 'Giật ${s.y.round()} km/h',
+                              'Gió ${u.windText(s.y)}'
+                        : 'Giật ${u.windText(s.y)}',
                     p.tooltipStyle.copyWith(
                       color: s.barIndex == 0 ? p.wind : gustColor,
                     ),
@@ -960,7 +963,7 @@ class DailyBarChart extends StatelessWidget {
                         ? 'chưa có số liệu'
                         : shortUnit == '%'
                         ? WeatherFormat.percent(v)
-                        : WeatherFormat.speedKmh(v);
+                        : PreferencesProvider.unitsOf(context).windText(v);
                     return BarTooltipItem(
                       isSecond
                           ? '$secondaryLabel $text'

@@ -7,8 +7,8 @@ import 'package:provider/provider.dart';
 
 import '../../../config/api_config.dart';
 import '../../../models/weather.dart';
+import '../../../providers/preferences_provider.dart';
 import '../../../providers/weather_provider.dart';
-import '../../../utils/formatters.dart';
 import '../../../widgets/source_badge.dart';
 import '../app_scene.dart';
 import '../sun_times.dart';
@@ -132,6 +132,7 @@ class HourlyStrip extends StatelessWidget {
       hours,
       nowHcm: now,
       currentCondition: provider.currentWeather?.condition,
+      units: PreferencesProvider.unitsOf(context),
     );
 
     return GlassCard(
@@ -220,7 +221,9 @@ class _HourTile extends StatelessWidget {
     final f = entry.forecast;
     final mm = f.precipitationMm;
     final rainText = f.isObserved
-        ? (mm != null && mm > 0 ? WeatherFormat.rainMm(mm) : null)
+        ? (mm != null && mm > 0
+              ? PreferencesProvider.unitsOf(context).rainText(mm)
+              : null)
         : (f.rainPercent > 0 ? '${f.rainPercent}%' : null);
     final label = entry.isNow
         ? 'Bây giờ'

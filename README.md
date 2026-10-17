@@ -126,6 +126,48 @@ D:\flutter\bin\flutter build apk --debug
 
 `android/gradle.properties` đặt `kotlin.incremental=false`: pub cache nằm ở ổ C còn dự án ở ổ D, biên dịch Kotlin tăng dần lỗi khi đường dẫn khác ổ đĩa nên phải tắt.
 
+Bundle id / applicationId: `com.skyweather.app` (iOS và Android dùng chung). Bản Android cài trước đây với id `com.example.sky_weather_app` sẽ là một ứng dụng riêng, cần gỡ thủ công.
+
+### 4b. Web
+
+```bash
+D:\flutter\bin\flutter run -d chrome          # API mặc định http://localhost:8000
+D:\flutter\bin\flutter build web              # kết quả ở build/web
+```
+
+- Trên web, API mặc định là `http://localhost:8000`. Ghi đè bằng `--dart-define=API_BASE_URL=...` như các nền tảng khác.
+- Backend đã bật CORS cho mọi origin (`backend/main.py`).
+- Thông báo hệ thống và chạy nền (workmanager) không có trên web: app dùng bản Noop, cảnh báo vẫn hiện trong ứng dụng.
+- Trình duyệt chỉ cho dùng GPS khi trang mở qua **https** hoặc **localhost**. Nếu mở qua `http://<IP LAN>`, app báo rõ là bị chặn; khi đó hãy tìm địa điểm theo tên.
+
+### 4c. Cài lên iPhone (không cần máy Mac)
+
+1. Push code lên nhánh `main` của GitHub. Workflow `.github/workflows/ios-ipa.yml` sẽ tự chạy. Có thể chạy tay ở **Actions → Build iOS / Web / Android → Run workflow** và nhập `api_base_url`.
+2. Chờ job `ios` xong (runner macOS), mở lần chạy đó và tải artifact **SkyWeather-unsigned-ipa** (file zip chứa `SkyWeather-unsigned.ipa`). Cũng có artifact web và apk debug.
+3. Giải nén. Trong 3uTools chọn **Toolbox → IPA Signature**, đăng nhập Apple ID, ký file `.ipa` rồi cài lên máy. Trên iPhone vào **Cài đặt → Cài đặt chung → Quản lý VPN & thiết bị** để tin cậy Apple ID đó. Với iOS 16 trở lên còn phải bật **Chế độ nhà phát triển**.
+
+Giới hạn của Apple ID miễn phí:
+- Ứng dụng **hết hạn sau 7 ngày**, phải ký và cài lại (dữ liệu trong app vẫn giữ nếu cài đè cùng bundle id).
+- Mỗi Apple ID cài tối đa 3 app tự ký cùng lúc.
+- Không có push notification từ xa và không có App Groups. Thông báo cục bộ (cảnh báo, nhắc hoạt động) vẫn hoạt động.
+- Chạy nền dùng BGAppRefreshTask: iOS tự quyết định thời điểm chạy (thường vài giờ một lần, có thể không chạy nếu ít mở app), nên không được đúng mỗi giờ như Android.
+
+**Đặt `API_BASE_URL`** (giá trị được nhúng lúc build, nên đổi địa chỉ thì phải build lại):
+- Nhập vào ô `api_base_url` khi chạy tay workflow, hoặc tạo biến repo **Settings → Secrets and variables → Actions → Variables → `API_BASE_URL`** (áp dụng cho mỗi lần push).
+- IP LAN: `http://192.168.x.x:8000`. iPhone và máy chạy backend phải cùng mạng Wi‑Fi; lần đầu iOS hỏi quyền "Mạng cục bộ", hãy chọn Cho phép.
+- Tunnel https (dùng được cả khi khác mạng): `cloudflared tunnel --url http://localhost:8000` rồi dùng địa chỉ `https://xxx.trycloudflare.com` mà lệnh in ra. Địa chỉ này đổi sau mỗi lần chạy lại cloudflared.
+- Nếu để trống, app dùng `http://10.0.2.2:8000`, địa chỉ này không dùng được trên iPhone.
+
+**App Transport Security**: `Info.plist` đặt `NSAllowsArbitraryLoads = true` để app gọi được backend `http://` qua IP LAN. Không dùng `NSAllowsLocalNetworking` vì khóa này không chắc phủ địa chỉ IP, và khi có nó iOS sẽ bỏ qua `NSAllowsArbitraryLoads`. Rủi ro: app được phép gửi HTTP không mã hóa tới mọi máy, nên dữ liệu trên Wi‑Fi công cộng có thể bị đọc hoặc sửa. Bản release Android chặn việc này, còn bản iOS thì không. Chấp nhận được với đồ án vì không có dữ liệu cá nhân (app không gửi tọa độ, chỉ gửi id phường/xã). Nếu chỉ dùng tunnel https thì có thể xóa khóa này.
+
+Phần iOS **chưa được build thử trên máy** (nhóm không có Mac). Lần build đầu tiên trên GitHub Actions là bước kiểm chứng; nếu job `ios` lỗi, hãy xem log của bước `flutter build ios`.
+
+### 4d. Git
+
+- `.gitignore` đã loại bỏ `build/`, `.dart_tool/`, `__pycache__`, `.pytest_cache`, `backend/data/*.db`, `backend/data/history/` và `*.backup-*.db`. GitHub chặn file lớn hơn 100 MB.
+- `backend/data/locations/` và `backend/models/` vẫn được commit. Hiện file lớn nhất khoảng 7 MB.
+- Job `test` trong workflow chạy song song với các job build. Riêng test golden (ảnh chụp trên Windows) không chặn build, vì font và khử răng cưa trên Linux có thể khác.
+
 ### 5. Huấn luyện lại mô hình
 
 ```bash

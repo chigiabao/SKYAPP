@@ -569,6 +569,34 @@ class PlannerProvider extends ChangeNotifier {
     rescheduleReminders();
   }
 
+  /// Dong bo tai khoan: nhan du lieu tu thiet bi khac (null = giu nguyen).
+  /// Thong bao he thong / nhac (theo thiet bi) khong dong bo.
+  void importSyncData({
+    AlertSettings? alerts,
+    List<Activity>? favorites,
+    Sensitivity? sensitivity,
+    List<ActivityRoutine>? routines,
+    HabitData? habits,
+  }) {
+    if (alerts != null) {
+      _settings = alerts;
+      _byPlace.clear();
+      _write(alertSettingsKey, alerts.toJson());
+    }
+    _favorites = favorites ?? _favorites;
+    _sensitivity = sensitivity ?? _sensitivity;
+    _routines = routines ?? _routines;
+    if (favorites != null || sensitivity != null || routines != null) {
+      _saveActivity();
+    }
+    if (habits != null) {
+      _habits = habits;
+      _write(habitKey, habits.toJson());
+    }
+    notifyListeners();
+    if (alerts != null || routines != null) rescheduleReminders();
+  }
+
   // ---- Thoi quen (habits.dart, chi tren may) ----
 
   void _setHabits(HabitData h) {

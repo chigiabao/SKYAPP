@@ -10,6 +10,7 @@ import '../models/weather.dart';
 import '../models/weather_alerts.dart';
 import '../providers/location_provider.dart';
 import '../providers/planner_provider.dart';
+import '../providers/preferences_provider.dart';
 import '../providers/weather_provider.dart';
 import '../ui/weather/app_scene.dart';
 import '../ui/weather/debug/weather_simulator_screen.dart';
@@ -936,99 +937,129 @@ class _DetailsGrid extends StatelessWidget {
       ),
     );
 
-    final tiles = <Widget>[
-      MetricTile(
-        title: 'Cảm giác như',
-        icon: Icons.thermostat_outlined,
-        value: feels == null ? null : '${provider.formatTempValue(feels)}°',
-        sentence: feels == null
-            ? null
-            : feelsLikeSentence(
-                temperature: c.temperature,
-                feelsLike: feels,
-                humidity: c.humidity,
-                windKmh: c.windSpeed,
-              ),
-      ),
-      UvCard(
-        uvIndex: c.uvIndex,
-        sentence: uvSentence(hours, nowHcm: now),
-      ),
-      MetricTile(
-        title: 'Gió',
-        icon: Icons.air_rounded,
-        value: c.windSpeed == null ? null : '${c.windSpeed!.round()}',
-        unit: 'km/h',
-        label: dir == null ? null : 'Hướng ${WeatherFormat.compass(dir)}',
-        sentence: c.windGusts == null
-            ? null
-            : 'Gió giật tới ${c.windGusts!.round()}\u00A0km\u2060/\u2060h.',
-        semanticsLabel: c.windSpeed == null
-            ? 'Gió: $kNoData'
-            : 'Gió ${c.windSpeed!.round()} km/h'
-                  '${dir == null ? '' : ', thổi từ hướng ${WeatherFormat.compass(dir)} (${dir.round()} độ)'}'
-                  '${c.windGusts == null ? '' : ', giật tới ${c.windGusts!.round()} km/h'}',
-        visual: dir == null
-            ? null
-            : Center(
-                child: CompassDial(
-                  degrees: dir,
-                  size: 104,
-                  centerText: '${c.windSpeed?.round() ?? '--'}\nkm/h',
-                ),
-              ),
-      ),
-      MetricTile(
-        title: 'Độ ẩm',
-        icon: Icons.water_drop_outlined,
-        value: c.humidity == null ? null : WeatherFormat.percent(c.humidity),
-        sentence: humiditySentence(c.dewPoint),
-      ),
-      MetricTile(
-        title: 'Tầm nhìn',
-        icon: Icons.visibility_outlined,
-        value: vis == null ? null : WeatherFormat.visibilityKm(vis),
-        label: vis == null ? null : _visibilityLabel(vis),
-        sentence: vis == null
-            ? null
-            : vis >= 10
-            ? 'Trời trong, nhìn xa rõ.'
-            : 'Tầm nhìn bị hạn chế bởi mây, mưa hoặc bụi.',
-      ),
-      MetricTile(
-        title: 'Áp suất',
-        icon: Icons.speed_rounded,
-        value: p == null ? null : '${p.round()}',
-        unit: 'hPa',
-        label: p == null ? null : pressureCaption(p),
-        sentence: 'Áp suất mực nước biển.',
-        visual: p == null
-            ? null
-            : Center(child: PressureGauge(hpa: p, size: 88)),
-      ),
-      MetricTile(
-        title: 'Lượng mưa',
-        icon: Icons.umbrella_outlined,
-        value: c.precipitationMm == null
-            ? null
-            : WeatherFormat.rainMm(c.precipitationMm),
-        label: 'Trong giờ hiện tại',
-        sentence: [
-          rain.past24 == null
-              ? 'Chưa có số liệu 24 giờ qua.'
-              : '24 giờ qua: ${WeatherFormat.rainMm(rain.past24)}.',
-          if (rain.next24 != null)
-            'Dự báo 24 giờ tới: ${WeatherFormat.rainMm(rain.next24)}.',
-        ].join(' '),
-      ),
-      MetricTile(
-        title: 'Mây',
-        icon: Icons.cloud_outlined,
-        value: cloud == null ? null : WeatherFormat.percent(cloud),
-        label: cloud == null ? null : _cloudLabel(cloud),
-        sentence: 'Tỉ lệ bầu trời bị mây che phủ.',
-      ),
-    ];
+    final u = PreferencesProvider.unitsOf(context);
+    final order =
+        PreferencesProvider.maybeOf(context)?.visibleMetrics ??
+        HomeMetric.values;
+    final wind = c.windSpeed == null ? null : u.windParts(c.windSpeed!);
+    final pres = p == null ? null : u.pressureParts(p);
+    // Khoang trang khong ngat dong trong "12 km/h".
+    String nb(String s) => s.replaceAll(' ', ' ');
+
+    Widget tile(HomeMetric m) {
+      switch (m) {
+        case HomeMetric.aqi:
+          return aqi;
+        case HomeMetric.sun:
+          return _SunTile(nowHcm: now);
+        case HomeMetric.feelsLike:
+          return MetricTile(
+            title: 'Cảm giác như',
+            icon: Icons.thermostat_outlined,
+            value: feels == null ? null : '${provider.formatTempValue(feels)}°',
+            sentence: feels == null
+                ? null
+                : feelsLikeSentence(
+                    temperature: c.temperature,
+                    feelsLike: feels,
+                    humidity: c.humidity,
+                    windKmh: c.windSpeed,
+                  ),
+          );
+        case HomeMetric.uv:
+          return UvCard(
+            uvIndex: c.uvIndex,
+            sentence: uvSentence(hours, nowHcm: now),
+          );
+        case HomeMetric.wind:
+          return MetricTile(
+            title: 'Gió',
+            icon: Icons.air_rounded,
+            value: wind?.value,
+            unit: wind?.unit,
+            label: dir == null ? null : 'Hướng ${WeatherFormat.compass(dir)}',
+            sentence: c.windGusts == null
+                ? null
+                : 'Gió giật tới ${nb(u.windText(c.windGusts))}.',
+            semanticsLabel: c.windSpeed == null
+                ? 'Gió: $kNoData'
+                : 'Gió ${u.windText(c.windSpeed)}'
+                      '${dir == null ? '' : ', thổi từ hướng ${WeatherFormat.compass(dir)} (${dir.round()} độ)'}'
+                      '${c.windGusts == null ? '' : ', giật tới ${u.windText(c.windGusts)}'}',
+            visual: dir == null
+                ? null
+                : Center(
+                    child: CompassDial(
+                      degrees: dir,
+                      size: 104,
+                      centerText: wind == null
+                          ? '--'
+                          : [wind.value, ?wind.unit].join('\n'),
+                    ),
+                  ),
+          );
+        case HomeMetric.humidity:
+          return MetricTile(
+            title: 'Độ ẩm',
+            icon: Icons.water_drop_outlined,
+            value: c.humidity == null
+                ? null
+                : WeatherFormat.percent(c.humidity),
+            sentence: humiditySentence(c.dewPoint),
+          );
+        case HomeMetric.visibility:
+          return MetricTile(
+            title: 'Tầm nhìn',
+            icon: Icons.visibility_outlined,
+            value: vis == null ? null : u.distanceText(vis),
+            label: vis == null ? null : _visibilityLabel(vis),
+            sentence: vis == null
+                ? null
+                : vis >= 10
+                ? 'Trời trong, nhìn xa rõ.'
+                : 'Tầm nhìn bị hạn chế bởi mây, mưa hoặc bụi.',
+          );
+        case HomeMetric.pressure:
+          return MetricTile(
+            title: 'Áp suất',
+            icon: Icons.speed_rounded,
+            value: pres?.value,
+            unit: pres?.unit,
+            label: p == null ? null : pressureCaption(p),
+            sentence: 'Áp suất mực nước biển.',
+            visual: p == null
+                ? null
+                : Center(child: PressureGauge(hpa: p, size: 88)),
+          );
+        case HomeMetric.rain:
+          return MetricTile(
+            title: 'Lượng mưa',
+            icon: Icons.umbrella_outlined,
+            value: c.precipitationMm == null
+                ? null
+                : u.rainText(c.precipitationMm),
+            label: 'Trong giờ hiện tại',
+            sentence: [
+              rain.past24 == null
+                  ? 'Chưa có số liệu 24 giờ qua.'
+                  : '24 giờ qua: ${u.rainText(rain.past24)}.',
+              if (rain.next24 != null)
+                'Dự báo 24 giờ tới: ${u.rainText(rain.next24)}.',
+            ].join(' '),
+          );
+        case HomeMetric.cloud:
+          return MetricTile(
+            title: 'Mây',
+            icon: Icons.cloud_outlined,
+            value: cloud == null ? null : WeatherFormat.percent(cloud),
+            label: cloud == null ? null : _cloudLabel(cloud),
+            sentence: 'Tỉ lệ bầu trời bị mây che phủ.',
+          );
+      }
+    }
+
+    Widget keyed(HomeMetric m) =>
+        KeyedSubtree(key: ValueKey('metric-${m.name}'), child: tile(m));
 
     return Semantics(
       container: true,
@@ -1052,16 +1083,38 @@ class _DetailsGrid extends StatelessWidget {
               ],
             ),
           );
+          // Theo thu tu uu tien: o ca hang dung rieng, o nho ghep cap lien
+          // tiep.
+          final rows = <Widget>[];
+          HomeMetric? pending;
+          for (final m in order) {
+            if (m.fullWidth) {
+              if (pending != null) rows.add(pair(keyed(pending), null));
+              pending = null;
+              rows.add(keyed(m));
+            } else if (pending == null) {
+              pending = m;
+            } else {
+              rows.add(pair(keyed(pending), keyed(m)));
+              pending = null;
+            }
+          }
+          if (pending != null) rows.add(pair(keyed(pending), null));
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              aqi,
-              const SizedBox(height: Space.cardGap),
-              for (var i = 0; i < tiles.length; i += 2) ...[
-                pair(tiles[i], i + 1 < tiles.length ? tiles[i + 1] : null),
-                const SizedBox(height: Space.cardGap),
+              for (var i = 0; i < rows.length; i++) ...[
+                if (i > 0) const SizedBox(height: Space.cardGap),
+                rows[i],
               ],
-              _SunTile(nowHcm: now),
+              if (order.isEmpty)
+                GlassCard(
+                  child: Text(
+                    'Chưa chọn chỉ số nào. Bật trong Cài đặt > Chỉ số trên '
+                    'trang chủ.',
+                    style: TypeScale.body.copyWith(color: Palette.white),
+                  ),
+                ),
               if (sourceLine != null)
                 Padding(
                   padding: const EdgeInsets.fromLTRB(

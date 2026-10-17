@@ -66,6 +66,8 @@ def _naive_now(now: Optional[datetime] = None) -> datetime:
 
 def record_api_call(service: str, ok: bool = True) -> None:
     """+1 call (and +1 error if not ok) for today's row of `service`. Never raises."""
+    if not Path(database.DATABASE_PATH).exists():
+        return
     try:
         with _connect() as conn:
             conn.execute("INSERT INTO api_call_log (day, service, calls, errors) VALUES (?, ?, 1, ?) "

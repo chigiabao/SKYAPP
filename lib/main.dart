@@ -3,8 +3,10 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import 'models/app_settings.dart';
+import 'providers/account_provider.dart';
 import 'providers/location_provider.dart';
 import 'providers/planner_provider.dart';
+import 'providers/preferences_provider.dart';
 import 'providers/weather_provider.dart';
 import 'screens/home_screen.dart';
 import 'services/background_check.dart';
@@ -55,12 +57,26 @@ class SkyWeatherApp extends StatelessWidget {
         ),
         // Gia lap canh thoi tiet (man hinh "Giả lập thời tiết", chi debug).
         ChangeNotifierProvider(create: (context) => SceneOverride()),
+        // Don vi, chi so trang chu, tro nang (nhom 8).
+        ChangeNotifierProvider(
+          create: (context) => PreferencesProvider()..load(),
+        ),
+        // Tai khoan tuy chon + dong bo (nhom 9).
+        ChangeNotifierProvider(
+          create: (context) => AccountProvider()
+            ..attach(
+              context.read<LocationProvider>(),
+              context.read<WeatherProvider>(),
+              context.read<PlannerProvider>(),
+            ),
+        ),
       ],
       child: Consumer<WeatherProvider>(
         builder: (context, provider, child) {
           return MaterialApp(
             title: 'Sky Weather',
             debugShowCheckedModeBanner: false,
+            scaffoldMessengerKey: AccountProvider.messengerKey,
 
             // Theme configuration
             theme: AppTheme.lightTheme,
@@ -83,7 +99,13 @@ class SkyWeatherApp extends StatelessWidget {
                       ),
                 // Canh nen tinh MOT lan cho ca app; banner "ĐANG XEM LẠI"
                 // tren moi man hinh.
-                child: AppSceneScope(child: ReplayBannerHost(child: child!)),
+                // Co chu / tuong phan cao / giam chuyen dong trong app.
+                child: MediaQuery(
+                  data: context.watch<PreferencesProvider>().applyTo(
+                    MediaQuery.of(context),
+                  ),
+                  child: AppSceneScope(child: ReplayBannerHost(child: child!)),
+                ),
               );
             },
 

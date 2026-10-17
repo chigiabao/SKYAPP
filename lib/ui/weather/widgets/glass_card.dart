@@ -50,13 +50,23 @@ class GlassSurface extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final Color color = tint ?? AppScene.of(context).theme.glassColor;
+    Color color = tint ?? AppScene.of(context).theme.glassColor;
+    // Tuong phan cao (he thong hoac trong app): kinh dac + toi hon, vien ro.
+    final bool hc = MediaQuery.maybeHighContrastOf(context) ?? false;
+    if (hc) {
+      color = Color.alphaBlend(
+        const Color(0x59000000),
+        color.withValues(alpha: color.a < 0.8 ? 0.8 : color.a),
+      );
+    }
     final BorderRadius br = BorderRadius.circular(radius);
     Widget box = DecoratedBox(
       decoration: BoxDecoration(
         color: color,
         borderRadius: br,
-        border: Border.all(color: Palette.border),
+        border: hc
+            ? Border.all(color: Palette.secondary, width: 1.5)
+            : Border.all(color: Palette.border),
       ),
       position: DecorationPosition.background,
       child: Stack(

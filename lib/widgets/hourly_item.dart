@@ -4,8 +4,8 @@ import 'package:provider/provider.dart';
 import '../models/weather.dart';
 import '../providers/weather_provider.dart';
 import '../utils/constants.dart';
-import '../utils/formatters.dart';
 import 'source_badge.dart';
+import '../providers/preferences_provider.dart';
 
 /// Single hourly forecast item for horizontal scroll
 class HourlyItem extends StatelessWidget {
@@ -32,7 +32,7 @@ class HourlyItem extends StatelessWidget {
     // Gio thuc te: hien luong mua da do (mm) thay vi "100%".
     final mm = forecast.precipitationMm;
     final rainText = forecast.isObserved
-        ? (mm != null && mm > 0 ? WeatherFormat.rainMm(mm) : null)
+        ? (mm != null && mm > 0 ? PreferencesProvider.unitsOf(context).rainText(mm) : null)
         : (forecast.rainPercent > 0 ? '${forecast.rainPercent}%' : null);
 
     return Semantics(

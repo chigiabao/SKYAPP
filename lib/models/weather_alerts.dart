@@ -68,7 +68,30 @@ class AlertSettings {
     this.quietEnabled = true,
     this.quietStart = 22,
     this.quietEnd = 6,
+    this.places = const {},
   });
+
+  /// Cai dat rieng theo dia diem (id -> ghi de). Khong co -> dung chung.
+  final Map<String, PlaceAlertOverride> places;
+
+  PlaceAlertOverride placeOverride(String id) =>
+      places[id] ?? const PlaceAlertOverride();
+
+  /// Dat (hoac xoa khi la mac dinh) cai dat rieng cua [id].
+  AlertSettings withPlace(String id, PlaceAlertOverride o) => copyWith(
+    places: {...places, id: o}..removeWhere((_, v) => v.isDefault),
+  );
+
+  /// Cai dat hieu luc cho [id]: nguong rieng ghi de nguong chung.
+  AlertSettings forPlace(String id) {
+    final o = places[id];
+    if (o == null) return this;
+    var s = this;
+    for (final e in o.thresholds.entries) {
+      s = s.withThreshold(e.key, e.value);
+    }
+    return s;
+  }
 
   final Map<AlertType, bool> enabled;
 
@@ -147,6 +170,7 @@ class AlertSettings {
     bool? quietEnabled,
     int? quietStart,
     int? quietEnd,
+    Map<String, PlaceAlertOverride>? places,
   }) => AlertSettings(
     enabled: enabled ?? this.enabled,
     rainProbability: rainProbability ?? this.rainProbability,
@@ -161,6 +185,7 @@ class AlertSettings {
     quietEnabled: quietEnabled ?? this.quietEnabled,
     quietStart: quietStart ?? this.quietStart,
     quietEnd: quietEnd ?? this.quietEnd,
+    places: places ?? this.places,
   );
 
   /// Dat lai nguong cua mot loai.
@@ -200,6 +225,8 @@ class AlertSettings {
     'quietEnabled': quietEnabled,
     'quietStart': quietStart,
     'quietEnd': quietEnd,
+    if (places.isNotEmpty)
+      'places': {for (final e in places.entries) e.key: e.value.toJson()},
   };
 
   /// Doc an toan: truong sai / thieu -> mac dinh.
@@ -245,6 +272,56 @@ class AlertSettings {
           : d.quietEnabled,
       quietStart: h('quietStart', d.quietStart),
       quietEnd: h('quietEnd', d.quietEnd),
+      places: {
+        if (j['places'] is Map)
+          for (final e in (j['places'] as Map).entries)
+            if (e.key is String && e.value is Map)
+              e.key as String: PlaceAlertOverride.fromJson(
+                Map<String, dynamic>.from(e.value as Map),
+              ),
+      },
+    );
+  }
+}
+
+/// Cai dat canh bao rieng cho mot dia diem: bat/tat ca dia diem va nguong
+/// rieng (don vi goc cua [AlertType.unit]: km/h, mm/h...).
+class PlaceAlertOverride {
+  const PlaceAlertOverride({this.enabled = true, this.thresholds = const {}});
+
+  final bool enabled;
+  final Map<AlertType, double> thresholds;
+
+  bool get isDefault => enabled && thresholds.isEmpty;
+
+  PlaceAlertOverride copyWith({
+    bool? enabled,
+    Map<AlertType, double>? thresholds,
+  }) => PlaceAlertOverride(
+    enabled: enabled ?? this.enabled,
+    thresholds: thresholds ?? this.thresholds,
+  );
+
+  /// Dat nguong rieng; null -> bo (dung nguong chung).
+  PlaceAlertOverride withThreshold(AlertType t, double? v) => copyWith(
+    thresholds: {...thresholds}..remove(t)..addAll({t: ?v}),
+  );
+
+  Map<String, dynamic> toJson() => {
+    'enabled': enabled,
+    'thresholds': {for (final e in thresholds.entries) e.key.name: e.value},
+  };
+
+  factory PlaceAlertOverride.fromJson(Map<String, dynamic> j) {
+    final raw = j['thresholds'];
+    return PlaceAlertOverride(
+      enabled: j['enabled'] is bool ? j['enabled'] as bool : true,
+      thresholds: {
+        if (raw is Map)
+          for (final t in AlertType.values)
+            if (raw[t.name] is num && (raw[t.name] as num).isFinite)
+              t: (raw[t.name] as num).toDouble(),
+      },
     );
   }
 }
@@ -464,6 +541,9 @@ List<AlertEvent> evaluateAlerts(
   required String placeId,
   AlertSettings settings = const AlertSettings(),
 }) {
+  // Cai dat rieng cua dia diem: tat -> khong canh bao; nguong rieng ghi de.
+  if (!settings.placeOverride(placeId).enabled) return const [];
+  settings = settings.forPlace(placeId);
   final from = HcmTime.startOfHour(nowHcm);
   final to = from.add(Duration(hours: settings.lookaheadHours));
   final next = [

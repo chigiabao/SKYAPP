@@ -210,10 +210,36 @@ class GlassPage extends StatelessWidget {
               top: MediaQuery.paddingOf(context).top,
               opacity: 0.35,
             ),
-            child: Theme(data: glassThemeFor(st, appTheme), child: child),
+            child: Theme(
+              data: _withContrast(
+                glassThemeFor(st, appTheme),
+                st,
+                MediaQuery.maybeHighContrastOf(context) ?? false,
+              ),
+              child: child,
+            ),
           ),
         ),
       ),
     );
   }
+}
+
+/// Tuong phan cao: the (Card) dac va toi hon, vien ro (cung quy tac voi
+/// GlassSurface).
+ThemeData _withContrast(ThemeData t, SceneTheme st, bool on) {
+  if (!on) return t;
+  final Color g = st.glassColor;
+  return t.copyWith(
+    cardTheme: t.cardTheme.copyWith(
+      color: Color.alphaBlend(
+        const Color(0x59000000),
+        g.withValues(alpha: g.a < 0.8 ? 0.8 : g.a),
+      ),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(GlassSpec.radius),
+        side: const BorderSide(color: Palette.secondary, width: 1.5),
+      ),
+    ),
+  );
 }

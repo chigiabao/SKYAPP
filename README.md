@@ -163,7 +163,7 @@ D:\flutter\bin\flutter build web              # kết quả ở build/web
 Giới hạn của Apple ID miễn phí:
 - Ứng dụng **hết hạn sau 7 ngày**, phải ký và cài lại (dữ liệu trong app vẫn giữ nếu cài đè cùng bundle id).
 - Mỗi Apple ID cài tối đa 3 app tự ký cùng lúc.
-- Không có push notification từ xa và không có App Groups. Thông báo cục bộ (cảnh báo, nhắc hoạt động) vẫn hoạt động.
+- Không có push notification từ xa. App Groups tùy công cụ ký (xem phần widget bên dưới). Thông báo cục bộ (cảnh báo, nhắc hoạt động) vẫn hoạt động.
 - Chạy nền dùng BGAppRefreshTask: iOS tự quyết định thời điểm chạy (thường vài giờ một lần, có thể không chạy nếu ít mở app), nên không được đúng mỗi giờ như Android.
 
 **Đặt `API_BASE_URL`** (giá trị được nhúng lúc build, nên đổi địa chỉ thì phải build lại):
@@ -178,12 +178,10 @@ Giới hạn của Apple ID miễn phí:
 
 Trên iPhone: chế độ chuyến đi chạy nền nhờ `UIBackgroundModes: location` (quyền "Khi dùng ứng dụng" là đủ, iOS hiện thanh chỉ báo vị trí); token đăng nhập lưu trong Keychain.
 
-**Widget màn hình chính (iOS): chưa làm.** Android có widget (`WeatherWidgetProvider`, layout XML: nhiệt độ, trạng thái, khả năng mưa 3 giờ, tên địa điểm đầu tiên; cập nhật khi app tải dữ liệu và khi tác vụ nền chạy). Trên iOS, Dart đã gọi `HomeWidget.saveWidgetData` (lỗi được bỏ qua khi chưa có extension) nhưng chưa có WidgetKit extension, vì phải sửa `ios/Runner.xcodeproj/project.pbxproj` mà không có Mac để thử, một lỗi sẽ làm hỏng build IPA. Khi có Mac:
-1. Mở `ios/Runner.xcworkspace` bằng Xcode → **File → New → Target → Widget Extension** (ví dụ tên `SkyWeatherWidget`, bỏ chọn Live Activity / Configuration Intent).
-2. Bật capability **App Groups** cho cả `Runner` và extension, cùng một id (ví dụ `group.com.skyweather.app`). Lưu ý: Apple ID miễn phí không có App Groups (xem trên), nên widget iOS cần tài khoản Apple Developer trả phí.
-3. Trong Dart gọi `HomeWidget.setAppGroupId('group.com.skyweather.app')` trước `saveWidgetData`, và thêm `HomeWidget.updateWidget(iOSName: 'SkyWeatherWidget')` trong `lib/services/home_widget_service.dart`.
-4. Trong extension, đọc `UserDefaults(suiteName: "group.com.skyweather.app")` các khóa `sw_place`, `sw_temp`, `sw_condition`, `sw_rain3h` để vẽ SwiftUI view.
-5. Đặt Deployment Target của extension bằng của Runner, rồi build thử trên máy trước khi push.
+**Widget màn hình chính (iOS, nhánh `ios-widget`, chưa kiểm chứng trên iPhone).** Target WidgetKit `SkyWeatherWidget` (`ios/SkyWeatherWidget/`, cỡ nhỏ và vừa) hiện nhiệt độ, biểu tượng SF Symbols theo trạng thái, khả năng mưa 3 giờ, tên địa điểm đầu tiên và giờ cập nhật. Target này được thêm vào `project.pbxproj` bằng tay, không có Xcode, nên chỉ kiểm chứng được qua CI. Dữ liệu đi qua App Group `group.com.skyweather.app`: app gọi kênh `sky_weather/app_group` (`AppDelegate.swift`) để lấy group dùng được, rồi `HomeWidget.setAppGroupId`, lưu các khóa `sw_*` cùng `sw_updated` và gọi `updateWidget(iOSName: 'SkyWeatherWidget')`. Nếu bản ký không có App Group thì app bỏ qua bước này và widget chỉ hiện "Mở app để cập nhật".
+- **3uTools với Apple ID miễn phí:** chưa rõ 3uTools có tạo App Group khi ký hay không, nên widget nhiều khả năng chỉ hiện placeholder. App vẫn chạy bình thường.
+- **AltStore / SideStore:** dùng `SkyWeather-adhoc-appgroup.ipa`, cùng artifact với bản unsigned. File này được ký ad-hoc kèm entitlements App Group, nhờ vậy AltStore đọc được entitlements và tạo group, kể cả với Apple ID miễn phí. AltStore đổi tên group (thêm team id) và ghi tên mới vào khóa Info.plist `ALTAppGroups`; app và widget đều đọc khóa này.
+- Extension tốn thêm 1 App ID, trong giới hạn 10 App ID mỗi tuần của Apple ID miễn phí.
 
 ### 4d. Git
 

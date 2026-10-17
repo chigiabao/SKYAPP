@@ -27,11 +27,43 @@ import workmanager_apple
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     // Engine phu (tac vu nen / action thong bao) cung can plugin.
     FlutterLocalNotificationsPlugin.setPluginRegistrantCallback { registry in
-      GeneratedPluginRegistrant.register(with: registry)
+      AppDelegate.registerPlugins(registry)
     }
     WorkmanagerPlugin.setPluginRegistrantCallback { registry in
-      GeneratedPluginRegistrant.register(with: registry)
+      AppDelegate.registerPlugins(registry)
     }
-    GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
+    AppDelegate.registerPlugins(engineBridge.pluginRegistry)
+  }
+
+  private static func registerPlugins(_ registry: FlutterPluginRegistry) {
+    GeneratedPluginRegistrant.register(with: registry)
+    if let registrar = registry.registrar(forPlugin: "AppGroupChannel") {
+      AppGroupChannel.register(with: registrar)
+    }
+  }
+}
+
+/// Kenh `sky_weather/app_group` (lib/services/home_widget_service.dart): tra ve
+/// App Group dung duoc de chia du lieu voi widget, hoac nil neu ban ky khong co
+/// App Group. AltStore/SideStore doi ten group va ghi vao Info.plist `ALTAppGroups`.
+class AppGroupChannel: NSObject, FlutterPlugin {
+  static let defaultGroup = "group.com.skyweather.app"
+
+  static func register(with registrar: FlutterPluginRegistrar) {
+    let channel = FlutterMethodChannel(
+      name: "sky_weather/app_group", binaryMessenger: registrar.messenger())
+    registrar.addMethodCallDelegate(AppGroupChannel(), channel: channel)
+  }
+
+  func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+    guard call.method == "appGroupId" else {
+      result(FlutterMethodNotImplemented)
+      return
+    }
+    var candidates = (Bundle.main.object(forInfoDictionaryKey: "ALTAppGroups") as? [String]) ?? []
+    candidates.append(AppGroupChannel.defaultGroup)
+    result(candidates.first {
+      FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: $0) != nil
+    })
   }
 }

@@ -44,7 +44,7 @@ class GeolocatorGps implements GpsService {
   const GeolocatorGps();
 
   /// Trinh duyet chi cho Geolocation API o "secure context": https hoac
-  /// localhost. Mo app qua http://<IP LAN> se bi chan.
+  /// localhost. Mo app qua `http://<IP LAN>` se bi chan.
   static bool isWebContextAllowed(Uri page) =>
       page.scheme == 'https' ||
       page.host == 'localhost' ||

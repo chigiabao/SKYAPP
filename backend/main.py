@@ -86,6 +86,10 @@ app.add_middleware(
 app.include_router(weather.router)
 app.include_router(locations.router)
 app.include_router(admin.router)
+from routers import route as route_router, feedback as feedback_router, monitor as monitor_router   # groups 6/7, 10, 11
+app.include_router(route_router.router)
+app.include_router(feedback_router.router)
+app.include_router(monitor_router.router)
 from routers import auth as auth_router, sync as sync_router   # optional accounts + cross-device sync
 app.include_router(auth_router.router)
 app.include_router(sync_router.router)

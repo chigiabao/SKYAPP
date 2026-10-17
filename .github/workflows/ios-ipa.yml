@@ -1,0 +1,121 @@
+# Build Sky Weather: iOS .ipa CHUA KY (cai bang 3uTools), web, Android apk debug.
+# Xem README > "Cài lên iPhone". Job test chay song song; build khong doi test
+# de luon co file cai (test do van hien do tren tab Actions).
+name: Build iOS / Web / Android
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      api_base_url:
+        description: "API_BASE_URL (vd http://192.168.1.10:8000 hoac https://xxx.trycloudflare.com). Bo trong = dung bien repo API_BASE_URL / mac dinh trong app."
+        required: false
+        default: ""
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FLUTTER_VERSION: "3.47.7"
+  # Uu tien input khi chay tay, roi bien repo (Settings > Variables).
+  API_BASE_URL: ${{ inputs.api_base_url || vars.API_BASE_URL || '' }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - run: flutter pub get
+      - name: flutter test (tru golden)
+        run: flutter test $(find test -name '*_test.dart' ! -name '*golden_test.dart' | sort)
+      # Anh golden tao tren Windows; khac font/anti-alias tren Linux nen khong chan build.
+      - name: flutter test (golden, khong chan)
+        continue-on-error: true
+        run: flutter test $(find test -name '*golden_test.dart')
+
+  ios:
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - run: flutter pub get
+      - name: flutter build ios (khong ky)
+        run: |
+          ARGS=()
+          if [ -n "$API_BASE_URL" ]; then ARGS+=("--dart-define=API_BASE_URL=$API_BASE_URL"); fi
+          flutter build ios --release --no-codesign "${ARGS[@]}"
+      - name: Dong goi SkyWeather-unsigned.ipa
+        run: |
+          cd build/ios/iphoneos
+          rm -rf Payload SkyWeather-unsigned.ipa
+          mkdir Payload
+          cp -R Runner.app Payload/
+          zip -qry SkyWeather-unsigned.ipa Payload
+          ls -lh SkyWeather-unsigned.ipa
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SkyWeather-unsigned-ipa
+          path: build/ios/iphoneos/SkyWeather-unsigned.ipa
+          retention-days: 14
+
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - run: flutter pub get
+      - name: flutter build web
+        run: |
+          ARGS=()
+          if [ -n "$API_BASE_URL" ]; then ARGS+=("--dart-define=API_BASE_URL=$API_BASE_URL"); fi
+          flutter build web --release "${ARGS[@]}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SkyWeather-web
+          path: build/web
+          retention-days: 14
+
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - run: flutter pub get
+      - name: flutter build apk --debug
+        run: |
+          ARGS=()
+          if [ -n "$API_BASE_URL" ]; then ARGS+=("--dart-define=API_BASE_URL=$API_BASE_URL"); fi
+          flutter build apk --debug "${ARGS[@]}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SkyWeather-debug-apk
+          path: build/app/outputs/flutter-apk/app-debug.apk
+          retention-days: 14

@@ -5,8 +5,8 @@ import 'package:provider/provider.dart';
 import '../models/weather.dart';
 import '../providers/weather_provider.dart';
 import '../utils/constants.dart';
-import '../utils/formatters.dart';
 import 'source_badge.dart';
+import '../providers/preferences_provider.dart';
 
 /// Single daily forecast item
 class DailyItem extends StatelessWidget {
@@ -41,7 +41,7 @@ class DailyItem extends StatelessWidget {
               : forecast.rainDayPercent != null
               ? 'khả năng mưa ${forecast.rainDayPercent}%, '
               : ''}'
-          'lượng mưa ${WeatherFormat.rainMm(_rainAmount)}'
+          'lượng mưa ${PreferencesProvider.unitsOf(context).rainText(_rainAmount)}'
           '${sourceTag != null ? ', ${sourceTag!.shortLabel}' : ''}',
       excludeSemantics: true,
       child: InkWell(
@@ -114,7 +114,7 @@ class DailyItem extends StatelessWidget {
                       ),
                     _fitStart(
                       Text(
-                        WeatherFormat.rainMm(_rainAmount),
+                        PreferencesProvider.unitsOf(context).rainText(_rainAmount),
                         maxLines: 1,
                         style: AppTextStyles.caption.copyWith(
                           color: forecast.rainDayPercent != null

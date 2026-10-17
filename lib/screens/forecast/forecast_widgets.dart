@@ -9,6 +9,7 @@ import '../../utils/formatters.dart';
 import '../../widgets/source_badge.dart';
 import 'forecast_format.dart';
 import 'forecast_source.dart';
+import '../../providers/preferences_provider.dart';
 
 /// Tieu de muc + dong phu tuy chon.
 class ForecastSectionTitle extends StatelessWidget {
@@ -342,20 +343,20 @@ class DaySummaryCard extends StatelessWidget {
         Icons.water_drop_rounded,
         StatTone.water,
         'Lượng mưa thường gặp',
-        WeatherFormat.rainMm(day.precipitationMedian),
+        PreferencesProvider.unitsOf(context).rainText(day.precipitationMedian),
       ),
       _Stat(
         Icons.air_rounded,
         StatTone.air,
         'Gió mạnh nhất',
-        WeatherFormat.speedKmh(day.windSpeed),
+        PreferencesProvider.unitsOf(context).windText(day.windSpeed),
       ),
       if (day.windGusts != null)
         _Stat(
           Icons.storm_rounded,
           StatTone.air,
           'Gió giật mạnh nhất',
-          WeatherFormat.speedKmh(day.windGusts),
+          PreferencesProvider.unitsOf(context).windText(day.windGusts),
         ),
       if (day.humidity != null)
         _Stat(
@@ -601,18 +602,18 @@ class _HourRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final rain = hour.isObserved
-        ? 'Mưa thực tế ${WeatherFormat.rainMm(hour.precipitationMm)}'
+        ? 'Mưa thực tế ${PreferencesProvider.unitsOf(context).rainText(hour.precipitationMm)}'
         : hour.rainProbability == null
         ? 'Mưa: --'
         : 'Mưa ${hour.rainPercent}%';
     final amount = hour.isObserved || hour.precipitationMedian == null
         ? ''
-        : ' · ${WeatherFormat.rainMm(hour.precipitationMedian)}';
+        : ' · ${PreferencesProvider.unitsOf(context).rainText(hour.precipitationMedian)}';
     final hasWind = hour.windSpeed != null || hour.windGusts != null;
     final wind = !hasWind
         ? null
-        : 'Gió ${WeatherFormat.speedKmh(hour.windSpeed)}'
-              '${hour.windGusts == null ? '' : ' · giật ${WeatherFormat.speedKmh(hour.windGusts)}'}'
+        : 'Gió ${PreferencesProvider.unitsOf(context).windText(hour.windSpeed)}'
+              '${hour.windGusts == null ? '' : ' · giật ${PreferencesProvider.unitsOf(context).windText(hour.windGusts)}'}'
               '${hour.windDirection == null ? '' : ' · ${WeatherFormat.compass(hour.windDirection)}'}';
     return Container(
       color: isNow ? AppColors.primaryLight.withValues(alpha: 0.10) : null,

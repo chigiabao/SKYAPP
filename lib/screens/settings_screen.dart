@@ -1,7 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../models/units.dart';
+import '../models/weather_alerts.dart';
+import '../providers/location_provider.dart';
+import '../providers/planner_provider.dart';
+import '../providers/preferences_provider.dart';
 import '../providers/weather_provider.dart';
+import 'account_screen.dart';
 import '../ui/weather/app_scene.dart';
 import '../ui/weather/debug/weather_simulator_screen.dart';
 import '../ui/weather/widgets/glass_page.dart';
@@ -38,88 +44,44 @@ class SettingsScreen extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.all(AppSizes.paddingM),
         children: [
-          // Appearance section
           _SectionHeader(title: 'Giao diện'),
-          Card(
-            child: Column(
-              children: [
-                // Theme mode: Sang / Toi / Theo he thong
-                _SettingsTile(
-                  icon: _themeIcon(provider.themeMode),
-                  title: 'Chế độ giao diện',
-                  subtitle: _themeLabel(provider.themeMode),
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(
-                    AppSizes.paddingM,
-                    0,
-                    AppSizes.paddingM,
-                    AppSizes.paddingM,
-                  ),
-                  child: SizedBox(
-                    width: double.infinity,
-                    child: SegmentedButton<ThemeMode>(
-                      segments: const [
-                        ButtonSegment(
-                          value: ThemeMode.light,
-                          label: Text('Sáng'),
-                        ),
-                        ButtonSegment(
-                          value: ThemeMode.dark,
-                          label: Text('Tối'),
-                        ),
-                        ButtonSegment(
-                          value: ThemeMode.system,
-                          label: Text('Theo hệ thống'),
-                        ),
-                      ],
-                      selected: {provider.themeMode},
-                      showSelectedIcon: false,
-                      onSelectionChanged: (selection) {
-                        provider.setThemeMode(selection.first);
-                      },
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-
+          const _AppearanceSection(),
           const SizedBox(height: AppSizes.paddingL),
 
-          // Units section
           _SectionHeader(title: 'Đơn vị'),
-          Card(
-            child: Column(
-              children: [
-                // Temperature unit
-                _SettingsTile(
-                  icon: Icons.thermostat_rounded,
-                  title: 'Đơn vị nhiệt độ',
-                  subtitle: provider.isCelsius
-                      ? 'Celsius (°C)'
-                      : 'Fahrenheit (°F)',
-                  trailing: SegmentedButton<bool>(
-                    segments: const [
-                      ButtonSegment(value: true, label: Text('°C')),
-                      ButtonSegment(value: false, label: Text('°F')),
-                    ],
-                    selected: {provider.isCelsius},
-                    onSelectionChanged: (selection) {
-                      provider.setTemperatureUnit(selection.first);
-                    },
-                    style: ButtonStyle(visualDensity: VisualDensity.compact),
-                  ),
-                ),
-              ],
-            ),
-          ),
+          const _UnitsSection(),
+          const SizedBox(height: AppSizes.paddingL),
 
+          _SectionHeader(title: 'Chỉ số trên trang chủ'),
+          const _HomeMetricsSection(),
+          const SizedBox(height: AppSizes.paddingL),
+
+          _SectionHeader(title: 'Địa điểm'),
+          const _PlacesSection(),
+          const SizedBox(height: AppSizes.paddingL),
+
+          _SectionHeader(title: 'Trợ năng'),
+          const _AccessibilitySection(),
           const SizedBox(height: AppSizes.paddingL),
 
           // Replay / demo section
           _SectionHeader(title: 'Xem lại'),
           const ReplaySettingsCard(),
+
+          const SizedBox(height: AppSizes.paddingL),
+
+          // Tai khoan tuy chon (nhom 9)
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.cloud_sync_outlined),
+              title: const Text('Tài khoản và đồng bộ'),
+              subtitle: const Text('Tuỳ chọn, không cần để dùng app'),
+              trailing: const Icon(Icons.chevron_right_rounded),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const AccountScreen()),
+              ),
+            ),
+          ),
 
           const SizedBox(height: AppSizes.paddingL),
 
@@ -367,6 +329,633 @@ class _SettingsTile extends StatelessWidget {
       contentPadding: const EdgeInsets.symmetric(
         horizontal: AppSizes.paddingM,
         vertical: AppSizes.paddingXS,
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Nhom 8 - Ca nhan hoa: giao dien, don vi, chi so trang chu, dia diem, tro nang
+// ---------------------------------------------------------------------------
+
+/// Mau chu dam tren nen chip da chon (trang).
+const Color _onSelected = Color(0xFF0B1F33);
+
+/// Nhom lua chon dang chip (tu xuong dong khi co chu lon, khong tran).
+class _ChoiceGroup<T> extends StatelessWidget {
+  const _ChoiceGroup({
+    required this.icon,
+    required this.title,
+    required this.options,
+    required this.selected,
+    required this.onSelected,
+    this.subtitle,
+  });
+
+  final IconData icon;
+  final String title;
+  final String? subtitle;
+  final List<(T, String)> options;
+  final T selected;
+  final ValueChanged<T> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppSizes.paddingM,
+        AppSizes.paddingM,
+        AppSizes.paddingM,
+        AppSizes.paddingS,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              ExcludeSemantics(
+                child: Icon(
+                  icon,
+                  color: theme.colorScheme.primary,
+                  size: AppSizes.iconSizeM,
+                ),
+              ),
+              const SizedBox(width: AppSizes.paddingM),
+              Expanded(
+                child: Semantics(
+                  header: true,
+                  child: Text(
+                    title,
+                    style: AppTextStyles.bodyLarge.copyWith(
+                      color: theme.textTheme.bodyLarge?.color,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (subtitle != null)
+            Padding(
+              padding: const EdgeInsets.only(top: AppSizes.paddingXS),
+              child: Text(
+                subtitle!,
+                style: AppTextStyles.bodySmall.copyWith(
+                  color: theme.textTheme.bodySmall?.color,
+                ),
+              ),
+            ),
+          const SizedBox(height: AppSizes.paddingS),
+          Wrap(
+            spacing: AppSizes.paddingS,
+            runSpacing: AppSizes.paddingXS,
+            children: [
+              for (final (value, label) in options)
+                Semantics(
+                  label: '$title: $label',
+                  excludeSemantics: true,
+                  selected: value == selected,
+                  button: true,
+                  inMutuallyExclusiveGroup: true,
+                  onTap: () => onSelected(value),
+                  child: ChoiceChip(
+                    label: Text(label),
+                    selected: value == selected,
+                    onSelected: (_) => onSelected(value),
+                    materialTapTargetSize: MaterialTapTargetSize.padded,
+                    selectedColor: Colors.white,
+                    backgroundColor: Colors.transparent,
+                    checkmarkColor: _onSelected,
+                    side: const BorderSide(color: Color(0x99FFFFFF)),
+                    labelStyle: AppTextStyles.bodyMedium.copyWith(
+                      color: value == selected ? _onSelected : Colors.white,
+                      fontWeight: value == selected
+                          ? FontWeight.w600
+                          : FontWeight.w400,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// "Giao diện": Sang / Toi / Theo he thong.
+class _AppearanceSection extends StatelessWidget {
+  const _AppearanceSection();
+
+  @override
+  Widget build(BuildContext context) {
+    final wp = context.watch<WeatherProvider>();
+    return Card(
+      child: _ChoiceGroup<ThemeMode>(
+        icon: _themeIcon(wp.themeMode),
+        title: 'Chế độ giao diện',
+        options: const [
+          (ThemeMode.light, 'Sáng'),
+          (ThemeMode.dark, 'Tối'),
+          (ThemeMode.system, 'Theo hệ thống'),
+        ],
+        selected: wp.themeMode,
+        onSelected: wp.setThemeMode,
+      ),
+    );
+  }
+}
+
+/// "Đơn vị": nhiet do, gio, ap suat, luong mua, khoang cach.
+class _UnitsSection extends StatelessWidget {
+  const _UnitsSection();
+
+  @override
+  Widget build(BuildContext context) {
+    final wp = context.watch<WeatherProvider>();
+    final prefs = PreferencesProvider.maybeOf(context);
+    final u = prefs?.units ?? const UnitPrefs();
+    void set(UnitPrefs next) => prefs?.setUnits(next);
+    return Card(
+      child: Column(
+        children: [
+          _ChoiceGroup<bool>(
+            icon: Icons.thermostat_rounded,
+            title: 'Nhiệt độ',
+            options: const [(true, '°C'), (false, '°F')],
+            selected: wp.isCelsius,
+            onSelected: wp.setTemperatureUnit,
+          ),
+          if (prefs != null) ...[
+            const Divider(height: 1),
+            _ChoiceGroup<WindUnit>(
+              icon: Icons.air_rounded,
+              title: 'Tốc độ gió',
+              subtitle: 'Ví dụ 20 km/h = ${u.windText(20)}',
+              options: [
+                for (final w in WindUnit.values)
+                  (w, w == WindUnit.beaufort ? 'Cấp Beaufort' : w.label),
+              ],
+              selected: u.wind,
+              onSelected: (w) => set(u.copyWith(wind: w)),
+            ),
+            const Divider(height: 1),
+            _ChoiceGroup<PressureUnit>(
+              icon: Icons.speed_rounded,
+              title: 'Áp suất',
+              subtitle: 'Ví dụ 1013 hPa = ${u.pressureText(1013)}',
+              options: [for (final p in PressureUnit.values) (p, p.label)],
+              selected: u.pressure,
+              onSelected: (p) => set(u.copyWith(pressure: p)),
+            ),
+            const Divider(height: 1),
+            _ChoiceGroup<PrecipUnit>(
+              icon: Icons.umbrella_outlined,
+              title: 'Lượng mưa',
+              options: [for (final p in PrecipUnit.values) (p, p.label)],
+              selected: u.precip,
+              onSelected: (p) => set(u.copyWith(precip: p)),
+            ),
+            const Divider(height: 1),
+            _ChoiceGroup<DistanceUnit>(
+              icon: Icons.straighten_rounded,
+              title: 'Khoảng cách',
+              subtitle: 'Dùng cho tầm nhìn và chế độ di chuyển.',
+              options: [for (final d in DistanceUnit.values) (d, d.label)],
+              selected: u.distance,
+              onSelected: (d) => set(u.copyWith(distance: d)),
+            ),
+            const Padding(
+              padding: EdgeInsets.fromLTRB(
+                AppSizes.paddingM,
+                0,
+                AppSizes.paddingM,
+                AppSizes.paddingM,
+              ),
+              child: _Note(
+                'Ngưỡng cảnh báo vẫn tính theo đơn vị gốc (km/h, mm); '
+                'chỉ phần hiển thị được đổi.',
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _Note extends StatelessWidget {
+  const _Note(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Align(
+    alignment: Alignment.centerLeft,
+    child: Text(
+      text,
+      style: AppTextStyles.bodySmall.copyWith(
+        color: Theme.of(context).textTheme.bodySmall?.color,
+      ),
+    ),
+  );
+}
+
+/// "Chỉ số trên trang chủ": bat/tat + keo tha, co nut len/xuong thay the.
+class _HomeMetricsSection extends StatelessWidget {
+  const _HomeMetricsSection();
+
+  @override
+  Widget build(BuildContext context) {
+    final prefs = PreferencesProvider.maybeOf(context);
+    if (prefs == null) return const SizedBox.shrink();
+    final order = prefs.metricOrder;
+    return Card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Padding(
+            padding: EdgeInsets.fromLTRB(
+              AppSizes.paddingM,
+              AppSizes.paddingM,
+              AppSizes.paddingM,
+              AppSizes.paddingXS,
+            ),
+            child: _Note(
+              'Bật/tắt và sắp xếp thẻ chỉ số. Giữ và kéo biểu tượng bên '
+              'trái, hoặc dùng nút lên/xuống.',
+            ),
+          ),
+          ReorderableListView(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            buildDefaultDragHandles: false,
+            onReorder: prefs.reorderMetric,
+            proxyDecorator: (child, _, _) =>
+                Material(color: Colors.transparent, child: child),
+            children: [
+              for (var i = 0; i < order.length; i++)
+                _MetricRow(
+                  key: ValueKey('pref-metric-${order[i].name}'),
+                  metric: order[i],
+                  index: i,
+                  count: order.length,
+                  visible: prefs.isVisible(order[i]),
+                  prefs: prefs,
+                ),
+            ],
+          ),
+          Align(
+            alignment: Alignment.centerRight,
+            child: Padding(
+              padding: const EdgeInsets.all(AppSizes.paddingS),
+              child: TextButton.icon(
+                onPressed: prefs.resetMetrics,
+                icon: const Icon(Icons.restart_alt_rounded),
+                label: const Text('Khôi phục mặc định'),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MetricRow extends StatelessWidget {
+  const _MetricRow({
+    super.key,
+    required this.metric,
+    required this.index,
+    required this.count,
+    required this.visible,
+    required this.prefs,
+  });
+
+  final HomeMetric metric;
+  final int index;
+  final int count;
+  final bool visible;
+  final PreferencesProvider prefs;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final name = metric.label;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: AppSizes.paddingXS),
+      child: Row(
+        children: [
+          ReorderableDragStartListener(
+            index: index,
+            child: Tooltip(
+              message: 'Kéo để sắp xếp $name',
+              child: const SizedBox.square(
+                dimension: 48,
+                child: Icon(Icons.drag_indicator_rounded),
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              name,
+              style: AppTextStyles.bodyMedium.copyWith(
+                color: visible
+                    ? theme.textTheme.bodyLarge?.color
+                    : theme.textTheme.bodySmall?.color,
+              ),
+            ),
+          ),
+          IconButton(
+            tooltip: 'Đưa $name lên',
+            onPressed: index == 0 ? null : () => prefs.moveMetric(metric, -1),
+            icon: const Icon(Icons.keyboard_arrow_up_rounded),
+          ),
+          IconButton(
+            tooltip: 'Đưa $name xuống',
+            onPressed: index == count - 1
+                ? null
+                : () => prefs.moveMetric(metric, 1),
+            icon: const Icon(Icons.keyboard_arrow_down_rounded),
+          ),
+          Semantics(
+            label: 'Hiện $name trên trang chủ',
+            child: Switch(
+              value: visible,
+              onChanged: (v) => prefs.setMetricVisible(metric, v),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// "Địa điểm": bat/tat canh bao va nguong rieng cho tung dia diem.
+class _PlacesSection extends StatelessWidget {
+  const _PlacesSection();
+
+  static LocationProvider? _locations(BuildContext context) {
+    try {
+      return Provider.of<LocationProvider>(context);
+    } on ProviderNotFoundException {
+      return null;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final planner = maybePlanner(context);
+    final lp = _locations(context);
+    if (planner == null || lp == null) {
+      return const Card(
+        child: Padding(
+          padding: EdgeInsets.all(AppSizes.paddingM),
+          child: _Note('Chưa tải được danh sách địa điểm.'),
+        ),
+      );
+    }
+    final s = planner.settings;
+    final pages = lp.pages;
+    return Card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Padding(
+            padding: EdgeInsets.fromLTRB(
+              AppSizes.paddingM,
+              AppSizes.paddingM,
+              AppSizes.paddingM,
+              0,
+            ),
+            child: _Note(
+              'Bật/tắt cảnh báo cho từng nơi; đặt ngưỡng riêng nếu muốn. '
+              'Cài đặt theo hoạt động nằm ở mục Hoạt động.',
+            ),
+          ),
+          for (final e in pages) ...[
+            Builder(
+              builder: (context) {
+                final place = lp.placeById(e.locationId);
+                final label = lp.labelFor(e);
+                final o = s.placeOverride(e.locationId);
+                final title = label == null
+                    ? place.name
+                    : '$label · ${place.name}';
+                final custom = o.thresholds.length;
+                return Column(
+                  children: [
+                    SwitchListTile(
+                      secondary: const Icon(Icons.place_outlined),
+                      title: Text(title),
+                      subtitle: Text(
+                        !o.enabled
+                            ? 'Đã tắt cảnh báo'
+                            : custom == 0
+                            ? 'Dùng ngưỡng chung'
+                            : '$custom ngưỡng riêng',
+                      ),
+                      value: o.enabled,
+                      onChanged: (v) => planner.setSettings(
+                        s.withPlace(e.locationId, o.copyWith(enabled: v)),
+                      ),
+                    ),
+                    if (o.enabled)
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: Padding(
+                          padding: const EdgeInsets.only(
+                            right: AppSizes.paddingS,
+                          ),
+                          child: TextButton.icon(
+                            onPressed: () => showDialog<void>(
+                              context: context,
+                              builder: (_) => _PlaceThresholdDialog(
+                                placeId: e.locationId,
+                                placeName: title,
+                                planner: planner,
+                                units: PreferencesProvider.unitsOf(context),
+                                formatTemp: context
+                                    .read<WeatherProvider>()
+                                    .formatTemperature,
+                              ),
+                            ),
+                            icon: const Icon(Icons.tune_rounded),
+                            label: Text('Ngưỡng riêng cho ${place.name}'),
+                          ),
+                        ),
+                      ),
+                  ],
+                );
+              },
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// Hop thoai nguong rieng: moi loai co cong tac "Riêng" + thanh truot.
+/// Gia tri luu theo don vi goc; nhan hien theo don vi nguoi dung chon.
+class _PlaceThresholdDialog extends StatelessWidget {
+  const _PlaceThresholdDialog({
+    required this.placeId,
+    required this.placeName,
+    required this.planner,
+    required this.units,
+    required this.formatTemp,
+  });
+
+  final String placeId;
+  final String placeName;
+  final PlannerProvider planner;
+  final UnitPrefs units;
+  final String Function(double c) formatTemp;
+
+  /// (min, max, buoc) theo don vi goc.
+  static const Map<AlertType, (double, double, double)> ranges = {
+    AlertType.rain: (30, 100, 5),
+    AlertType.heavyRain: (2, 50, 1),
+    AlertType.heat: (30, 42, 1),
+    AlertType.uv: (3, 11, 1),
+    AlertType.wind: (20, 100, 5),
+    AlertType.aqi: (51, 301, 50),
+  };
+
+  String _fmt(AlertType t, double v) => switch (t) {
+    AlertType.rain => '${v.round()}%',
+    AlertType.heavyRain => units.rainRateText(v),
+    AlertType.heat => formatTemp(v),
+    AlertType.wind => units.windText(v),
+    _ => '${v.round()}',
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: planner,
+      builder: (context, _) {
+        final s = planner.settings;
+        final o = s.placeOverride(placeId);
+        return AlertDialog(
+          title: Text('Ngưỡng riêng · $placeName'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (final t in ranges.keys)
+                  if (s.isEnabled(t)) ...[
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(t.label),
+                      subtitle: Text(
+                        o.thresholds[t] == null
+                            ? 'Chung: ${_fmt(t, s.thresholdOf(t)!)}'
+                            : 'Riêng: ${_fmt(t, o.thresholds[t]!)}',
+                      ),
+                      value: o.thresholds[t] != null,
+                      onChanged: (v) => planner.setSettings(
+                        s.withPlace(
+                          placeId,
+                          o.withThreshold(t, v ? s.thresholdOf(t) : null),
+                        ),
+                      ),
+                    ),
+                    if (o.thresholds[t] != null)
+                      Slider(
+                        value: o.thresholds[t]!
+                            .clamp(ranges[t]!.$1, ranges[t]!.$2)
+                            .toDouble(),
+                        min: ranges[t]!.$1,
+                        max: ranges[t]!.$2,
+                        divisions:
+                            ((ranges[t]!.$2 - ranges[t]!.$1) / ranges[t]!.$3)
+                                .round(),
+                        label: _fmt(t, o.thresholds[t]!),
+                        semanticFormatterCallback: (v) => _fmt(t, v),
+                        onChanged: (v) => planner.setSettings(
+                          s.withPlace(placeId, o.withThreshold(t, v)),
+                        ),
+                      ),
+                  ],
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                planner.setSettings(
+                  s.withPlace(placeId, PlaceAlertOverride(enabled: o.enabled)),
+                );
+              },
+              child: const Text('Dùng ngưỡng chung'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Xong'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// "Trợ năng": co chu, tuong phan cao, giam chuyen dong.
+class _AccessibilitySection extends StatelessWidget {
+  const _AccessibilitySection();
+
+  @override
+  Widget build(BuildContext context) {
+    final prefs = PreferencesProvider.maybeOf(context);
+    if (prefs == null) return const SizedBox.shrink();
+    final mq = MediaQuery.of(context);
+    // MediaQuery da gop lua chon trong app; bat ma app tat -> do he thong.
+    final systemMotion = mq.disableAnimations && !prefs.reduceMotion;
+    final systemContrast = mq.highContrast && !prefs.highContrast;
+    return Card(
+      child: Column(
+        children: [
+          _ChoiceGroup<double>(
+            icon: Icons.format_size_rounded,
+            title: 'Cỡ chữ',
+            subtitle: 'Nhân thêm với cỡ chữ của hệ thống.',
+            options: const [
+              (0.9, 'Nhỏ'),
+              (1.0, 'Mặc định'),
+              (1.15, 'Lớn'),
+              (1.3, 'Rất lớn'),
+            ],
+            selected: prefs.textScale,
+            onSelected: prefs.setTextScale,
+          ),
+          const Divider(height: 1),
+          SwitchListTile(
+            secondary: const Icon(Icons.contrast_rounded),
+            title: const Text('Tương phản cao'),
+            subtitle: Text(
+              systemContrast
+                  ? 'Đang bật theo hệ thống'
+                  : 'Thẻ kính đặc hơn, viền rõ hơn',
+            ),
+            value: prefs.highContrast || systemContrast,
+            onChanged: systemContrast ? null : prefs.setHighContrast,
+          ),
+          const Divider(height: 1),
+          SwitchListTile(
+            secondary: const Icon(Icons.motion_photos_off_outlined),
+            title: const Text('Giảm chuyển động'),
+            subtitle: Text(
+              systemMotion
+                  ? 'Đang bật theo hệ thống'
+                  : 'Tắt hiệu ứng mưa, mây trôi và chuyển cảnh',
+            ),
+            value: prefs.reduceMotion || systemMotion,
+            onChanged: systemMotion ? null : prefs.setReduceMotion,
+          ),
+        ],
       ),
     );
   }

@@ -12,6 +12,7 @@ import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 
 import '../models/place.dart';
+import '../models/units.dart';
 import '../models/weather.dart';
 import '../providers/location_provider.dart';
 import '../providers/weather_provider.dart';
@@ -24,6 +25,7 @@ import '../ui/weather/widgets/glass_card.dart';
 import '../ui/weather/widgets/glass_page.dart';
 import '../ui/weather/widgets/metric_tile.dart' show kNoData;
 import '../utils/formatters.dart';
+import '../providers/preferences_provider.dart';
 import '../widgets/source_badge.dart' show SourceTag;
 
 /// Lop hien thi tren ban do.
@@ -90,9 +92,9 @@ String? outlookSourceLabel(String? s) => switch (s) {
 String offsetLabel(int h) => h == 0 ? 'Bây giờ' : '+$h giờ';
 
 /// Mo ta gio bang chu (danh sach thay the / Semantics).
-String windText(MapCell c) {
+String windText(MapCell c, [UnitPrefs units = const UnitPrefs()]) {
   if (c.windSpeed == null) return 'gió không có dữ liệu';
-  final b = StringBuffer('gió ${WeatherFormat.speedKmh(c.windSpeed)}');
+  final b = StringBuffer('gió ${units.windText(c.windSpeed)}');
   if (c.windDirection != null) {
     b.write(
       ', thổi từ hướng ${WeatherFormat.compass(c.windDirection)} '
@@ -100,7 +102,7 @@ String windText(MapCell c) {
     );
   }
   if (c.windGusts != null) {
-    b.write(', giật ${WeatherFormat.speedKmh(c.windGusts)}');
+    b.write(', giật ${units.windText(c.windGusts)}');
     if (c.windGusts! >= kStrongGustKmh) b.write(' (giật mạnh)');
   }
   return b.toString();
@@ -190,8 +192,9 @@ abstract final class MapScale {
   /// Chu giai cua lop. [temp] doi do C sang don vi dang chon.
   static List<LegendEntry> legend(
     MapLayerKind layer,
-    String Function(double c) temp,
-  ) {
+    String Function(double c) temp, [
+    UnitPrefs units = const UnitPrefs(),
+  ]) {
     if (layer == MapLayerKind.temperature) {
       final s = tempSteps;
       return [
@@ -203,11 +206,13 @@ abstract final class MapScale {
     }
     if (layer == MapLayerKind.wind) {
       final w = windSteps;
+      // Nguong tinh theo km/h; nhan theo don vi dang chon.
+      String v(num x) => units.windParts(x.toDouble()).value;
       return [
-        LegendEntry(windColors[0], '< ${w[0]} km/h'),
+        LegendEntry(windColors[0], '< ${units.windText(w[0].toDouble())}'),
         for (var i = 1; i < w.length; i++)
-          LegendEntry(windColors[i], '${w[i - 1]}–${w[i]}'),
-        LegendEntry(windColors.last, '≥ ${w.last}'),
+          LegendEntry(windColors[i], '${v(w[i - 1])}–${v(w[i])}'),
+        LegendEntry(windColors.last, '≥ ${v(w.last)}'),
       ];
     }
     final s = rainSteps;
@@ -250,6 +255,7 @@ List<CellMarkerData> buildCellMarkers(
   MapLayerKind layer, {
   required String Function(double c) temp,
   String Function(MapCell c)? names,
+  UnitPrefs units = const UnitPrefs(),
 }) {
   return [
     for (final c in cells)
@@ -275,7 +281,7 @@ List<CellMarkerData> buildCellMarkers(
           c.rainPercent == null
               ? 'khả năng mưa không có dữ liệu'
               : 'khả năng mưa 3 giờ tới ${c.rainPercent}%',
-          windText(c),
+          windText(c, units),
           if (c.alert) 'có cảnh báo mưa dông',
         ].join(', '),
       ),
@@ -610,6 +616,7 @@ class _MapScreenState extends State<MapScreen> {
       _layer,
       temp: temp,
       names: (c) => _cellNames(c),
+      units: PreferencesProvider.unitsOf(context),
     );
     final boundary = _lp.boundary;
     final focus = widget.focusLocationId;
@@ -846,7 +853,11 @@ class _MapScreenState extends State<MapScreen> {
                 const SizedBox(height: Space.s),
                 MapLegend(
                   layer: _layer,
-                  entries: MapScale.legend(_layer, temp),
+                  entries: MapScale.legend(
+                    _layer,
+                    temp,
+                    PreferencesProvider.unitsOf(context),
+                  ),
                   outlookSource: first?.outlookSource,
                 ),
               ],
@@ -1250,7 +1261,11 @@ class MapLegend extends StatelessWidget {
                   children: [
                     const _GustBadge(),
                     const SizedBox(width: Space.xs),
-                    Text('Giật ≥ ${kStrongGustKmh.round()} km/h', style: small),
+                    Text(
+                      'Giật ≥ '
+                      '${PreferencesProvider.unitsOf(context).windText(kStrongGustKmh)}',
+                      style: small,
+                    ),
                   ],
                 ),
             ],
@@ -1482,10 +1497,14 @@ class CellSheet extends StatelessWidget {
           ],
         ),
         const SizedBox(height: Space.m),
-        _line(Icons.air_rounded, _cap(windText(c)), body),
+        _line(
+          Icons.air_rounded,
+          _cap(windText(c, PreferencesProvider.unitsOf(context))),
+          body,
+        ),
         _line(
           Icons.grain_rounded,
-          'Lượng mưa trong giờ: ${WeatherFormat.rainMm(c.precipitation)}',
+          'Lượng mưa trong giờ: ${PreferencesProvider.unitsOf(context).rainText(c.precipitation)}',
           body,
         ),
         _line(
@@ -1497,7 +1516,7 @@ class CellSheet extends StatelessWidget {
         _line(
           Icons.umbrella_outlined,
           'Lượng mưa 3 giờ tới: '
-          '${c.precipitation3h == null ? kNoData : WeatherFormat.rainMm(c.precipitation3h)}',
+          '${c.precipitation3h == null ? kNoData : PreferencesProvider.unitsOf(context).rainText(c.precipitation3h)}',
           body,
         ),
         if (outlook != null)

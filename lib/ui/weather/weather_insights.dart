@@ -4,6 +4,7 @@
 /// Moi DateTime la gio TP.HCM (xem HcmTime).
 library;
 
+import '../../models/units.dart';
 import '../../models/weather.dart';
 
 String _hh(DateTime t) => '${t.hour.toString().padLeft(2, '0')}:00';
@@ -47,6 +48,7 @@ String? hourlySummary(
   List<HourlyForecast> hours, {
   required DateTime nowHcm,
   WeatherCondition? currentCondition,
+  UnitPrefs units = const UnitPrefs(),
 }) {
   final next = _upcoming(hours, nowHcm, 24);
   if (next.isEmpty) return null;
@@ -89,7 +91,11 @@ String? hourlySummary(
     if (g != null && (gust == null || g > gust)) gust = g;
   }
   if (gust != null && gust >= 15) {
-    parts.add('Gió giật tới ${gust.round()}\u00A0km\u2060/\u2060h.');
+    parts.add(
+      units.wind == WindUnit.kmh
+          ? 'Gió giật tới ${gust.round()}\u00A0km\u2060/\u2060h.'
+          : 'Gió giật tới ${units.windText(gust).replaceAll(' ', ' ')}.',
+    );
   }
   return parts.join(' ');
 }

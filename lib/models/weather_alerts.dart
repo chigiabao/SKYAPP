@@ -7,6 +7,7 @@ library;
 
 import 'dart:math' as math;
 
+import 'units.dart';
 import 'weather.dart';
 
 /// Dong mien tru hien o man Canh bao / banner / thong bao.
@@ -479,28 +480,31 @@ class AlertEvent {
   String get title => '${type.label} · ${alertRange(start, end)}';
 
   /// "Tới 25 mm/h · Dự báo".
-  String get detail {
-    final v = peakText;
+  String get detail => detailFor(const UnitPrefs());
+
+  /// Nhu [detail] nhung gia tri hien thi theo don vi [u] (nguong van goc).
+  String detailFor(UnitPrefs u) {
+    final v = peakTextFor(u);
     final src = observed ? 'Đang xảy ra (số liệu phân tích)' : 'Dự báo';
     return v == null ? src : '$v · $src';
   }
 
-  String? get peakText {
+  String? get peakText => peakTextFor(const UnitPrefs());
+
+  String? peakTextFor(UnitPrefs u) {
     switch (type) {
       case AlertType.thunderstorm:
         return peak >= 96 ? 'Dông kèm mưa đá' : null;
       case AlertType.rain:
-        return observed
-            ? '${peak.toStringAsFixed(1)} mm'
-            : 'Xác suất tới ${peak.round()}%';
+        return observed ? u.rainText(peak) : 'Xác suất tới ${peak.round()}%';
       case AlertType.heavyRain:
-        return 'Tới ${peak.toStringAsFixed(1)} mm/h';
+        return 'Tới ${u.rainRateText(peak)}';
       case AlertType.heat:
         return 'Cảm giác tới ${peak.round()}°C';
       case AlertType.uv:
         return 'UV tới ${peak.toStringAsFixed(peak % 1 == 0 ? 0 : 1)}';
       case AlertType.wind:
-        return 'Giật tới ${peak.round()} km/h';
+        return 'Giật tới ${u.windText(peak)}';
       case AlertType.aqi:
         return 'AQI tới ${peak.round()}';
     }
@@ -717,6 +721,7 @@ NoticePlan planNotices(
   required AlertSettings settings,
   required DateTime nowHcm,
   required String placeName,
+  UnitPrefs units = const UnitPrefs(),
 }) {
   final out = <AlertNotice>[];
   var held = 0;
@@ -748,7 +753,7 @@ NoticePlan planNotices(
         title:
             '${updated ? 'Cập nhật: ' : ''}${e.level.label} '
             '${e.type.label.toLowerCase()} · ${alertRange(e.start, e.end)}',
-        body: '$placeName · ${e.detail}',
+        body: '$placeName · ${e.detailFor(units)}',
         updated: updated,
       ),
     );

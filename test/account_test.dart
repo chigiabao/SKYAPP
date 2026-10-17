@@ -13,7 +13,10 @@ import 'package:sky_weather_app/models/app_settings.dart';
 import 'package:sky_weather_app/models/place.dart';
 import 'package:sky_weather_app/providers/account_provider.dart';
 import 'package:sky_weather_app/providers/location_provider.dart';
+import 'package:sky_weather_app/models/units.dart';
+import 'package:sky_weather_app/models/weather_alerts.dart';
 import 'package:sky_weather_app/providers/planner_provider.dart';
+import 'package:sky_weather_app/providers/preferences_provider.dart';
 import 'package:sky_weather_app/providers/weather_provider.dart';
 import 'package:sky_weather_app/screens/account_screen.dart';
 import 'package:sky_weather_app/services/account_service.dart';
@@ -97,9 +100,10 @@ class _Rig {
   final lp = LocationProvider();
   final wp = WeatherProvider(initialSettings: const AppSettings());
   final pp = PlannerProvider();
+  final prefs = PreferencesProvider();
   late final AccountProvider account;
 
-  Future<void> start() => account.attach(lp, wp, pp);
+  Future<void> start() => account.attach(lp, wp, pp, prefs: prefs);
 }
 
 Future<void> _wait([int ms = 150]) =>
@@ -378,6 +382,108 @@ void main() {
       expect(rig.wp.themeMode, ThemeMode.dark);
       expect(rig.account.state, SyncState.idle);
       expect(b.version, 3);
+    });
+
+    test('mergeDocuments: bia mo dia diem da xoa, them lai thi giu', () {
+      const day = 24 * 3600 * 1000;
+      const now = 100 * day;
+      Map<String, dynamic> doc(
+        List<String> ids, {
+        Map<String, int> deleted = const {},
+        Map<String, int> added = const {},
+        int placesAt = 0,
+      }) => {
+        'saved_places': [
+          for (var i = 0; i < ids.length; i++) {'id': ids[i], 'order': i},
+        ],
+        'settings': {
+          'places_updated_at': placesAt,
+          'deleted_places': deleted,
+          'places_added_at': added,
+        },
+        'activities': [],
+        'habits_consent': false,
+      };
+      List<Object?> ids(Map<String, dynamic> d) => [
+        for (final p in d['saved_places'] as List) p['id'],
+      ];
+
+      // Thiet bi khac (cu, moi sua sau) van con q9 -> khong song lai.
+      final m = AccountProvider.mergeDocuments(
+        doc(['tsn'], deleted: {'q9': now - day}, placesAt: now - day),
+        doc(['tsn', 'q9'], placesAt: now),
+        nowMs: now,
+      );
+      expect(ids(m), ['tsn']);
+      expect((m['settings'] as Map)['deleted_places'], {'q9': now - day});
+
+      // Them lai sau khi xoa -> giu, bia mo bi bo.
+      final r = AccountProvider.mergeDocuments(
+        doc(['tsn'], deleted: {'q9': now - day}),
+        doc(['tsn', 'q9'], added: {'q9': now}, placesAt: now),
+        nowMs: now,
+      );
+      expect(ids(r), ['tsn', 'q9']);
+      expect((r['settings'] as Map)['deleted_places'], isEmpty);
+
+      // Qua 30 ngay: bia mo het han.
+      final old = AccountProvider.mergeDocuments(
+        doc(['tsn'], deleted: {'q9': now - 31 * day}),
+        doc(['tsn', 'q9'], placesAt: now),
+        nowMs: now,
+      );
+      expect(ids(old), ['tsn', 'q9']);
+    });
+
+    test('409: dia diem da xoa khong song lai', () async {
+      final b = _FakeBackend();
+      final rig = _Rig(b, session: _session());
+      await rig.start();
+      rig.lp.addSaved('q9');
+      await _wait();
+      rig.lp.removeSavedAt(
+        rig.lp.saved.indexWhere((s) => s.locationId == 'q9'),
+      );
+      // Thiet bi khac luu truoc, van con q9.
+      b.conflictWith = {
+        'saved_places': [
+          {'id': 'tsn', 'label': 'none', 'custom_name': null, 'order': 0},
+          {'id': 'q9', 'label': 'none', 'custom_name': null, 'order': 1},
+        ],
+        'settings': {'updated_at': 1, 'places_updated_at': 1},
+        'activities': [],
+        'habits_consent': false,
+        'habits': null,
+      };
+      await _wait();
+      final doc = b.puts.last['data'] as Map;
+      expect([for (final p in doc['saved_places'] as List) p['id']], ['tsn']);
+      expect((doc['settings'] as Map)['deleted_places'], contains('q9'));
+      expect([for (final s in rig.lp.saved) s.locationId], ['tsn']);
+    });
+
+    test('dong bo cai dat ca nhan (don vi) va nguong theo dia diem', () async {
+      final b = _FakeBackend();
+      final rig = _Rig(b, session: _session());
+      await rig.start();
+      rig.prefs.setUnits(const UnitPrefs(wind: WindUnit.ms));
+      rig.pp.setSettings(
+        rig.pp.settings.withPlace(
+          'tsn',
+          const PlaceAlertOverride(enabled: false),
+        ),
+      );
+      await _wait();
+      final s = (b.puts.last['data'] as Map)['settings'] as Map;
+      expect(((s['preferences'] as Map)['units'] as Map)['wind'], 'ms');
+      expect(((s['alerts'] as Map)['places'] as Map)['tsn'], isNotNull);
+
+      // Thiet bi moi (may trong): ap ban tu may chu vao provider.
+      SharedPreferences.setMockInitialValues({});
+      final other = _Rig(b, session: _session());
+      await other.start();
+      expect(other.prefs.units.wind, WindUnit.ms);
+      expect(other.pp.settings.placeOverride('tsn').enabled, isFalse);
     });
 
     test('mergeDocuments: cai dat theo updated_at moi hon', () {

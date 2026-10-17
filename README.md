@@ -162,17 +162,25 @@ Giới hạn của Apple ID miễn phí:
 
 Phần iOS **chưa được build thử trên máy** (nhóm không có Mac). Lần build đầu tiên trên GitHub Actions là bước kiểm chứng; nếu job `ios` lỗi, hãy xem log của bước `flutter build ios`.
 
+**Widget màn hình chính (iOS): chưa làm.** Android có widget (`WeatherWidgetProvider`, layout XML: nhiệt độ, trạng thái, khả năng mưa 3 giờ, tên địa điểm đầu tiên; cập nhật khi app tải dữ liệu và khi tác vụ nền chạy). Trên iOS, Dart đã gọi `HomeWidget.saveWidgetData` (lỗi được bỏ qua khi chưa có extension) nhưng chưa có WidgetKit extension, vì phải sửa `ios/Runner.xcodeproj/project.pbxproj` mà không có Mac để thử, một lỗi sẽ làm hỏng build IPA. Khi có Mac:
+1. Mở `ios/Runner.xcworkspace` bằng Xcode → **File → New → Target → Widget Extension** (ví dụ tên `SkyWeatherWidget`, bỏ chọn Live Activity / Configuration Intent).
+2. Bật capability **App Groups** cho cả `Runner` và extension, cùng một id (ví dụ `group.com.skyweather.app`). Lưu ý: Apple ID miễn phí không có App Groups (xem trên), nên widget iOS cần tài khoản Apple Developer trả phí.
+3. Trong Dart gọi `HomeWidget.setAppGroupId('group.com.skyweather.app')` trước `saveWidgetData`, và thêm `HomeWidget.updateWidget(iOSName: 'SkyWeatherWidget')` trong `lib/services/home_widget_service.dart`.
+4. Trong extension, đọc `UserDefaults(suiteName: "group.com.skyweather.app")` các khóa `sw_place`, `sw_temp`, `sw_condition`, `sw_rain3h` để vẽ SwiftUI view.
+5. Đặt Deployment Target của extension bằng của Runner, rồi build thử trên máy trước khi push.
+
 ### 4d. Git
 
 - `.gitignore` đã loại bỏ `build/`, `.dart_tool/`, `__pycache__`, `.pytest_cache`, `backend/data/*.db`, `backend/data/history/` và `*.backup-*.db`. GitHub chặn file lớn hơn 100 MB.
 - `backend/data/locations/` và `backend/models/` vẫn được commit. Hiện file lớn nhất khoảng 7 MB.
-- Job `test` trong workflow chạy song song với các job build. Riêng test golden (ảnh chụp trên Windows) không chặn build, vì font và khử răng cưa trên Linux có thể khác.
+- Job `test` trong workflow chạy song song với các job build. Riêng test golden (ảnh chụp trên Windows) không chặn build, vì font và khử răng cưa trên Linux có thể khác. Test golden gắn `@Tags(['golden'])` (khai báo trong `dart_test.yaml`); workflow chạy `flutter test --exclude-tags golden`, rồi chạy riêng `--tags golden` ở bước không chặn.
 
 ### 5. Huấn luyện lại mô hình
 
 ```bash
 pip install numpy pandas lightgbm joblib scikit-learn matplotlib jupyter
 cd backend && python scripts/train_global_v3.py   # v3, ghi vào backend/models/v3/
+python scripts/train_global_v3_ext.py             # chạy ngay sau: khoảng tin cậy, hiệu chỉnh, mục tiêu mới
 cd ../notebooks && jupyter notebook global_model.ipynb
 ```
 

@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../config/api_config.dart';
 import '../models/weather.dart';
 import '../providers/planner_provider.dart';
+import '../providers/preferences_provider.dart';
 import '../providers/weather_provider.dart';
 import '../services/feedback_service.dart';
 import '../services/share_service.dart';
@@ -288,8 +289,8 @@ class _ForecastScreenState extends State<ForecastScreen> {
             : null,
       ),
       HourlyRainChart(hours: shown, nowIndex: nowIndex),
-      const ForecastSectionTitle(
-        'Gió theo giờ (km/h)',
+      ForecastSectionTitle(
+        'Gió theo giờ (${PreferencesProvider.unitsOf(context).windAxisUnit.label})',
         subtitle: 'Tốc độ gió trung bình và gió giật trong giờ.',
       ),
       if (shown.any((h) => h.windSpeed != null || h.windGusts != null))
@@ -348,7 +349,7 @@ class _ForecastScreenState extends State<ForecastScreen> {
         onSelect: (i) => _select(days, i),
       ),
       ForecastSectionTitle(
-        'Gió mạnh nhất (km/h)',
+        'Gió mạnh nhất (${PreferencesProvider.unitsOf(context).windAxisUnit.label})',
         subtitle:
             '${hasGusts ? 'Tốc độ gió và gió giật lớn nhất mỗi ngày.' : 'Tốc độ gió lớn nhất mỗi ngày.'}'
             '${windMissing ? ' Ngày không có cột: chưa có số liệu.' : ''}',
@@ -359,7 +360,8 @@ class _ForecastScreenState extends State<ForecastScreen> {
         selectedIndex: selectedIndex,
         nowHcm: now,
         color: p.wind,
-        unitSuffix: ' km/h',
+        unitSuffix:
+            ' ${PreferencesProvider.unitsOf(context).windAxisUnit.label}',
         semanticsLabel: 'Biểu đồ gió mạnh nhất ${days.length} ngày',
         onSelect: (i) => _select(days, i),
         secondaryValues: hasGusts ? [for (final d in days) d.windGusts] : null,

@@ -12,6 +12,7 @@ import '../models/weather_alerts.dart';
 import '../services/api_service.dart';
 import '../services/notification_service.dart';
 import 'location_provider.dart';
+import 'preferences_provider.dart';
 import 'weather_provider.dart';
 
 /// Cai dat canh bao + lich su thong bao trong app + hoat dong yeu thich /
@@ -412,6 +413,7 @@ class PlannerProvider extends ChangeNotifier {
         settings: _settings,
         nowHcm: nowHcm,
         placeName: placeName,
+        units: PreferencesProvider.unitsFromPrefs(p),
       );
       _held = plan.held;
       final fresh = {for (final n in plan.notices) noticeKey(n)};
@@ -621,8 +623,7 @@ class PlannerProvider extends ChangeNotifier {
 
   void clearHabits() => _setHabits(_habits.cleared());
 
-  void dismissSuggestion(RoutineSuggestion s) =>
-      _setHabits(_habits.dismiss(s));
+  void dismissSuggestion(RoutineSuggestion s) => _setHabits(_habits.dismiss(s));
 
   List<RoutineSuggestion> get routineSuggestions =>
       _habits.suggestions(_routines);

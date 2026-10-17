@@ -3,8 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/reminders.dart';
+import '../models/units.dart';
 import '../models/weather_alerts.dart';
 import '../providers/planner_provider.dart';
+import '../providers/preferences_provider.dart';
 import '../services/gps_service.dart';
 import '../ui/weather/design_tokens.dart';
 import '../ui/weather/glass_ink.dart';
@@ -50,7 +52,10 @@ String _hint(AlertType t) {
   }
 }
 
-String _fmt(AlertType t, double v) {
+/// Nguong luu theo don vi goc; chi phan hien thi doi theo [u].
+String _fmt(AlertType t, double v, UnitPrefs u) {
+  if (t == AlertType.wind) return u.windText(v);
+  if (t == AlertType.heavyRain) return u.rainRateText(v);
   final n = v % 1 == 0 ? v.toStringAsFixed(0) : v.toStringAsFixed(1);
   return t.unit.isEmpty ? n : '$n ${t.unit}';
 }
@@ -69,6 +74,7 @@ class AlertSettingsScreen extends StatelessWidget {
     final ink = GlassInk.of(context);
     final planner = context.watch<PlannerProvider>();
     final s = planner.settings;
+    final units = PreferencesProvider.unitsOf(context);
     final mq = MediaQuery.of(context);
     final gutter = Space.gutter(mq.size.width);
     final hPad = mq.size.width > Space.contentMaxWidth + 2 * gutter
@@ -93,7 +99,9 @@ class AlertSettingsScreen extends StatelessWidget {
               ),
             ),
             subtitle: Text(
-              value == null ? _hint(t) : '${_hint(t)} ≥ ${_fmt(t, value)}',
+              value == null
+                  ? _hint(t)
+                  : '${_hint(t)} ≥ ${_fmt(t, value, units)}',
               style: TypeScale.small.copyWith(color: ink.secondary),
             ),
             value: on,
@@ -105,8 +113,8 @@ class AlertSettingsScreen extends StatelessWidget {
               min: r.min,
               max: r.max,
               divisions: r.divisions,
-              label: _fmt(t, value),
-              semanticFormatterCallback: (v) => 'Ngưỡng ${_fmt(t, v)}',
+              label: _fmt(t, value, units),
+              semanticFormatterCallback: (v) => 'Ngưỡng ${_fmt(t, v, units)}',
               onChanged: (v) => planner.setSettings(s.withThreshold(t, v)),
             ),
         ],
@@ -273,20 +281,23 @@ class _SystemNotifyCard extends StatelessWidget {
   Future<void> _toggle(BuildContext context, bool on) async {
     final ok = await planner.setSystemNotifications(on);
     if (!ok && context.mounted) {
-      // Android: mo trang cai dat cua app (geolocator.openAppSettings) de bat
-      // lai thong bao; noi khac chi huong dan.
-      final android =
-          !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+      // Android / iOS: mo trang cai dat cua app (geolocator.openAppSettings,
+      // iOS: UIApplication.openSettingsURLString) de bat lai thong bao; noi
+      // khac chi huong dan.
+      final mobile =
+          !kIsWeb &&
+          (defaultTargetPlatform == TargetPlatform.android ||
+              defaultTargetPlatform == TargetPlatform.iOS);
       final messenger = ScaffoldMessenger.of(context);
       messenger.showSnackBar(
         SnackBar(
           content: Text(
             'Chưa được cấp quyền thông báo (hoặc thiết bị không hỗ trợ). '
             'Cảnh báo vẫn hiện trong ứng dụng.'
-            '${android ? '' : ' Bật thông báo cho Sky Weather trong Cài đặt '
+            '${mobile ? '' : ' Bật thông báo cho Sky Weather trong Cài đặt '
                       'của thiết bị.'}',
           ),
-          action: android
+          action: mobile
               ? SnackBarAction(
                   label: 'Mở cài đặt',
                   onPressed: () async {
@@ -296,8 +307,7 @@ class _SystemNotifyCard extends StatelessWidget {
                       messenger.showSnackBar(
                         const SnackBar(
                           content: Text(
-                            'Vào Cài đặt > Ứng dụng > Sky Weather > Thông báo '
-                            'để bật lại.',
+                            'Vào Cài đặt > Sky Weather > Thông báo để bật lại.',
                           ),
                         ),
                       );

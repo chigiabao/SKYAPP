@@ -21,10 +21,13 @@ metric is lower than BOTH baselines at ALL three horizons on the test window. A 
 enabled in predict_for_location only if it wins in >= 80 % of the evaluated cells. Disabled
 targets stay in evaluation_v3.json but are never served.
 
-Usage:  python scripts/train_global_v3_ext.py
+Usage:  python scripts/train_global_v3_ext.py [--out DIR]
+        --out: v3 directory to read AND extend (default backend/models/v3), e.g. the retrain candidate
+        written by `train_global_v3.py --out DIR`.
 """
 from __future__ import annotations
 
+import argparse
 import json
 import math
 import sqlite3
@@ -164,6 +167,14 @@ def reliability(p, y, bins=10):
 
 
 def main():
+    global OUT, OUTW, LOG
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--out", type=Path, default=None,
+                    help="v3 directory to read and extend (default backend/models/v3)")
+    args = ap.parse_args()
+    if args.out is not None:
+        OUT = OUTW = args.out
+        LOG = OUTW / "train_ext_log.txt"
     OUTW.mkdir(parents=True, exist_ok=True)
     LOG.write_text("", encoding="utf-8")
     meta = json.loads((OUT / "metadata_v3.json").read_text(encoding="utf-8"))

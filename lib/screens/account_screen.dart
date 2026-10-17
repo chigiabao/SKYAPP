@@ -11,6 +11,7 @@ import 'package:share_plus/share_plus.dart';
 import '../models/hcm_time.dart';
 import '../providers/account_provider.dart';
 import '../services/account_service.dart';
+import '../services/download/download_file.dart';
 import '../ui/weather/design_tokens.dart';
 import '../ui/weather/glass_ink.dart';
 import '../ui/weather/widgets/glass_card.dart';
@@ -22,19 +23,11 @@ import '../utils/constants.dart';
 typedef JsonExporter = Future<String?> Function(String fileName, String json);
 
 /// Mobile / desktop: ghi vao thu muc tai lieu cua app (path_provider) roi mo
-/// bang chia se. Web: share_plus tai file xuong (khong co Web Share -> tai
-/// xuong; co Web Share -> bang chia se cua trinh duyet).
+/// bang chia se. Web: tai file JSON xuong (Blob + the a, khong Web Share).
 Future<String?> defaultJsonExporter(String fileName, String json) async {
   final bytes = Uint8List.fromList(utf8.encode(json));
   if (kIsWeb) {
-    await SharePlus.instance.share(
-      ShareParams(
-        files: [
-          XFile.fromData(bytes, mimeType: 'application/json', name: fileName),
-        ],
-        fileNameOverrides: [fileName],
-      ),
-    );
+    downloadBytes(bytes, fileName, 'application/json');
     return null;
   }
   final dir = await getApplicationDocumentsDirectory();

@@ -93,6 +93,9 @@ class _TripScreenState extends State<TripScreen> {
   bool _searching = false;
   String? _message;
 
+  /// Loi quyen / dinh vi tat -> hien nut "Mở cài đặt" (Android + iOS).
+  GpsStatus? _gpsIssue;
+
   LocationProvider get _lp => widget.locations;
 
   @override
@@ -129,7 +132,10 @@ class _TripScreenState extends State<TripScreen> {
     final to = _to;
     if (to == null) return;
     final trip = context.read<TripProvider>();
-    setState(() => _message = null);
+    setState(() {
+      _message = null;
+      _gpsIssue = null;
+    });
     LatLng from;
     if (_from != null) {
       from = LatLng(_from!.lat, _from!.lon);
@@ -137,12 +143,13 @@ class _TripScreenState extends State<TripScreen> {
       final fix = await widget.gps.locate();
       if (!mounted) return;
       if (fix.status != GpsStatus.ok) {
-        setState(
-          () => _message =
+        setState(() {
+          _gpsIssue = fix.status;
+          _message =
               fix.detail ??
               'Không lấy được vị trí hiện tại. Hãy chọn điểm đi là một địa '
-                  'điểm.',
-        );
+                  'điểm.';
+        });
         return;
       }
       from = LatLng(fix.lat!, fix.lon!);
@@ -168,7 +175,12 @@ class _TripScreenState extends State<TripScreen> {
       toId: _withRoute ? _to?.id : null,
       background: _background,
     );
-    if (st != GpsStatus.ok && mounted) setState(() => _message = trip.error);
+    if (st != GpsStatus.ok && mounted) {
+      setState(() {
+        _gpsIssue = st;
+        _message = trip.error;
+      });
+    }
   }
 
   /// Giai thich truoc khi he thong hoi quyen vi tri.
@@ -404,6 +416,19 @@ class _TripScreenState extends State<TripScreen> {
                 _message!,
                 style: TypeScale.body.copyWith(color: Palette.stale),
               ),
+              if (!kIsWeb &&
+                  _gpsIssue != null &&
+                  _gpsIssue != GpsStatus.unavailable)
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    icon: const Icon(Icons.settings_outlined),
+                    label: const Text('Mở cài đặt'),
+                    onPressed: () => _gpsIssue == GpsStatus.serviceDisabled
+                        ? widget.gps.openLocationSettings()
+                        : widget.gps.openAppSettings(),
+                  ),
+                ),
             ],
           ],
         ),

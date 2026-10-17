@@ -81,6 +81,19 @@ class PreferencesProvider extends ChangeNotifier {
   static UnitPrefs unitsOf(BuildContext context) =>
       maybeOf(context)?.units ?? const UnitPrefs();
 
+  /// Don vi da luu (dung ca trong tac vu nen, khong can provider).
+  static UnitPrefs unitsFromPrefs(SharedPreferences? p) {
+    try {
+      final raw = p?.getString(prefsKey);
+      if (raw == null) return const UnitPrefs();
+      final j = jsonDecode(raw);
+      final u = j is Map ? j['units'] : null;
+      return UnitPrefs.fromJson(u is Map ? Map<String, dynamic>.from(u) : null);
+    } catch (_) {
+      return const UnitPrefs();
+    }
+  }
+
   // ---- Doc / ghi ----
 
   Future<void> load() => _loading ??= _load();

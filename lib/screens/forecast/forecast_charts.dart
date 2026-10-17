@@ -464,7 +464,7 @@ class HourlyRainChart extends StatelessWidget {
   }
 }
 
-/// Gio theo gio (km/h): toc do (net lien) va gio giat (net dut). Gio thieu
+/// Gio theo gio (truc theo don vi da chon): toc do (net lien) va gio giat (net dut). Gio thieu
 /// so lieu -> dut doan (khong bia so).
 class HourlyWindChart extends StatelessWidget {
   const HourlyWindChart({
@@ -479,12 +479,14 @@ class HourlyWindChart extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final p = ChartPalette(context);
+    final u = PreferencesProvider.unitsOf(context);
     final gustColor = p.isDark
         ? const Color(0xFFFFCC80)
         : const Color(0xFFB45309);
+    // Ve theo don vi truc; tooltip / mo ta doc lai so goc (km/h).
     final present = [
       for (final h in hours) ...[?h.windSpeed, ?h.windGusts],
-    ];
+    ].map(u.windAxisValue).toList();
     final maxValue = present.isEmpty ? 0.0 : present.reduce(math.max);
     final interval = maxValue <= 20 ? 5.0 : (maxValue <= 50 ? 10.0 : 20.0);
     final maxY = math.max(
@@ -500,7 +502,7 @@ class HourlyWindChart extends StatelessWidget {
       for (var i = 0; i < hours.length; i++)
         value(hours[i]) == null
             ? FlSpot.nullSpot
-            : FlSpot(i.toDouble(), value(hours[i])!),
+            : FlSpot(i.toDouble(), u.windAxisValue(value(hours[i])!)),
     ];
 
     LineChartBarData line(List<FlSpot> s, Color color, {bool dashed = false}) =>
@@ -524,13 +526,15 @@ class HourlyWindChart extends StatelessWidget {
           ),
         );
 
-    final u = PreferencesProvider.unitsOf(context);
+    final maxGust = hours
+        .where((h) => h.windGusts != null)
+        .fold<double>(maxSpeed, (m, h) => math.max(m, h.windGusts!));
     return ChartFrame(
       height: 170,
       semanticsLabel:
-          'Biểu đồ gió theo giờ (trục km/h), tốc độ lớn nhất '
+          'Biểu đồ gió theo giờ (trục ${u.windAxisUnit.label}), tốc độ lớn nhất '
           '${u.windText(maxSpeed.toDouble())}'
-          '${hasGusts ? ', gió giật lớn nhất ${u.windText(maxValue.toDouble())}' : ''}',
+          '${hasGusts ? ', gió giật lớn nhất ${u.windText(maxGust)}' : ''}',
       footer: ChartLegend(
         items: [
           (p.wind, 'Tốc độ gió', false),
@@ -610,8 +614,8 @@ class HourlyWindChart extends StatelessWidget {
                   LineTooltipItem(
                     s.barIndex == 0
                         ? '${ForecastFormat.hourMinute(hours[s.x.round()].time)}\n'
-                              'Gió ${u.windText(s.y)}'
-                        : 'Giật ${u.windText(s.y)}',
+                              'Gió ${u.windText(hours[s.x.round()].windSpeed)}'
+                        : 'Giật ${u.windText(hours[s.x.round()].windGusts)}',
                     p.tooltipStyle.copyWith(
                       color: s.barIndex == 0 ? p.wind : gustColor,
                     ),
@@ -825,7 +829,7 @@ class DailyBarChart extends StatelessWidget {
   final int selectedIndex;
   final DateTime nowHcm;
   final Color color;
-  final String unitSuffix; // '%' hoac ' km/h'
+  final String unitSuffix; // '%' hoac don vi gio, vd ' km/h'
   final String semanticsLabel;
   final ValueChanged<int> onSelect;
   final double? fixedMaxY;
@@ -835,10 +839,14 @@ class DailyBarChart extends StatelessWidget {
   Widget build(BuildContext context) {
     final p = ChartPalette(context);
     final second = secondaryValues;
+    final shortUnit = unitSuffix.trim();
+    // Cot gio ve theo don vi truc; tooltip dung so goc (km/h).
+    final u = PreferencesProvider.unitsOf(context);
+    double axis(double v) => shortUnit == '%' ? v : u.windAxisValue(v);
     final present = [
       ...values.whereType<double>(),
       ...?second?.whereType<double>(),
-    ];
+    ].map(axis).toList();
     final maxValue = present.isEmpty ? 0.0 : present.reduce(math.max);
     final double maxY;
     final double interval;
@@ -852,7 +860,6 @@ class DailyBarChart extends StatelessWidget {
         interval * 2,
       );
     }
-    final shortUnit = unitSuffix.trim();
 
     return ChartFrame(
       height: 150,
@@ -919,7 +926,7 @@ class DailyBarChart extends StatelessWidget {
                     barsSpace: 2,
                     barRods: [
                       BarChartRodData(
-                        toY: values[i] ?? 0,
+                        toY: axis(values[i] ?? 0),
                         width: barWidth,
                         color: i == selectedIndex
                             ? color
@@ -930,7 +937,7 @@ class DailyBarChart extends StatelessWidget {
                       ),
                       if (second != null)
                         BarChartRodData(
-                          toY: second[i] ?? 0,
+                          toY: axis(second[i] ?? 0),
                           width: barWidth,
                           color: i == selectedIndex
                               ? (secondaryColor ?? color)
@@ -963,7 +970,7 @@ class DailyBarChart extends StatelessWidget {
                         ? 'chưa có số liệu'
                         : shortUnit == '%'
                         ? WeatherFormat.percent(v)
-                        : PreferencesProvider.unitsOf(context).windText(v);
+                        : u.windText(v);
                     return BarTooltipItem(
                       isSecond
                           ? '$secondaryLabel $text'

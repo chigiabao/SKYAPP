@@ -184,6 +184,25 @@ def test_sync_roundtrip_and_conflict(api):
     assert put(api, token, 2, doc(())).json()["version"] == 3
 
 
+def test_sync_accepts_app_preferences_and_tombstones(api):
+    """App >= 1.1: settings.preferences (units, home metrics), per-place alert overrides and place
+    tombstones ride in `settings` (extra keys allowed) and round-trip unchanged."""
+    token = register(api).json()["token"]
+    d = doc()
+    d["settings"].update({
+        "preferences": {"version": 1, "units": {"wind": "ms", "pressure": "hpa", "precip": "mm", "distance": "km"},
+                        "metricOrder": ["wind", "uv"], "hiddenMetrics": [], "textScale": 1.15,
+                        "highContrast": False, "reduceMotion": True},
+        "alerts": {"rainProbability": 60, "places": {PLACE: {"enabled": False, "thresholds": {"wind": 50}}}},
+        "deleted_places": {PLACE2: 1_700_000_000_000},
+        "places_added_at": {PLACE: 1_690_000_000_000},
+    })
+    assert put(api, token, 0, d).status_code == 200
+    got = api.get("/me/data", headers=bearer(token)).json()["data"]["settings"]
+    for k in ("preferences", "alerts", "deleted_places", "places_added_at"):
+        assert got[k] == d["settings"][k]
+
+
 def test_sync_rejects_fake_location_and_bad_schema(api):
     token = register(api).json()["token"]
     r = put(api, token, 0, doc((PLACE, "phuong-khong-ton-tai")))

@@ -538,7 +538,11 @@ class TripProvider extends ChangeNotifier {
           : '${place.name}$nowText';
       for (final e in events) {
         if (!_notifiedKeys.add('free|${e.key}')) continue;
-        await _emit('${e.type.label} tại ${place.name}', e.title, e.detail);
+        await _emit(
+          '${e.type.label} tại ${place.name}',
+          e.title,
+          e.detailFor(_units()),
+        );
       }
     } on ApiException catch (e) {
       _status = e.message;

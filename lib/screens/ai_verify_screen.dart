@@ -2,11 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/weather.dart';
+import '../providers/preferences_provider.dart';
 import '../providers/weather_provider.dart';
 import '../services/api_service.dart';
 import '../ui/weather/widgets/glass_page.dart';
 import '../utils/constants.dart';
-import '../utils/formatters.dart';
 import '../widgets/ai_forecast_card.dart';
 import 'forecast/forecast_format.dart';
 
@@ -351,7 +351,7 @@ class _HorizonCard extends StatelessWidget {
     } else {
       final mm = item.actualPrecipitation == null
           ? ''
-          : ' (${WeatherFormat.rainMm(item.actualPrecipitation)})';
+          : ' (${PreferencesProvider.unitsOf(context).rainText(item.actualPrecipitation)})';
       actualRain = '${item.actualRain! ? 'Có mưa' : 'Không mưa'}$mm';
     }
 

@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:sky_weather_app/models/units.dart';
+import 'package:sky_weather_app/models/weather_alerts.dart';
 
 void main() {
   group('Beaufort (km/h)', () {
@@ -117,5 +118,29 @@ void main() {
       const UnitPrefs(),
     );
     expect(UnitPrefs.fromJson(null), const UnitPrefs());
+  });
+  test('canh bao: chi phan hien thi doi don vi, nguong giu goc', () {
+    AlertEvent ev(AlertType t, double peak, {bool observed = false}) =>
+        AlertEvent(
+          type: t,
+          level: AlertLevel.warning,
+          placeId: 'p',
+          start: DateTime(2026, 1, 1, 15),
+          end: DateTime(2026, 1, 1, 18),
+          peak: peak,
+          observed: observed,
+        );
+    const ms = UnitPrefs(wind: WindUnit.ms, precip: PrecipUnit.inch);
+    expect(ev(AlertType.wind, 72).peakTextFor(ms), 'Giật tới 20 m/s');
+    expect(ev(AlertType.wind, 72).peakText, 'Giật tới 72 km/h');
+    expect(ev(AlertType.heavyRain, 25.4).peakTextFor(ms), 'Tới 1,00 in/h');
+    expect(ev(AlertType.rain, 2.54, observed: true).peakTextFor(ms), '0,10 in');
+  });
+
+  test('truc bieu do gio: Beaufort ve theo m/s', () {
+    const b = UnitPrefs(wind: WindUnit.beaufort);
+    expect(b.windAxisUnit, WindUnit.ms);
+    expect(b.windAxisValue(36), closeTo(10, 1e-9));
+    expect(const UnitPrefs().windAxisValue(36), 36);
   });
 }

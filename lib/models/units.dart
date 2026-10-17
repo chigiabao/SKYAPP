@@ -129,6 +129,16 @@ class UnitPrefs {
   /// "12 km/h", "3,3 m/s", "7 mph", "Cấp 3"; null -> "--".
   String windText(double? kmh) => kmh == null ? noData : _join(windParts(kmh));
 
+  /// Don vi truc bieu do gio (Beaufort khong tuyen tinh -> ve theo m/s).
+  WindUnit get windAxisUnit => wind == WindUnit.beaufort ? WindUnit.ms : wind;
+
+  /// Gia tri ve tren truc theo [windAxisUnit].
+  double windAxisValue(double kmh) => switch (windAxisUnit) {
+    WindUnit.ms => UnitConvert.kmhToMs(kmh),
+    WindUnit.mph => UnitConvert.kmhToMph(kmh),
+    _ => kmh,
+  };
+
   // ---- Ap suat ----
 
   UnitParts pressureParts(double hpa) {

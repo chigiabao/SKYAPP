@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../models/activities.dart';
 import '../models/weather.dart';
 import '../models/weather_alerts.dart';
+import '../providers/preferences_provider.dart';
 import '../ui/weather/design_tokens.dart';
 import '../ui/weather/glass_ink.dart';
 import '../ui/weather/widgets/glass_card.dart';
@@ -111,7 +112,7 @@ class AlertsSummaryBanner extends StatelessWidget {
                 child: Pressable(
                   onTap: onOpen,
                   semanticsLabel:
-                      '${top.level.label}: ${top.title}. ${top.detail}$more. '
+                      '${top.level.label}: ${top.title}. ${top.detailFor(PreferencesProvider.unitsOf(context))}$more. '
                       'Mở màn Cảnh báo',
                   child: ConstrainedBox(
                     constraints: const BoxConstraints(minHeight: Touch.min),
@@ -148,7 +149,7 @@ class AlertsSummaryBanner extends StatelessWidget {
                                 ),
                                 const SizedBox(height: 2),
                                 Text(
-                                  '${top.detail}$more',
+                                  '${top.detailFor(PreferencesProvider.unitsOf(context))}$more',
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: TypeScale.small.copyWith(
@@ -218,7 +219,8 @@ class AlertEventTile extends StatelessWidget {
     final ink = GlassInk.of(context);
     return Semantics(
       container: true,
-      label: '${event.level.label}: ${event.title}. ${event.detail}',
+      label:
+          '${event.level.label}: ${event.title}. ${event.detailFor(PreferencesProvider.unitsOf(context))}',
       excludeSemantics: true,
       child: ConstrainedBox(
         constraints: const BoxConstraints(minHeight: Touch.min),
@@ -245,7 +247,7 @@ class AlertEventTile extends StatelessWidget {
                       ),
                     ),
                     Text(
-                      event.detail,
+                      event.detailFor(PreferencesProvider.unitsOf(context)),
                       style: TypeScale.small.copyWith(color: ink.secondary),
                     ),
                   ],

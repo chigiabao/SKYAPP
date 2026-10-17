@@ -12,6 +12,7 @@ import '../models/weather_alerts.dart';
 import '../services/account_service.dart';
 import 'location_provider.dart';
 import 'planner_provider.dart';
+import 'preferences_provider.dart';
 import 'weather_provider.dart';
 
 /// Trang thai dong bo.
@@ -38,6 +39,12 @@ enum SyncState {
 ///   va thang), cai dat theo `updated_at` moi hon; thu lai MOT lan.
 /// - Mat mang: giu "cho day", thu lai sau [retryDelay] / lan doi tiep theo /
 ///   lan mo app sau.
+/// - Xoa dia diem: ghi "bia mo" (id + thoi diem, giu [tombstoneDays] ngay) de
+///   ban gop 409 / thiet bi khac khong lam dia diem song lai; them lai sau do
+///   thang bia mo.
+/// - [PreferencesProvider] (don vi, chi so trang chu, tro nang) di trong
+///   `settings.preferences`; nguong rieng theo dia diem trong
+///   `settings.alerts.places`.
 /// - 401: dang xuat em + bao (SnackBar qua [messengerKey] + [notice]).
 class AccountProvider extends ChangeNotifier {
   AccountProvider({
@@ -51,6 +58,10 @@ class AccountProvider extends ChangeNotifier {
        _clock = clock ?? DateTime.now;
 
   static const String metaKey = 'account_sync_meta_v1';
+
+  /// So ngay giu bia mo dia diem da xoa.
+  static const int tombstoneDays = 30;
+  static const int _tombstoneMs = tombstoneDays * 24 * 3600 * 1000;
 
   /// Gan vao MaterialApp.scaffoldMessengerKey de bao "phien het han" o moi
   /// man hinh.
@@ -70,6 +81,7 @@ class AccountProvider extends ChangeNotifier {
   LocationProvider? _lp;
   WeatherProvider? _wp;
   PlannerProvider? _pp;
+  PreferencesProvider? _prefs;
   Future<void>? _init;
 
   AuthSession? _session;
@@ -95,6 +107,10 @@ class AccountProvider extends ChangeNotifier {
   int _settingsAt = 0;
   int _activitiesAt = 0;
   Map<String, String> _baseline = const {};
+
+  /// Bia mo: id dia diem da xoa -> ms; va id -> ms lan them gan nhat.
+  Map<String, int> _deleted = {};
+  Map<String, int> _added = {};
 
   // --- Getters ---------------------------------------------------------------
 
@@ -125,18 +141,21 @@ class AccountProvider extends ChangeNotifier {
   Future<void> attach(
     LocationProvider lp,
     WeatherProvider wp,
-    PlannerProvider pp,
-  ) => _init ??= _start(lp, wp, pp);
+    PlannerProvider pp, {
+    PreferencesProvider? prefs,
+  }) => _init ??= _start(lp, wp, pp, prefs);
 
   Future<void> _start(
     LocationProvider lp,
     WeatherProvider wp,
     PlannerProvider pp,
+    PreferencesProvider? prefs,
   ) async {
     _lp = lp;
     _wp = wp;
     _pp = pp;
-    await Future.wait([lp.loadLocal(), pp.load()]);
+    _prefs = prefs;
+    await Future.wait([lp.loadLocal(), pp.load(), ?prefs?.load()]);
     await _loadMeta();
     final s = await _store.read();
     if (s != null && s.isExpired(_clock())) {
@@ -148,7 +167,7 @@ class AccountProvider extends ChangeNotifier {
     }
     _baseline = _sections();
     _ready = true;
-    for (final p in <ChangeNotifier>[lp, wp, pp]) {
+    for (final p in <ChangeNotifier>[lp, wp, pp, ?prefs]) {
       p.addListener(_onLocalChanged);
     }
     notifyListeners();
@@ -159,7 +178,7 @@ class AccountProvider extends ChangeNotifier {
   void dispose() {
     _debounceTimer?.cancel();
     _retryTimer?.cancel();
-    for (final p in <ChangeNotifier?>[_lp, _wp, _pp]) {
+    for (final p in <ChangeNotifier?>[_lp, _wp, _pp, _prefs]) {
       p?.removeListener(_onLocalChanged);
     }
     super.dispose();
@@ -211,6 +230,7 @@ class AccountProvider extends ChangeNotifier {
         'activity_favorites': [for (final f in pp.favorites) f.name],
         'activity_sensitivity': pp.sensitivity.name,
       },
+      if (_prefs != null) 'preferences': _prefs!.exportSettings(),
     };
   }
 
@@ -229,6 +249,8 @@ class AccountProvider extends ChangeNotifier {
       'updated_at': _settingsAt,
       'places_updated_at': _placesAt,
       'activities_updated_at': _activitiesAt,
+      'deleted_places': _pruned(_deleted, _now),
+      'places_added_at': _pruned(_added, _now),
     },
     'activities': _activitiesJson(),
     'habits_consent': _habitsConsent,
@@ -242,9 +264,29 @@ class AccountProvider extends ChangeNotifier {
     'habits': jsonEncode(_habitsConsent ? _pp!.habits.toJson() : null),
   };
 
+  static Set<String> _placeIds(String? json) {
+    final l = json == null ? null : jsonDecode(json);
+    return {for (final p in _maps(l)) '${p['id']}'};
+  }
+
+  /// Ghi bia mo / thoi diem them khi danh sach dia diem doi.
+  void _trackPlaces(String? before, String after) {
+    final old = _placeIds(before), now = _placeIds(after);
+    for (final id in old.difference(now)) {
+      _deleted[id] = _now;
+    }
+    for (final id in now.difference(old)) {
+      _added[id] = _now;
+      _deleted.remove(id);
+    }
+  }
+
   void _onLocalChanged() {
     if (!_ready || _applying) return;
     final now = _sections();
+    if (_baseline['places'] != now['places']) {
+      _trackPlaces(_baseline['places'], now['places']!);
+    }
     var changed = false;
     for (final e in now.entries) {
       if (_baseline[e.key] == e.value) continue;
@@ -298,6 +340,30 @@ class AccountProvider extends ChangeNotifier {
     ];
   }
 
+  /// Map id -> ms con han (bo muc qua [tombstoneDays] ngay).
+  static Map<String, int> _pruned(Map<String, int> m, int nowMs) => {
+    for (final e in m.entries)
+      if (nowMs - e.value <= _tombstoneMs) e.key: e.value,
+  };
+
+  static Map<String, int> _stamps(Map<String, dynamic>? doc, String key) {
+    final s = doc?['settings'];
+    final m = s is Map ? s[key] : null;
+    return {
+      if (m is Map)
+        for (final e in m.entries)
+          if (e.value is num) '${e.key}': (e.value as num).toInt(),
+    };
+  }
+
+  /// Gop hai map id -> ms, lay ms lon hon.
+  static Map<String, int> _maxStamps(
+    Map<String, int> a,
+    Map<String, int> b,
+  ) => {
+    for (final k in {...a.keys, ...b.keys}) k: math.max(a[k] ?? 0, b[k] ?? 0),
+  };
+
   static List<Map<String, dynamic>> _sortedPlaces(Object? l) => _maps(l)
     ..sort(
       (a, b) =>
@@ -311,16 +377,39 @@ class AccountProvider extends ChangeNotifier {
   /// dong hop theo id, ban moi hon dung truoc va thang khi trung. Thoi quen
   /// (neu ca hai dong y) lay so lon hon tung gio. `habits_consent` theo
   /// [local] (lua chon cua nguoi dung tren thiet bi nay).
+  ///
+  /// Bia mo (`settings.deleted_places`) hop hai ben; dia diem bi bo neu thoi
+  /// diem xoa sau lan them gan nhat (`settings.places_added_at`, thieu = 0).
+  /// Muc qua [tombstoneDays] ngay (theo [nowMs]) bi bo.
   static Map<String, dynamic> mergeDocuments(
     Map<String, dynamic> local,
     Map<String, dynamic> remote, {
     bool union = true,
+    int? nowMs,
   }) {
+    final now = nowMs ?? DateTime.now().millisecondsSinceEpoch;
+    final added = _pruned(
+      _maxStamps(
+        _stamps(local, 'places_added_at'),
+        _stamps(remote, 'places_added_at'),
+      ),
+      now,
+    );
+    final deleted = _pruned(
+      _maxStamps(
+        _stamps(local, 'deleted_places'),
+        _stamps(remote, 'deleted_places'),
+      ),
+      now,
+    )..removeWhere((id, t) => (added[id] ?? 0) > t);
     final localPlaces =
         _ts(local, 'places_updated_at') > _ts(remote, 'places_updated_at');
     final pNew = _sortedPlaces((localPlaces ? local : remote)['saved_places']);
     final pOld = _sortedPlaces((localPlaces ? remote : local)['saved_places']);
-    final places = union ? _unionById(pNew, pOld) : pNew;
+    final places = [
+      for (final p in union ? _unionById(pNew, pOld) : pNew)
+        if (!deleted.containsKey('${p['id']}')) p,
+    ];
 
     final localActs =
         _ts(local, 'activities_updated_at') >
@@ -340,6 +429,8 @@ class AccountProvider extends ChangeNotifier {
     ]) {
       settings[k] = math.max(_ts(local, k), _ts(remote, k));
     }
+    settings['deleted_places'] = deleted;
+    settings['places_added_at'] = added;
 
     final consent = local['habits_consent'] == true;
     final remoteHabits = remote['habits_consent'] == true
@@ -423,6 +514,12 @@ class AccountProvider extends ChangeNotifier {
           wp.setTemperatureUnit(t == 'c');
         }
       }
+      final prefs = _prefs, pj = s['preferences'];
+      if (prefs != null &&
+          pj is Map &&
+          jsonEncode(pj) != jsonEncode(prefs.exportSettings())) {
+        prefs.importSettings(Map<String, dynamic>.from(pj));
+      }
       if (pp != null) {
         final alerts = s['alerts'];
         final fav = s['activity_favorites'];
@@ -455,6 +552,8 @@ class AccountProvider extends ChangeNotifier {
       _placesAt = _ts(doc, 'places_updated_at');
       _settingsAt = _ts(doc, 'updated_at');
       _activitiesAt = _ts(doc, 'activities_updated_at');
+      _deleted = _stamps(doc, 'deleted_places');
+      _added = _stamps(doc, 'places_added_at');
     } finally {
       _applying = false;
     }
@@ -519,6 +618,7 @@ class AccountProvider extends ChangeNotifier {
         buildDocument(),
         data,
         union: _version == null,
+        nowMs: _now,
       );
       _apply(merged);
       _version = r.version;
@@ -537,7 +637,9 @@ class AccountProvider extends ChangeNotifier {
       r = await _put(s.token, _version!, buildDocument());
     } on SyncConflict catch (c) {
       final current = c.current.data;
-      if (current != null) _apply(mergeDocuments(buildDocument(), current));
+      if (current != null) {
+        _apply(mergeDocuments(buildDocument(), current, nowMs: _now));
+      }
       r = await _put(s.token, c.current.version, buildDocument());
     }
     _version = r.version;
@@ -744,6 +846,13 @@ class AccountProvider extends ChangeNotifier {
       _placesAt = i('places_at');
       _settingsAt = i('settings_at');
       _activitiesAt = i('activities_at');
+      Map<String, int> m(String k) => {
+        if (j[k] is Map)
+          for (final e in (j[k] as Map).entries)
+            if (e.value is int) '${e.key}': e.value as int,
+      };
+      _deleted = m('deleted_places');
+      _added = m('places_added_at');
       final last = j['last_synced'];
       _lastSynced = last is int
           ? DateTime.fromMillisecondsSinceEpoch(last)
@@ -763,6 +872,8 @@ class AccountProvider extends ChangeNotifier {
           'places_at': _placesAt,
           'settings_at': _settingsAt,
           'activities_at': _activitiesAt,
+          'deleted_places': _pruned(_deleted, _now),
+          'places_added_at': _pruned(_added, _now),
           'last_synced': _lastSynced?.millisecondsSinceEpoch,
         }),
       );

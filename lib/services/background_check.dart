@@ -7,6 +7,7 @@ import '../models/weather.dart';
 import '../providers/location_provider.dart';
 import '../providers/planner_provider.dart';
 import 'api_service.dart';
+import 'home_widget_service.dart';
 import 'notification_service.dart';
 
 /// Kiem tra dinh ky o nen (workmanager; Android khoang moi gio, iOS do
@@ -57,10 +58,22 @@ Future<int> runBackgroundCheck({
   final lp = LocationProvider(apiService: service, clock: clock);
   await lp.loadLocal();
   final now = HcmTime.now(clock);
+  final firstId = lp.pages.first.locationId;
   var sent = 0;
   for (final id in <String>{for (final p in lp.pages) p.locationId}) {
     try {
       final data = await service.fetchWeatherDataFor(id);
+      if (id == firstId) {
+        await pushHomeWidget(
+          HomeWidgetData.from(
+            placeName: lp.placeById(id).name,
+            data: data,
+            nowHcm: now,
+            formatTempValue: (c) =>
+                '${(app.isCelsius ? c : c * 9 / 5 + 32).round()}',
+          ),
+        );
+      }
       sent += (await planner.record(
         id,
         lp.placeById(id).name,

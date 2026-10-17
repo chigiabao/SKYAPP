@@ -34,12 +34,13 @@ jobs:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
       - run: flutter pub get
+      # Test golden gan @Tags(['golden']) (dart_test.yaml).
       - name: flutter test (tru golden)
-        run: flutter test $(find test -name '*_test.dart' ! -name '*golden_test.dart' | sort)
+        run: flutter test --exclude-tags golden
       # Anh golden tao tren Windows; khac font/anti-alias tren Linux nen khong chan build.
       - name: flutter test (golden, khong chan)
         continue-on-error: true
-        run: flutter test $(find test -name '*golden_test.dart')
+        run: flutter test --tags golden
 
   ios:
     runs-on: macos-latest

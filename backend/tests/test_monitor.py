@@ -151,6 +151,7 @@ class FakePopen:
     """Stands in for the training subprocess: writes the candidate model when it 'finishes'."""
     result = (0.4, 0.6, "cand-1")   # mae, f1, version; None = write nothing
     returncode = 0
+    ext_returncode = 0              # train_global_v3_ext.py
     gate = None                     # threading.Event to hold the job in 'running'
     calls = []
 
@@ -161,6 +162,13 @@ class FakePopen:
     def wait(self):
         if FakePopen.gate is not None:
             FakePopen.gate.wait(5)
+        if FakePopen.calls and FakePopen.calls[-1][1].endswith("train_global_v3_ext.py"):
+            ev_path = self.out / "evaluation_v3.json"   # ext merges new keys into the candidate's file
+            if ev_path.exists():
+                ev = json.loads(ev_path.read_text(encoding="utf-8"))
+                ev["_ext"] = {"wind_speed": {"enabled": True}}
+                ev_path.write_text(json.dumps(ev), encoding="utf-8")
+            return FakePopen.ext_returncode
         if FakePopen.result is not None:
             _write_model(self.out, *FakePopen.result)
         return FakePopen.returncode
@@ -175,6 +183,7 @@ def models(tmp_path, monkeypatch):
     reloads = []
     monkeypatch.setattr(monitor.ai_model, "reset_v3_cache", lambda: reloads.append(1))
     FakePopen.result, FakePopen.returncode, FakePopen.gate, FakePopen.calls = (0.4, 0.6, "cand-1"), 0, None, []
+    FakePopen.ext_returncode = 0
     monitor._jobs.clear()
     yield d, reloads
     monitor._jobs.clear()
@@ -199,6 +208,10 @@ def test_retrain_promotes_better_candidate_and_rollback(admin, models):
     cmd = FakePopen.calls[0]
     assert cmd[1].endswith("train_global_v3.py") and cmd[cmd.index("--out") + 1] == str(d / "v3_candidate")
     assert "--quick" in cmd
+    ext = FakePopen.calls[1]   # then the extension script on the SAME candidate dir (no --quick)
+    assert len(FakePopen.calls) == 2 and ext[1].endswith("train_global_v3_ext.py")
+    assert ext[ext.index("--out") + 1] == str(d / "v3_candidate") and "--quick" not in ext
+    assert "_ext" in json.loads((d / "v3" / "evaluation_v3.json").read_text())   # extended keys promoted
     assert _version(d / "v3") == "cand-1" and _version(d / "v3_prev") == "current"
     assert not (d / "v3_candidate").exists() and reloads == [1]
     assert job["candidate_score"]["temperature_mae"] == 0.4 and job["current_score"]["temperature_mae"] == 0.5
@@ -219,7 +232,12 @@ def test_retrain_rejects_worse_or_broken_candidate(admin, models):
     FakePopen.result = None   # script "succeeded" but wrote nothing
     assert _run_job(admin)["status"] == "rejected"
     FakePopen.returncode = 1
+    FakePopen.calls = []
     assert _run_job(admin)["status"] == "failed"
+    assert len(FakePopen.calls) == 1   # ext script skipped when the base training failed
+    FakePopen.returncode, FakePopen.result, FakePopen.ext_returncode = 0, (0.4, 0.6, "cand-2"), 1
+    job = _run_job(admin)
+    assert job["status"] == "failed" and job["step"] == "train_global_v3_ext.py"   # ext failed: no promotion
     assert _version(d / "v3") == "current"
     assert admin.post("/admin/rollback", headers=ADMIN).status_code == 409   # no v3_prev yet
 

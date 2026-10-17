@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../config/api_config.dart';
 import '../models/weather.dart';
+import 'app_version.dart';
 
 /// Phan hoi nguoi dung (nhom 10). Backend: backend/routers/feedback.py.
 ///
@@ -14,8 +15,8 @@ import '../models/weather.dart';
 /// thay du lieu quan trac. Khong bao gio gui toa do GPS: payload chi gom cac
 /// truong liet ke trong [FeedbackDraft.toPayload].
 
-/// Phien ban app hien thi (khong dung package_info_plus; khop pubspec).
-const String kAppVersion = '1.0.0';
+/// Phien ban app hien hanh (package_info_plus, xem [AppVersion]).
+String get kAppVersion => AppVersion.current;
 
 /// Ten nen tang ngan gui kem phan hoi.
 String currentPlatformName() => kIsWeb ? 'web' : defaultTargetPlatform.name;
@@ -82,10 +83,7 @@ class FeedbackDraft {
   final Map<String, Object?>? snapshot;
 
   /// Body cho POST /feedback. Danh sach truong co dinh: khong co lat/lon.
-  Map<String, Object?> toPayload({
-    String appVersion = kAppVersion,
-    String? platform,
-  }) {
+  Map<String, Object?> toPayload({String? appVersion, String? platform}) {
     final wrong = kind == FeedbackKind.wrongForecast;
     final msg = message.trim();
     return {
@@ -100,7 +98,7 @@ class FeedbackDraft {
           if (feel != null) 'temperature_feel': feel!.json,
         },
       if (snapshot != null) 'forecast_snapshot': snapshot,
-      'app_version': appVersion,
+      'app_version': appVersion ?? kAppVersion,
       'platform': platform ?? currentPlatformName(),
     };
   }
@@ -202,7 +200,7 @@ class FeedbackService {
     http.Client? client,
     this._baseUrl,
     this.timeout = ApiConfig.timeout,
-    this.appVersion = kAppVersion,
+    this._appVersion,
     String? platform,
   }) : _client = client ?? http.Client(),
        platform = platform ?? currentPlatformName();
@@ -215,7 +213,10 @@ class FeedbackService {
   /// Doc moi lan goi: ApiConfig.baseUrl co the doi luc chay.
   String get baseUrl => _baseUrl ?? ApiConfig.baseUrl;
   final Duration timeout;
-  final String appVersion;
+  final String? _appVersion;
+
+  /// Mac dinh: phien ban that cua app ([AppVersion.current]).
+  String get appVersion => _appVersion ?? kAppVersion;
   final String platform;
 
   /// Gui phan hoi. Thanh cong -> xoa nhap. Mat mang / may chu loi -> luu

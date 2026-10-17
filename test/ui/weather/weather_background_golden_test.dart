@@ -1,3 +1,7 @@
+// Anh golden tao tren Windows: CI Linux/macOS chay `--exclude-tags golden`.
+@Tags(['golden'])
+library;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sky_weather_app/ui/weather/painters/lightning_painter.dart';

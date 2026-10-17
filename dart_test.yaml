@@ -1,0 +1,4 @@
+# Tag cho test so anh golden (anh tao tren Windows, khac font / anti-alias tren
+# Linux / macOS). CI: `flutter test --exclude-tags golden`.
+tags:
+  golden: {}

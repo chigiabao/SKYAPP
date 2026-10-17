@@ -11,7 +11,9 @@ import 'providers/preferences_provider.dart';
 import 'providers/trip_provider.dart';
 import 'providers/weather_provider.dart';
 import 'screens/home_screen.dart';
+import 'services/app_version.dart';
 import 'services/background_check.dart';
+import 'services/home_widget_service.dart';
 import 'services/notification_service.dart';
 import 'ui/weather/app_scene.dart';
 import 'ui/weather/weather_background.dart';
@@ -25,6 +27,8 @@ Future<void> main() async {
   final settings = await AppSettings.load();
   // URL may chu nguoi dung tu dat (Cai dat > Nang cao), neu co.
   await ApiConfig.loadBaseUrl();
+  // Phien ban that (package_info_plus) cho Cai dat / phan hoi.
+  await AppVersion.load();
 
   runApp(SkyWeatherApp(initialSettings: settings));
 }
@@ -72,6 +76,15 @@ class SkyWeatherApp extends StatelessWidget {
             alertSettings: () => context.read<PlannerProvider>().settings,
           )..load(),
         ),
+        // Widget man hinh chinh (Android; iOS chi luu du lieu; web bo qua).
+        Provider<HomeWidgetUpdater>(
+          lazy: false,
+          create: (context) => HomeWidgetUpdater(
+            context.read<WeatherProvider>(),
+            context.read<LocationProvider>(),
+          ),
+          dispose: (_, u) => u.dispose(),
+        ),
         // Tai khoan tuy chon + dong bo (nhom 9).
         ChangeNotifierProvider(
           create: (context) => AccountProvider()
@@ -79,6 +92,7 @@ class SkyWeatherApp extends StatelessWidget {
               context.read<LocationProvider>(),
               context.read<WeatherProvider>(),
               context.read<PlannerProvider>(),
+              prefs: context.read<PreferencesProvider>(),
             ),
         ),
       ],

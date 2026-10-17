@@ -12,6 +12,7 @@ import '../providers/location_provider.dart';
 import '../providers/planner_provider.dart';
 import '../providers/preferences_provider.dart';
 import '../providers/weather_provider.dart';
+import '../services/app_version.dart';
 import 'account_screen.dart';
 import 'feedback_screen.dart';
 import '../ui/weather/app_scene.dart';
@@ -121,7 +122,7 @@ class SettingsScreen extends StatelessWidget {
                 _SettingsTile(
                   icon: Icons.info_outline_rounded,
                   title: 'Phiên bản',
-                  subtitle: '1.0.0',
+                  subtitle: AppVersion.current,
                 ),
                 const Divider(height: 1),
                 _SettingsTile(

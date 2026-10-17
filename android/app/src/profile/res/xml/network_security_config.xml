@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Ban debug/profile (ghi de ban main): cho phep http toi moi dia chi de
+     demo voi backend trong LAN. Ban release dung src/main/res/xml. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

@@ -1,0 +1,15 @@
+[12:58:46] rows=2,278,046 cells=67 holdout=31 load=18s
+[12:58:47] train=930,143 val=272,958 test=1,051,629 test_cells=67 late=0
+[12:59:30] full temp 1h: iters=449 (42s)
+[12:59:55] full rain 1h: iters=248 (26s)
+[13:01:19] full temp 3h: iters=1248 (84s)
+[13:01:45] full rain 3h: iters=286 (26s)
+[13:02:52] full temp 6h: iters=1156 (67s)
+[13:03:15] full rain 6h: iters=190 (23s)
+[13:04:25] holdout temp 1h: iters=782 (35s)
+[13:04:41] holdout rain 1h: iters=190 (15s)
+[13:05:06] holdout temp 3h: iters=565 (25s)
+[13:05:18] holdout rain 3h: iters=152 (12s)
+[13:05:52] holdout temp 6h: iters=876 (34s)
+[13:06:03] holdout rain 6h: iters=103 (10s)
+[13:06:20] done in 472s

@@ -1,8 +1,11 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../models/weather.dart';
+import '../providers/preferences_provider.dart';
 import '../providers/weather_provider.dart';
 import '../screens/ai_verify_screen.dart';
 import '../screens/forecast/forecast_format.dart';
@@ -63,9 +66,7 @@ class AIForecastCard extends StatelessWidget {
           ),
         ),
       ),
-      footer:
-          '% = khả năng mưa. Mô hình LightGBM của nhóm, học từ dữ liệu '
-          'Open-Meteo; chỉ mang tính tham khảo.',
+      footer: _footer(f),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -99,15 +100,55 @@ class AIForecastCard extends StatelessWidget {
                         color: Palette.divider,
                       ),
                     Expanded(
-                      child: _PredictionColumn(prediction: f.predictions[i]),
+                      child: _PredictionColumn(
+                        prediction: f.predictions[i],
+                        forecast: f,
+                        domain: _domain(f),
+                      ),
                     ),
                   ],
                 ],
               ),
             ),
+          if (f != null && _showsInterval(f)) ...[
+            const SizedBox(height: Space.s),
+            AIIntervalNote(forecast: f),
+          ],
         ],
       ),
     );
+  }
+
+  static bool _showsInterval(AIForecast f) =>
+      f.isEnabled('temperature_interval') &&
+      f.predictions.any((p) => p.hasInterval);
+
+  String _footer(AIForecast? f) {
+    final rain = f == null || f.isEnabled('rain_probability')
+        ? '% = khả năng mưa. '
+        : '';
+    return '${rain}Mô hình LightGBM của nhóm, học từ dữ liệu '
+        'Open-Meteo; chỉ mang tính tham khảo.';
+  }
+
+  /// Mien chung (do C) cho thanh khoang: tu p10 thap nhat toi p90 cao nhat.
+  static (double, double)? _domain(AIForecast f) {
+    if (!_showsInterval(f)) return null;
+    double? lo, hi;
+    for (final p in f.predictions) {
+      for (final v in [p.temperature, p.temperatureP10, p.temperatureP90]) {
+        if (v == null) continue;
+        lo = lo == null || v < lo ? v : lo;
+        hi = hi == null || v > hi ? v : hi;
+      }
+    }
+    if (lo == null || hi == null) return null;
+    // Tranh mien qua hep lam thanh khoang trong qua to.
+    if (hi - lo < 2) {
+      final mid = (hi + lo) / 2;
+      return (mid - 1, mid + 1);
+    }
+    return (lo, hi);
   }
 
   String _subtitle(BuildContext context) {
@@ -222,32 +263,156 @@ class _UnavailableState extends StatelessWidget {
   }
 }
 
+/// Do phu thuc te cua khoang p10-p90 (%, lam tron) - lay tu
+/// `uncertainty_note` ("~77% số lần"), neu thieu thi tu danh gia o luoi.
+int? intervalCoveragePercent(AIPrediction p, AIEvaluation? e) {
+  final note = p.uncertaintyNote;
+  if (note != null) {
+    final m = RegExp(r'~\s*(\d{1,3})\s*%').firstMatch(note);
+    if (m != null) return int.parse(m.group(1)!);
+  }
+  final c = e?.intervalCoverage[p.timeLabel];
+  return c == null ? null : (c * 100).round();
+}
+
+/// Giai thich ngan khoang trong ngoac + nut (i) hien nguyen van
+/// `uncertainty_note` cua backend.
+class AIIntervalNote extends StatelessWidget {
+  const AIIntervalNote({super.key, required this.forecast});
+
+  final AIForecast forecast;
+
+  static String text(AIForecast f) {
+    final first = f.predictions.where((p) => p.hasInterval).firstOrNull;
+    final cov = first == null
+        ? null
+        : intervalCoveragePercent(first, f.evaluation);
+    final covText = cov == null
+        ? ''
+        : ', kiểm chứng thực tế rơi vào khoảng ~$cov% số lần';
+    return 'Trong ngoặc: khoảng p10–p90$covText. Đây là mức bất định, '
+        'không phải điểm độ chính xác.';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ink = GlassInk.of(context);
+    final notes = [
+      for (final p in forecast.predictions)
+        if (p.uncertaintyNote != null)
+          'Sau ${p.timeLabel}: ${p.uncertaintyNote}',
+    ];
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.only(top: Space.xs),
+            child: Text(
+              text(forecast),
+              style: TypeScale.small.copyWith(
+                fontSize: 13,
+                color: ink.secondary,
+              ),
+            ),
+          ),
+        ),
+        if (notes.isNotEmpty)
+          Tooltip(
+            message: notes.join('\n\n'),
+            triggerMode: TooltipTriggerMode.tap,
+            showDuration: const Duration(seconds: 8),
+            child: Semantics(
+              button: true,
+              label: 'Giải thích khoảng nhiệt độ',
+              child: SizedBox(
+                width: Touch.min,
+                height: Touch.min,
+                child: Icon(
+                  Icons.info_outline_rounded,
+                  size: IconSizes.md,
+                  color: ink.secondary,
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
 /// Mot cot moc du bao (khong co nen rieng - tranh "the trong the").
 class _PredictionColumn extends StatelessWidget {
   final AIPrediction prediction;
+  final AIForecast forecast;
 
-  const _PredictionColumn({required this.prediction});
+  /// Mien nhiet do (do C) chung cho thanh khoang; null = khong ve.
+  final (double, double)? domain;
+
+  const _PredictionColumn({
+    required this.prediction,
+    required this.forecast,
+    this.domain,
+  });
 
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<WeatherProvider>();
+    final units = PreferencesProvider.unitsOf(context);
     final ink = GlassInk.of(context);
-    final target = prediction.targetTime;
+    final p = prediction;
+    final target = p.targetTime;
     final targetText = target == null
-        ? 'Sau ${prediction.timeLabel}'
+        ? 'Sau ${p.timeLabel}'
         : ForecastFormat.targetTime(target, provider.nowHcm);
+    final showInterval =
+        forecast.isEnabled('temperature_interval') && p.hasInterval;
+    final showRain = forecast.isEnabled('rain_probability');
+    String t(double c) => provider.formatTempValue(c);
+    final rangeText = showInterval
+        ? '${t(p.temperatureP10!)}–${t(p.temperatureP90!)}°'
+        : null;
+
+    final extras = <(IconData, String, String)>[
+      if (forecast.isEnabled('humidity') && p.humidity != null)
+        (Icons.opacity_rounded, 'Ẩm', '${p.humidity!.round()}%'),
+      if (forecast.isEnabled('wind_speed') && p.windSpeed != null)
+        (Icons.air_rounded, 'Gió', units.windText(p.windSpeed)),
+      if (forecast.isEnabled('wind_gusts') && p.windGusts != null)
+        (Icons.storm_outlined, 'Giật', units.windText(p.windGusts)),
+      if (forecast.isEnabled('precipitation_mm') && p.precipitationMm != null)
+        (Icons.umbrella_outlined, 'Mưa', units.rainText(p.precipitationMm)),
+    ];
+
+    final semantics = StringBuffer(
+      'Lúc $targetText (sau ${p.timeLabel}): '
+      '${provider.formatTemperature(p.temperature)}',
+    );
+    if (rangeText != null) {
+      semantics.write(
+        ', khoảng p10 đến p90 từ ${t(p.temperatureP10!)} '
+        'đến ${t(p.temperatureP90!)} độ',
+      );
+    }
+    if (showRain) semantics.write(', khả năng mưa ${p.rainPercent}%');
+    for (final e in extras) {
+      semantics.write(', ${e.$2.toLowerCase()} ${e.$3}');
+    }
+
+    final small = TypeScale.small.copyWith(
+      fontSize: 13,
+      color: ink.secondary,
+      fontFeatures: kTabular,
+    );
 
     return Semantics(
-      label:
-          'Lúc $targetText (sau ${prediction.timeLabel}): '
-          '${provider.formatTemperature(prediction.temperature)}, '
-          'khả năng mưa ${prediction.rainPercent}%',
+      label: semantics.toString(),
       excludeSemantics: true,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'SAU ${prediction.timeLabel.toUpperCase()}',
+            'SAU ${p.timeLabel.toUpperCase()}',
             style: TypeScale.cardTitle.copyWith(color: ink.title),
           ),
           const SizedBox(height: 2),
@@ -267,38 +432,165 @@ class _PredictionColumn extends StatelessWidget {
             fit: BoxFit.scaleDown,
             alignment: Alignment.centerLeft,
             child: Text(
-              '${provider.formatTempValue(prediction.temperature)}°',
+              '${t(p.temperature)}°',
               style: TypeScale.bigValue.copyWith(color: Palette.white),
             ),
           ),
-          const Spacer(),
-          const SizedBox(height: Space.s),
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            alignment: Alignment.centerLeft,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.water_drop_outlined, size: 14, color: ink.rain),
-                const SizedBox(width: 2),
-                Text(
-                  '${prediction.rainPercent}%',
-                  style: TypeScale.small.copyWith(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: ink.rain,
-                    fontFeatures: kTabular,
-                  ),
-                ),
-              ],
+          if (rangeText != null) ...[
+            Text(
+              '($rangeText)',
+              style: small.copyWith(
+                fontWeight: FontWeight.w600,
+                color: Palette.white,
+              ),
             ),
-          ),
-          const SizedBox(height: Space.xs),
-          _RainBar(percent: prediction.rainPercent, color: ink.rain),
+            if (domain != null) ...[
+              const SizedBox(height: Space.xs),
+              _IntervalBar(
+                domain: domain!,
+                low: p.temperatureP10!,
+                high: p.temperatureP90!,
+                point: p.temperature,
+                color: ink.accent,
+              ),
+            ],
+          ],
+          const SizedBox(height: Space.s),
+          if (showRain) ...[
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.water_drop_outlined, size: 14, color: ink.rain),
+                  const SizedBox(width: 2),
+                  Text(
+                    '${p.rainPercent}%',
+                    style: TypeScale.small.copyWith(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: ink.rain,
+                      fontFeatures: kTabular,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: Space.xs),
+            _RainBar(percent: p.rainPercent, color: ink.rain),
+          ],
+          if (extras.isNotEmpty) ...[
+            const SizedBox(height: Space.s),
+            for (final e in extras)
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Icon(e.$1, size: 14, color: ink.secondary),
+                    ),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        // Giu so + don vi tren cung dong khi xuong dong.
+                        '${e.$2} ${e.$3.replaceAll(' ', String.fromCharCode(0x00A0))}',
+                        style: small,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+          const Spacer(),
         ],
       ),
     );
   }
+}
+
+/// Thanh nho: vach p10-p90 tren mien chung cua 3 moc, cham = gia tri du bao.
+class _IntervalBar extends StatelessWidget {
+  const _IntervalBar({
+    required this.domain,
+    required this.low,
+    required this.high,
+    required this.point,
+    required this.color,
+  });
+
+  final (double, double) domain;
+  final double low;
+  final double high;
+  final double point;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    // CustomPaint thay LayoutBuilder: cot nam trong IntrinsicHeight.
+    return SizedBox(
+      height: 8,
+      width: double.infinity,
+      child: CustomPaint(
+        painter: _IntervalPainter(
+          domain: domain,
+          low: low,
+          high: high,
+          point: point,
+          color: color,
+        ),
+      ),
+    );
+  }
+}
+
+class _IntervalPainter extends CustomPainter {
+  _IntervalPainter({
+    required this.domain,
+    required this.low,
+    required this.high,
+    required this.point,
+    required this.color,
+  });
+
+  final (double, double) domain;
+  final double low;
+  final double high;
+  final double point;
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final (lo, hi) = domain;
+    final span = hi - lo;
+    final w = size.width;
+    double x(double v) =>
+        (span <= 0 ? 0.5 : ((v - lo) / span).clamp(0.0, 1.0)) * w;
+    final cy = size.height / 2;
+    final r = const Radius.circular(Radii.bar);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(Rect.fromLTWH(0, cy - 2, w, 4), r),
+      Paint()..color = Palette.track,
+    );
+    final a = x(low);
+    final b = math.max(x(high), math.min(a + 4, w));
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(Rect.fromLTRB(a, cy - 2, b, cy + 2), r),
+      Paint()..color = color,
+    );
+    final px = x(point).clamp(4.0, math.max(4.0, w - 4)).toDouble();
+    canvas.drawCircle(Offset(px, cy), 4, Paint()..color = Palette.white);
+  }
+
+  @override
+  bool shouldRepaint(_IntervalPainter old) =>
+      old.domain != domain ||
+      old.low != low ||
+      old.high != high ||
+      old.point != point ||
+      old.color != color;
 }
 
 class _RainBar extends StatelessWidget {

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../models/units.dart';
 import '../models/weather.dart';
 import '../providers/preferences_provider.dart';
 import '../providers/weather_provider.dart';
@@ -192,6 +193,69 @@ class _EvaluationCard extends StatelessWidget {
   final AIEvaluation? evaluation;
   final WeatherProvider provider;
 
+  static const Map<String, String> _targetNames = {
+    'humidity': 'độ ẩm',
+    'wind_speed': 'gió',
+    'wind_gusts': 'gió giật',
+    'precipitation_mm': 'lượng mưa',
+  };
+
+  /// MAE theo don vi dang chon (goc %, km/h, mm).
+  static String _maeText(String target, double v, UnitPrefs u) {
+    String dec(double x, int d) => x.toStringAsFixed(d).replaceAll('.', ',');
+    switch (target) {
+      case 'humidity':
+        return '±${dec(v, 1)}%';
+      case 'wind_speed':
+      case 'wind_gusts':
+        // Beaufort khong tuyen tinh -> sai so hien theo m/s.
+        return '±${dec(u.windAxisValue(v), 1)} ${u.windAxisUnit.label}';
+      default:
+        return u.precip == PrecipUnit.mm
+            ? '±${dec(v, 2)} mm'
+            : '±${dec(UnitConvert.mmToInch(v), 3)} in';
+    }
+  }
+
+  /// Dong MAE cac muc tieu moi + do phu khoang p10-p90 (neu co).
+  List<Widget> _extraLines(BuildContext context, AIEvaluation e) {
+    final theme = Theme.of(context);
+    final units = PreferencesProvider.unitsOf(context);
+    final body = AppTextStyles.bodyMedium.copyWith(
+      color: theme.textTheme.bodyLarge?.color,
+      fontFeatures: const [FontFeature.tabularFigures()],
+    );
+    final lines = <String>[];
+    for (final t in AIEvaluation.extraTargets) {
+      final m = e.targetMae[t];
+      if (!e.isEnabled(t) || m == null || m.isEmpty) continue;
+      final parts = [
+        for (final h in m.entries) '${_maeText(t, h.value, units)} (${h.key})',
+      ];
+      lines.add('Sai số ${_targetNames[t]}: ${parts.join(' · ')}');
+    }
+    final cov = e.intervalCoverage;
+    if (e.isEnabled('temperature_interval') && cov.isNotEmpty) {
+      final parts = [
+        for (final h in cov.entries) '${(h.value * 100).round()}% (${h.key})',
+      ];
+      final nominal = e.intervalNominalCoverage;
+      final goal = nominal == null
+          ? ''
+          : ' (mục tiêu ${(nominal * 100).round()}%)';
+      lines.add(
+        'Khoảng nhiệt độ p10–p90 phủ ${parts.join(' · ')} trên tập kiểm '
+        'tra$goal. Đây là mức bất định, không phải điểm độ chính xác.',
+      );
+    }
+    return [
+      for (final l in lines) ...[
+        const SizedBox(height: AppSizes.paddingS),
+        Text(l, style: body),
+      ],
+    ];
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -250,6 +314,7 @@ class _EvaluationCard extends StatelessWidget {
                 ],
               ),
             ],
+            if (e != null) ..._extraLines(context, e),
             const SizedBox(height: AppSizes.paddingS),
             Text(
               e == null

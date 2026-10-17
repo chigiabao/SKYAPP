@@ -1,6 +1,6 @@
 # Câu hỏi bảo vệ dự kiến và gợi ý trả lời
 
-Số liệu lấy từ `notebooks/weather_forecasting.ipynb` (v2), `notebooks/global_model.ipynb` và `backend/models/v3/` (v3). Chi tiết xem [bao_cao.md](bao_cao.md).
+Số liệu lấy từ `notebooks/weather_forecasting.ipynb` (v2), `notebooks/global_model.ipynb` và `backend/models/v3/` (v3, gồm `extension_v3.json`). Chi tiết xem [bao_cao.md](bao_cao.md).
 
 ---
 
@@ -20,7 +20,7 @@ TP.HCM mới sau sáp nhập 2025 với Bình Dương và Bà Rịa – Vũng T�
 
 **4. Danh sách theo giờ và theo ngày trong app có phải dự báo không?**
 
-Một phần. Backend ghép theo thứ tự: các giờ đã có dữ liệu, rồi dự báo Open-Meteo mới nhất (cập nhật mỗi giờ), cuối cùng là trung bình nhiều năm nếu vẫn thiếu. Mỗi mục có trường `source` và app hiển thị huy hiệu nguồn tương ứng. Ô chưa đủ khoảng 3 năm dữ liệu thì dùng trung bình nhiều năm của `tsn`.
+Một phần. Backend ghép theo thứ tự: các giờ đã có dữ liệu, rồi dự báo Open-Meteo mới nhất (cập nhật mỗi giờ), cuối cùng là trung bình nhiều năm nếu vẫn thiếu. Mỗi mục có trường `source` và app hiển thị huy hiệu nguồn tương ứng. Ô chưa đủ khoảng 2 năm dữ liệu (sau khi ghép lịch sử backfill) thì dùng trung bình nhiều năm của `tsn`.
 
 **5. Dữ liệu được cập nhật thế nào?**
 
@@ -28,7 +28,7 @@ Backend chạy ingest khi khởi động rồi mỗi giờ vào phút 05, cho 68
 
 **6. App có thu thập vị trí người dùng không?**
 
-App chỉ dùng GPS để hỏi backend phường/xã nào chứa vị trí, sau đó chỉ lưu **id phường/xã**, không lưu tọa độ. Không có tài khoản, không đăng nhập.
+App chỉ dùng GPS để hỏi backend phường/xã nào chứa vị trí, sau đó chỉ lưu **id phường/xã**, không lưu tọa độ. Backend nhận tọa độ trong yêu cầu nhưng không ghi lại. Mọi chức năng dùng được không cần đăng nhập; tài khoản là tuỳ chọn và dữ liệu đồng bộ không chứa tọa độ. Lịch sử chuyến đi chỉ lưu id phường đầu/cuối, không lưu vết GPS.
 
 ## B. Mô hình AI
 
@@ -95,7 +95,7 @@ Nguồn đường bờ biển tự động không có sẵn lúc huấn luyện,
 
 **20. Đề bài có 11 nhóm chức năng, nhóm đã làm được bao nhiêu?**
 
-Đã làm phần chính của nhóm 1 (GPS, tìm kiếm, lưu có nhãn, sắp xếp, vuốt xoá, so sánh 2–3 nơi). Đã làm nhóm 4 (7 hoạt động, gợi ý khung giờ, lịch lặp lại, nhắc, học thói quen có đồng ý) và nhóm 5 (7 loại cảnh báo trên máy, thông báo Android, kiểm tra nền). Nhóm 7 làm phần chính: bản đồ OSM, lớp nhiệt độ và mưa, đánh dấu cảnh báo; backend có khung dự báo 0–72 giờ và trường gió, app có lớp gió và thanh thời gian; không có radar. Đã làm nhóm 2. Làm một phần các nhóm 3, 8, 9, 10, 11. Chưa làm nhóm 6.
+Đối chiếu 42 mục con của đề bài với code (17/10/2026): 38 đã xong, 4 một phần, không còn mục chưa làm. Bốn mục một phần: mục tiêu AI mở rộng và khoảng bất định đã có ở backend nhưng app chưa hiển thị; radar/vệ tinh (Open-Meteo không có radar, thay bằng khung dự báo theo giờ); widget chỉ có trên Android, chưa có đồng hồ thông minh.
 
 **21. Cảnh báo trên bản đồ có đáng tin không?**
 
@@ -103,7 +103,7 @@ Nguồn đường bờ biển tự động không có sẵn lúc huấn luyện,
 
 **22. Ứng dụng đã chạy trên điện thoại thật chưa? Có dùng được cho an toàn không?**
 
-Chưa ghi nhận kiểm thử trên điện thoại Android thật; cách kết nối qua Wi‑Fi bằng `--dart-define=API_BASE_URL=...` có trong README. Dự báo AI là thử nghiệm, không dùng cho mục đích an toàn.
+Android và web chạy được. iOS mới được kiểm chứng bằng build CI (IPA build thành công trên GitHub Actions), chưa có nhật ký chạy trên iPhone thật; chế độ chuyến đi chưa được thử trên đường thật. Kiểm thử tự động chạy ngày 17/10/2026: backend 195 passed, Flutter 439 passed và 4 skipped. Dự báo AI là thử nghiệm, không dùng cho mục đích an toàn.
 
 ## E. Cảnh báo, thói quen và bản đồ
 
@@ -117,7 +117,7 @@ Các giờ liên tiếp cùng loại được gộp thành một cảnh báo. N�
 
 **25. Vì sao bản đồ không có radar?**
 
-Open-Meteo, nguồn dữ liệu duy nhất của đồ án, không cung cấp ảnh radar. Thay vào đó, `/weather/map?offset_hours=0..72` trả các khung dự báo theo giờ từ lần dự báo mới nhất, kèm `source` và `valid_time` để ghi rõ đó là dự báo chứ không phải quan trắc. Thanh thời gian và lớp gió trong app đang được tích hợp.
+Open-Meteo, nguồn dữ liệu duy nhất của đồ án, không cung cấp ảnh radar. Thay vào đó, `/weather/map?offset_hours=0..72` trả các khung dự báo theo giờ từ lần dự báo mới nhất, kèm `source` và `valid_time` để ghi rõ đó là dự báo chứ không phải quan trắc. App có thanh thời gian 0–72 giờ với nút phát và lớp gió.
 
 **26. Chế độ xem lại tránh "nhìn trước đáp án" thế nào?**
 
@@ -126,3 +126,36 @@ Mọi endpoint nhận `at` chỉ dùng dữ liệu đến `at`. Riêng bản đ�
 **27. Dữ liệu thói quen có rời khỏi máy không?**
 
 Không. Học thói quen mặc định tắt và chỉ chạy khi người dùng bật. App chỉ đếm số lần mở app và số lần bấm "Đã làm" theo giờ trong ngày (0–23), không ghi vị trí, lưu trong bộ nhớ của app trên máy và không gửi lên server. Tắt thì app ngừng ghi; nút Xoá đưa dữ liệu về 0. Khung giờ được cộng điểm nhờ thói quen luôn ghi rõ "Hợp giờ quen".
+
+## F. Chức năng mới, bảo mật và nền tảng
+
+**28. Vì sao app không gọi thẳng OSRM mà đi qua backend?**
+
+- App chỉ cần biết một địa chỉ máy chủ; đổi nhà cung cấp tuyến đường không phải phát hành lại app.
+- Backend ghép tuyến với thời tiết: lấy mẫu khoảng mỗi 2 km, tính giờ đến dự kiến, tìm ô lưới và lấy thời tiết đúng giờ đó từ dữ liệu của chính backend. Làm trên máy thì phải tải dữ liệu của nhiều ô.
+- Tôn trọng giới hạn của máy chủ công cộng: backend gom yêu cầu, tối đa 1 yêu cầu/giây, có cache 256 tuyến và User-Agent riêng, và đếm số lần gọi để hiện ở `/admin/monitor`.
+- Chọn đúng máy chủ theo phương tiện: lái xe dùng `router.project-osrm.org`; xe đạp và đi bộ dùng `routing.openstreetmap.de`, vì máy chủ demo luôn tính đường cho ô tô.
+
+Hạn chế: máy chủ OSRM công cộng không cam kết hoạt động liên tục. Khi nó lỗi, chỉ chế độ có tuyến bị ảnh hưởng. Tọa độ điểm đi/đến vẫn được chuyển tới máy chủ OSRM.
+
+**29. Mật khẩu và token được bảo vệ thế nào?**
+
+- Mật khẩu: bcrypt 12 vòng trên base64(sha256(mật khẩu)). Bước sha256 tránh việc bcrypt cắt mật khẩu dài quá 72 byte. Tối đa 5 lần đăng nhập sai mỗi email trong 15 phút. Thông báo lỗi không cho biết email có tồn tại hay không, và email không tồn tại vẫn chạy một lần bcrypt để thời gian phản hồi như nhau.
+- Token: chuỗi ngẫu nhiên 32 byte, gửi qua header `Authorization: Bearer`. Máy chủ **chỉ lưu sha256 của token**, nên lộ cơ sở dữ liệu cũng không dùng lại được token. Token hết hạn sau 30 ngày; đăng xuất thì xoá ngay.
+- Trên máy: iOS lưu token trong Keychain, Android trong Keystore. **Web lưu trong localStorage**: nếu trang bị chèn mã độc (XSS) thì token có thể bị đọc. Đây là rủi ro đã biết; vì không dùng cookie nên không có lỗ hổng CSRF.
+
+**30. Hai thiết bị cùng sửa dữ liệu thì đồng bộ thế nào?**
+
+Mỗi tài khoản có một tài liệu JSON kèm số `version`. Khi lưu, app gửi `base_version` là phiên bản nó đã sửa từ đó. Nếu thiết bị khác đã lưu trước, máy chủ trả **409** kèm bản hiện tại. App gộp hai bản: địa điểm và lịch hoạt động gộp theo id (lấy hợp hai bên, bản sửa mới hơn thắng), cài đặt lấy bản có `updated_at` mới hơn, rồi gửi lại một lần. Khi xoá một địa điểm, app ghi một **tombstone** (id + thời điểm, giữ 30 ngày), để bản gộp hoặc thiết bị khác không làm địa điểm đó xuất hiện lại. Mất mạng thì app giữ thay đổi và gửi lại sau.
+
+**31. Khoảng p10–p90 lẽ ra chứa 80% giá trị thực, sao chỉ phủ khoảng 76%?**
+
+Trên test, độ phủ là 77,2 / 75,5 / 74,9% ở tầm 1 / 3 / 6 giờ. Mô hình phân vị thô chỉ phủ 75,0 / 74,2 / 74,3% trên validation, nên nhóm nới khoảng theo conformal (CQR) cho đủ 80% trên validation. Nhưng trên test (từ 2025), mô hình thô còn phủ thấp hơn nữa (72,1 / 69,5 / 69,0%), nên phần nới đã chọn không đủ. Nguyên nhân có thể là dữ liệu năm 2025–2026 khác nửa cuối 2024, và train của hầu hết ô chỉ khoảng 18 tháng. Nhóm không chỉnh lại theo test vì như vậy là dùng test để huấn luyện. Báo cáo và câu `uncertainty_note` của API đều ghi đúng độ phủ thực tế. Có thể cải thiện bằng cách chọn độ nới trên dữ liệu gần hơn hoặc cập nhật nó liên tục khi có dữ liệu mới.
+
+**32. Quy tắc "chỉ bật mục tiêu AI khi thắng mô hình cơ sở" cụ thể là gì?**
+
+Đề bài yêu cầu chỉ mở rộng dự báo lượng mưa, độ ẩm, gió **sau khi kiểm chứng chất lượng**. Với mỗi mục tiêu mới, một ô được tính là thắng khi mô hình tốt hơn **cả persistence lẫn climatology ở cả 3 tầm** 1 / 3 / 6 giờ trên test (độ ẩm, gió, gió giật dùng MAE; lượng mưa dùng RMSE). Mục tiêu chỉ được API trả về khi thắng ở **≥ 80% số ô**. Kết quả: độ ẩm 66/67, tốc độ gió 66/67 (ô thua là Côn Đảo), gió giật 67/67, lượng mưa 67/67, nên cả bốn được bật. Mục tiêu không qua cổng vẫn được đánh giá và ghi lại nhưng không trả về. Hạn chế: chưa có spatial holdout cho các mục tiêu này, và app chưa hiển thị chúng.
+
+**33. Nhóm không có máy Mac, làm sao cài app lên iPhone?**
+
+GitHub Actions có runner macOS. Workflow `.github/workflows/ios-ipa.yml` chạy `flutter build ios --release --no-codesign`, đóng gói file IPA chưa ký và đưa lên làm artifact. Người dùng tải IPA, ký bằng Apple ID trong 3uTools rồi cài, sau đó tin cậy nhà phát triển trong Cài đặt của iPhone (iOS 16 trở lên phải bật Chế độ nhà phát triển). Lần build gần nhất (17/10/2026) thành công. Với Apple ID miễn phí, app hết hạn sau 7 ngày, không có push từ server, không có widget iOS. Địa chỉ máy chủ đổi được trong app (Cài đặt → Máy chủ dữ liệu). Bản iOS mới được kiểm chứng bằng build CI, chưa có nhật ký chạy trên iPhone thật.

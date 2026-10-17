@@ -441,12 +441,38 @@ class AIPrediction {
   /// thieu thi tinh = issued_at + so gio cua moc. null neu khong suy ra duoc.
   final DateTime? targetTime;
 
+  /// Khoang p10-p90 nhiet do (do C); null neu backend cu khong gui.
+  final double? temperatureP10;
+  final double? temperatureP90;
+
+  /// Muc tieu phu (null = khong co): do am %, gio / gio giat km/h, mua mm.
+  final double? humidity;
+  final double? windSpeed;
+  final double? windGusts;
+  final double? precipitationMm;
+
+  /// Giai thich muc bat dinh (tieng Viet, tu backend).
+  final String? uncertaintyNote;
+
   const AIPrediction({
     required this.timeLabel,
     required this.temperature,
     required this.rainProbability,
     this.targetTime,
+    this.temperatureP10,
+    this.temperatureP90,
+    this.humidity,
+    this.windSpeed,
+    this.windGusts,
+    this.precipitationMm,
+    this.uncertaintyNote,
   });
+
+  /// Co khoang hop le (p10 <= p90).
+  bool get hasInterval =>
+      temperatureP10 != null &&
+      temperatureP90 != null &&
+      temperatureP10! <= temperatureP90!;
 
   /// "1h" -> 1, "6h" -> 6; null neu khong dung dinh dang.
   static int? horizonHours(String label) =>
@@ -471,12 +497,24 @@ class AIForecast {
   /// Danh gia mo hinh tai o luoi cua dia diem; null = chua co danh gia.
   final AIEvaluation? evaluation;
 
+  /// Muc tieu backend bat (`enabled_targets`); null = backend cu, hien moi
+  /// truong co du lieu.
+  final List<String>? enabledTargets;
+
   const AIForecast({
     required this.issuedAt,
     required this.predictions,
     required this.modelVersion,
     this.evaluation,
+    this.enabledTargets,
   });
+
+  /// Muc tieu [target] ("humidity", "temperature_interval", ...) co duoc bat.
+  /// Thieu o goc thi dung `evaluation.enabled_targets`.
+  bool isEnabled(String target) {
+    final t = enabledTargets ?? evaluation?.enabledTargets;
+    return t == null || t.contains(target);
+  }
 
   factory AIForecast.fromJson(Map<String, dynamic> json) {
     final raw = json['predictions'];
@@ -500,6 +538,13 @@ class AIForecast {
           targetTime:
               (target is String ? HcmTime.tryParse(target) : null) ??
               (hours == null ? null : issuedAt.add(Duration(hours: hours))),
+          temperatureP10: _toDouble(p['temperature_p10']),
+          temperatureP90: _toDouble(p['temperature_p90']),
+          humidity: _toDouble(p['humidity']),
+          windSpeed: _toDouble(p['wind_speed']),
+          windGusts: _toDouble(p['wind_gusts']),
+          precipitationMm: _toDouble(p['precipitation_mm']),
+          uncertaintyNote: _nonEmpty(p['uncertainty_note']),
         ),
       );
     }
@@ -508,7 +553,16 @@ class AIForecast {
       predictions: predictions,
       modelVersion: json['model_version']?.toString() ?? '',
       evaluation: AIEvaluation.tryParse(json['evaluation']),
+      enabledTargets: _stringList(json['enabled_targets']),
     );
+  }
+
+  static List<String>? _stringList(dynamic v) =>
+      v is List ? [for (final e in v) e.toString()] : null;
+
+  static String? _nonEmpty(dynamic v) {
+    final s = v?.toString().trim();
+    return s == null || s.isEmpty ? null : s;
   }
 }
 
@@ -521,9 +575,36 @@ class AIEvaluation {
     this.rainF1 = const {},
     this.beatsBaselines,
     this.testPeriod,
+    this.targetMae = const {},
+    this.intervalCoverage = const {},
+    this.intervalNominalCoverage,
+    this.enabledTargets,
   });
 
+  /// `enabled_targets` trong danh gia; null = khong co (backend cu).
+  final List<String>? enabledTargets;
+
+  bool isEnabled(String target) =>
+      enabledTargets == null || enabledTargets!.contains(target);
+
+  /// Muc tieu phu co MAE rieng (khoa trong [targetMae]).
+  static const List<String> extraTargets = [
+    'humidity',
+    'wind_speed',
+    'wind_gusts',
+    'precipitation_mm',
+  ];
+
   final String? cellId;
+
+  /// MAE muc tieu phu: target -> (moc -> MAE, don vi goc %, km/h, mm).
+  final Map<String, Map<String, double>> targetMae;
+
+  /// Ty le thuc te roi vao khoang p10-p90 tren tap kiem tra (0-1) theo moc.
+  final Map<String, double> intervalCoverage;
+
+  /// Do phu danh nghia cua khoang (vd 0,8); null neu khong co.
+  final double? intervalNominalCoverage;
 
   /// MAE nhiet do (do C) theo moc "1h" / "3h" / "6h".
   final Map<String, double> temperatureMae;
@@ -569,8 +650,26 @@ class AIEvaluation {
       final f = _toDouble(json['rain_f1_$h']);
       if (f != null) f1[h] = f;
     }
+    final targetMae = <String, Map<String, double>>{};
+    for (final t in extraTargets) {
+      final m = <String, double>{};
+      for (final h in AIForecast.horizons) {
+        final v = _toDouble(json['${t}_mae_$h']);
+        if (v != null) m[h] = v;
+      }
+      if (m.isNotEmpty) targetMae[t] = m;
+    }
+    final cov = <String, double>{};
+    for (final h in AIForecast.horizons) {
+      final v = _toDouble(json['temperature_interval_coverage_$h']);
+      if (v != null) cov[h] = v;
+    }
     final beats = json['beats_baselines'];
     return AIEvaluation(
+      targetMae: targetMae,
+      intervalCoverage: cov,
+      intervalNominalCoverage: _toDouble(json['interval_nominal_coverage']),
+      enabledTargets: AIForecast._stringList(json['enabled_targets']),
       cellId: json['cell_id']?.toString(),
       temperatureMae: mae,
       rainF1: f1,

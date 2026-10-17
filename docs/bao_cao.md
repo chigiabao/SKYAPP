@@ -6,6 +6,9 @@
 
 - **Giai đoạn 1 (v2, một điểm):** làm trọn một luồng đầu–cuối tại một điểm gần Tân Sơn Nhất: làm sạch dữ liệu, backend FastAPI, mô hình LightGBM dự báo nhiệt độ và khả năng mưa sau 1, 3, 6 giờ, ứng dụng Flutter.
 - **Giai đoạn 2 (v3, đa địa điểm):** mở rộng ra toàn bộ **TP.HCM mới** (sau sáp nhập 2025 với Bình Dương và Bà Rịa – Vũng Tàu): 168 phường/xã/đặc khu, dữ liệu cập nhật hằng giờ, một mô hình AI toàn cục cho mọi ô lưới, ứng dụng có chọn địa điểm, so sánh và bản đồ.
+- **Giai đoạn 3 (hoàn thiện chức năng):** khoảng bất định và mục tiêu AI mở rộng (có cổng kiểm chứng), cảnh báo khi di chuyển, cá nhân hoá, tài khoản tuỳ chọn, góp ý, giám sát và huấn luyện lại mô hình; build cho Android, web và iOS (qua GitHub Actions).
+
+Mã nguồn: https://github.com/chigiabao/SKYAPP.
 
 Mọi dữ liệu thời tiết trong đồ án là **đầu ra mô hình thời tiết của Open-Meteo, không phải số đo trạm quan trắc**.
 
@@ -15,15 +18,17 @@ Mọi dữ liệu thời tiết trong đồ án là **đầu ra mô hình thời
 |---|---|---|---|
 | 1 | Địa điểm | Đã làm phần chính | 168 phường/xã/đặc khu; chọn bằng GPS, tìm kiếm có/không dấu, lưu địa điểm có nhãn (nhà, nơi làm, trường, yêu thích, tên riêng), sắp xếp, vuốt xoá; so sánh 2–3 nơi. |
 | 2 | Thời tiết và dự báo | Đã làm | Thời tiết hiện tại theo từng địa điểm; theo giờ/ngày gồm giờ đã có dữ liệu, dự báo Open-Meteo và (khi thiếu) trung bình nhiều năm, có ghi nguồn; UV, AQI khi Open-Meteo có; nhãn "Dữ liệu cũ"; mặt trời mọc/lặn tính tại máy. |
-| 3 | AI dự báo | Làm một phần | Nhiệt độ và xác suất mưa sau 1/3/6 giờ cho mọi ô lưới (mô hình v3); app hiển thị kết quả kiểm chứng tại từng ô. Chưa có khoảng bất định, chưa dự báo lượng mưa/độ ẩm/gió. |
+| 3 | AI dự báo | Làm phần chính | Nhiệt độ và xác suất mưa sau 1/3/6 giờ cho mọi ô lưới (v3), kết quả kiểm chứng tại từng ô. Backend trả thêm khoảng p10–p90 cho nhiệt độ và 4 mục tiêu mới (độ ẩm, gió, gió giật, lượng mưa mm), mỗi mục tiêu chỉ được phục vụ khi qua cổng kiểm chứng (mục 5.11). Độ phủ của khoảng trên test là 77,2 / 75,5 / 74,9%, **thấp hơn mục tiêu 80%**. **App chưa hiển thị** khoảng và 4 mục tiêu mới; chúng mới có trong `/weather/ai-forecast`. |
 | 4 | Hoạt động và thói quen | Đã làm | 7 hoạt động, chấm điểm từng giờ, gợi ý tối đa 3 khung giờ trong 48 giờ, mức nhạy cảm, lịch lặp lại, nhắc trước 15/30/60/120 phút; học thói quen khi người dùng đồng ý (mục 7.2). |
-| 5 | Thông báo linh hoạt | Đã làm | 7 loại cảnh báo chạy trên máy, chỉnh ngưỡng, chống trùng, giờ yên lặng, lịch sử, thông báo hệ thống Android, kiểm tra nền khoảng mỗi giờ (mục 7.1). |
-| 6 | Cảnh báo khi di chuyển | Chưa làm | |
-| 7 | Bản đồ | Làm phần chính | flutter_map nền OSM, ranh giới, lớp nhiệt độ / mưa / gió (mũi tên hướng gió), đánh dấu cảnh báo, thanh thời gian 0–72 giờ có nút phát, nhãn thực tế/dự báo (mục 7.3). Không có radar thật vì Open-Meteo không cung cấp radar; thay bằng các khung dự báo theo giờ. |
-| 8 | Cá nhân hóa | Làm một phần | Sáng/tối, °C/°F, nhãn địa điểm. Chưa có widget. |
-| 9 | Tài khoản và quyền riêng tư | Làm một phần | Không cần đăng nhập. Khi dùng GPS, app chỉ lưu **id phường/xã**, không lưu tọa độ. |
-| 10 | Độ tin cậy và phản hồi | Làm một phần | Cache offline, trạng thái lỗi và "Thử lại", `/health` báo độ mới của từng ô. Chưa có báo lỗi/góp ý. |
-| 11 | Hệ thống AI và quản trị | Làm một phần | Ingest hằng giờ, backfill lịch sử có ngân sách API, huấn luyện và đánh giá theo thời gian và theo không gian, phiên bản mô hình, v2 làm dự phòng. Chưa giám sát chất lượng tự động, chưa huấn luyện lại định kỳ. |
+| 5 | Thông báo linh hoạt | Đã làm | 7 loại cảnh báo chạy trên máy, chỉnh ngưỡng, chống trùng, giờ yên lặng, lịch sử, thông báo hệ thống, kiểm tra nền khoảng mỗi giờ (mục 7.1). |
+| 6 | Cảnh báo khi di chuyển | Đã làm (theo code) | Hai chế độ: có tuyến (OSRM qua backend, thời tiết dọc tuyến theo giờ đến dự kiến, so sánh đi sớm/muộn ±30/60 phút) và không có tuyến (kiểm tra ô lưới mới khi di chuyển). Chạy nền trên Android và iOS, màn hình lái xe tối giản, lịch sử chuyến đi không lưu GPS (mục 7.5). Chưa kiểm thử trên đường thật. |
+| 7 | Bản đồ | Làm phần chính | flutter_map nền OSM, ranh giới, lớp nhiệt độ / mưa / gió, đánh dấu cảnh báo, thanh thời gian 0–72 giờ có nút phát, nhãn thực tế/dự báo (mục 7.3); tuyến đường tô màu theo thời tiết ở màn Chuyến đi. Không có radar vì Open-Meteo không cung cấp radar. |
+| 8 | Cá nhân hóa | Làm phần chính | Sáng/tối, đơn vị nhiệt độ/gió/áp suất/mưa/khoảng cách, chọn và sắp xếp chỉ số trên trang chủ, cảnh báo riêng theo địa điểm, cỡ chữ, tương phản cao, giảm chuyển động, đổi máy chủ dữ liệu lúc chạy, widget Android (mục 7.6). Chưa có widget iOS và đồng hồ thông minh. |
+| 9 | Tài khoản và quyền riêng tư | Đã làm | Dùng đầy đủ không cần đăng nhập; tài khoản tuỳ chọn để đồng bộ (bcrypt, token lưu dạng băm, xử lý xung đột 409), xuất/xoá dữ liệu, xoá tài khoản, `GET /privacy`, thời hạn lưu (mục 7.7). |
+| 10 | Độ tin cậy và phản hồi | Đã làm | Cache offline, xử lý lỗi GPS/API/ngoài vùng; báo lỗi, góp ý, báo dự báo sai, chia sẻ; phản hồi lưu riêng với `verified = false` (mục 7.8). |
+| 11 | Hệ thống AI và quản trị | Đã làm | Ingest hằng giờ, backfill có ngân sách API, đánh giá theo thời gian và không gian; `/admin/monitor` (chất lượng AI, cảnh báo nhầm/bỏ sót, lỗi ingest, số lần gọi API, phản hồi), `/admin/retrain` chỉ thay mô hình khi tốt hơn, `/admin/rollback` (mục 7.9). Huấn luyện lại chạy khi quản trị gọi, chưa có lịch tự động. |
+
+Đối chiếu từng mục con (42 mục) của đề bài với code ngày 17/10/2026: **38 đã xong, 4 một phần** (AI mở rộng chưa hiện trong app; khoảng bất định chưa hiện trong app; radar/vệ tinh; widget iOS và đồng hồ), 0 chưa làm. Radar là phần không khả thi với nguồn dữ liệu hiện có.
 
 ## 3. Dữ liệu
 
@@ -45,15 +50,15 @@ Mọi dữ liệu thời tiết trong đồ án là **đầu ra mô hình thời
 
 Script backfill tính "trọng số" mỗi lần gọi theo quy tắc của Open-Meteo và giữ dưới ngân sách cuộn (mặc định 500/phút, 4500/giờ, 9000/ngày), tự nghỉ khi hết, lùi lại khi gặp HTTP 429. Mọi lần gọi được ghi vào bảng `request_log`, nên khi bị ngắt có thể chạy tiếp mà không tải lại. Ô `tsn` được sao chép từ `weather.db` thay vì tải lại. Thứ tự ưu tiên: 2023 → hôm qua cho mọi ô, sau đó lùi từng năm về 2017.
 
-Độ phủ hiện tại (`python scripts/backfill_history.py --status`, ngày 2026-10-17):
+Độ phủ hiện tại (`python scripts/backfill_history.py --status`, chạy 2026-10-17 17:49):
 
 | Năm | Số ô có dữ liệu |
 |---|---|
 | 2017–2021 | 1 (ô alias của `tsn`) |
-| 2022 | 31 |
+| 2022 | 51 |
 | 2023 – 2026-10-16 | 67 |
 
-Không có giá trị rỗng trong các cột đã tải. Backfill vẫn đang chạy.
+Không có giá trị rỗng trong các cột đã tải. Backfill chưa xong: trong 24 giờ trước lúc kiểm tra đã dùng 8.774/9.000 lượt API theo ngân sách ngày.
 
 Khi cần trung bình nhiều năm (ví dụ ngày ngoài tầm dự báo), backend dùng khí hậu riêng của ô nếu ô có đủ dữ liệu, không thì dùng của `tsn` (chi tiết ở mục 7.4).
 
@@ -98,17 +103,20 @@ Trên toàn bộ 67 ô (dữ liệu huấn luyện v3), nhiệt độ nằm tron
 ## 4. Kiến trúc hệ thống
 
 ```
-Flutter app  <--HTTP/JSON-->  FastAPI backend  -->  SQLite weather.db (68 chuỗi, dự báo NWP, AQI, phường/xã, ô lưới)
- Provider, cache,              routers/weather.py     ai_model.py --> LightGBM v3 (models/v3/), v2 dự phòng
- flutter_map (OSM)             routers/locations.py   ingest.py (mỗi giờ) <-- Open-Meteo
+Flutter app  <--HTTP/JSON-->  FastAPI backend  -->  SQLite weather.db (68 chuỗi, dự báo NWP, AQI, phường/xã, ô lưới,
+ Provider, cache,              routers/weather.py       tài khoản, phản hồi, ai_forecast_log)
+ flutter_map (OSM)             routers/locations.py   ai_model.py --> LightGBM v3 + phần mở rộng (models/v3/), v2 dự phòng
+ Android / iOS / web           routers/route.py   -->  OSRM (router.project-osrm.org, routing.openstreetmap.de)
+                               routers/auth.py, sync.py, feedback.py, monitor.py, admin.py
+                               ingest.py (mỗi giờ) <-- Open-Meteo
 ```
 
 | Thành phần | Công nghệ | Vai trò |
 |---|---|---|
-| Ứng dụng | Flutter, `provider`, `http`, `fl_chart`, `shared_preferences`, `geolocator`, `flutter_map` | Gọi API, hiển thị, GPS, bản đồ, lưu cài đặt và cache |
-| Backend | FastAPI, pandas, SQLite | Phục vụ dữ liệu, địa điểm, kết quả AI; lịch ingest hằng giờ |
-| AI | LightGBM, joblib | 3 mô hình hồi quy nhiệt độ + 3 mô hình phân loại mưa (v3) |
-| Huấn luyện | `scripts/train_global_v3.py`, Jupyter | Huấn luyện, đánh giá theo ô, spatial holdout, kiểm tra rò rỉ |
+| Ứng dụng | Flutter, `provider`, `http`, `fl_chart`, `shared_preferences`, `geolocator`, `flutter_map`, `flutter_local_notifications`, `workmanager`, `home_widget`, `flutter_secure_storage`, `share_plus` | Gọi API, hiển thị, GPS, bản đồ, thông báo, chạy nền, widget, lưu cài đặt, cache và token |
+| Backend | FastAPI, pandas, SQLite, httpx, bcrypt | Dữ liệu, địa điểm, kết quả AI, tuyến đường, tài khoản, phản hồi, giám sát; lịch ingest hằng giờ |
+| AI | LightGBM, joblib | v3: 3 mô hình nhiệt độ + 3 mô hình mưa; phần mở rộng: 6 mô hình phân vị p10/p90 + 12 mô hình cho độ ẩm, gió, gió giật, lượng mưa |
+| Huấn luyện | `scripts/train_global_v3.py`, `scripts/train_global_v3_ext.py`, Jupyter | Huấn luyện, đánh giá theo ô, spatial holdout, kiểm tra rò rỉ, khoảng bất định, cổng phục vụ |
 
 ### 4.1 Endpoint
 
@@ -126,11 +134,25 @@ Mọi `/weather/*` (trừ `/weather/map` và `/weather/map/meta`) nhận `locati
 | `GET /weather/hourly` | 1–168 giờ: giờ đã có dữ liệu → dự báo Open-Meteo mới nhất → trung bình nhiều năm; trường `source` = `observed` / `forecast` / `climatology` |
 | `GET /weather/daily` | 1–14 ngày, tổng hợp từ chuỗi theo giờ như trên |
 | `GET /weather/history` | Dữ liệu theo giờ trong khoảng ngày, tối đa 365 ngày |
-| `GET /weather/ai-forecast` | Nhiệt độ và xác suất mưa sau 1/3/6 giờ từ 48 giờ dữ liệu cuối; `model_version`, `cell_id`, `evaluation` |
+| `GET /weather/ai-forecast` | Nhiệt độ và xác suất mưa sau 1/3/6 giờ từ 48 giờ dữ liệu cuối; `model_version`, `cell_id`, `evaluation`, `enabled_targets`; khi có phần mở rộng: `temperature_p10`, `temperature_p90`, `uncertainty_note`, `humidity`, `wind_speed`, `wind_gusts`, `precipitation_mm` (mục 5.11) |
 | `GET /weather/ai-verify` | Dự báo AI phát hành tại `at` (mặc định 6 giờ trước) đặt cạnh giá trị thực tế của chuỗi |
 | `GET /weather/map` | Mỗi ô tại khung *t* = hiện tại + `offset_hours` (0–72): nhiệt độ, mã thời tiết, gió (`wind_speed`, `wind_direction`, `wind_gusts`), lượng mưa, tổng mưa và xác suất mưa 3 giờ sau *t*, `alert` (mã dông hoặc ≥ 10 mm trong 3 giờ; theo mô hình, không chính thức), `source`, `valid_time`, `outlook_source` (mục 7.3) |
 | `GET /weather/map/meta` | `now`, `max_offset_hours` (tối đa 72; bằng 0 ở chế độ xem lại), `issued_at` của lần dự báo NWP mới nhất |
-| `POST /admin/ingest` | Ingest thủ công; chỉ từ localhost, hoặc cần `X-Admin-Token` nếu đặt `ADMIN_TOKEN` |
+| `GET /route` | `from_lat, from_lon, to_lat, to_lon, depart_at, profile` (`driving` / `cycling` / `foot`): tuyến từ OSRM, mẫu thời tiết khoảng mỗi 2 km theo giờ đến dự kiến (mục 7.5) |
+| `POST /route/along-weather` | Làm mới thời tiết dọc một tuyến app đã có, không gọi lại OSRM |
+| `POST /feedback` | Báo lỗi, góp ý, báo dự báo sai; không cần đăng nhập; trả `verified: false` |
+| `GET /feedback/summary` | Thống kê phản hồi theo loại, theo ô, tỉ lệ báo sai dự báo mưa (quản trị) |
+| `POST /auth/register`, `/auth/login`, `/auth/logout` | Tài khoản tuỳ chọn; token Bearer (mục 7.7) |
+| `GET /me`, `DELETE /me` | Thông tin tài khoản; xoá tài khoản (cần mật khẩu) cùng mọi dữ liệu |
+| `GET /me/data`, `PUT /me/data`, `DELETE /me/data` | Tài liệu đồng bộ có `version`; `PUT` trả 409 khi xung đột |
+| `GET /me/export` | Tải toàn bộ dữ liệu của tài khoản dạng JSON |
+| `GET /privacy` | Chính sách quyền riêng tư: dữ liệu lưu gì, giữ bao lâu, xoá thế nào |
+| `POST /admin/ingest`, `GET /admin/ingest/log` | Ingest thủ công và nhật ký ingest |
+| `GET /admin/monitor` | Chất lượng AI đã phát hành so với thực tế, cảnh báo bản đồ nhầm/bỏ sót, lỗi ingest, số lần gọi API, phản hồi mới (mặc định 7 ngày) |
+| `POST /admin/retrain`, `GET /admin/retrain/{job_id}` | Huấn luyện lại vào thư mục ứng viên, chỉ thay khi tốt hơn; xem trạng thái |
+| `POST /admin/rollback` | Đổi lại mô hình trước |
+
+Mọi `/admin/*` chỉ nhận yêu cầu từ localhost, hoặc cần header `X-Admin-Token` nếu đặt biến môi trường `ADMIN_TOKEN`.
 
 Hàm tạo đặc trưng trong `backend/ai_model.py` được **dùng chung** cho huấn luyện và suy luận. Khi nạp mô hình, backend kiểm tra danh sách đặc trưng đã lưu khớp với code; nếu file v3 thiếu hoặc không khớp, backend tự dùng v2.
 
@@ -280,6 +302,49 @@ v3 tốt hơn v2 ở nhiệt độ mọi tầm và mưa 1–3 giờ, kém hơn m
 
 Mỗi kết quả AI trả `model_version`; app hiển thị nó. `metadata_v3.json` ghi snapshot dữ liệu đã dùng của từng ô, mốc chia, tham số, ngưỡng và kết quả holdout. Nếu file v3 lỗi, backend tự phục vụ v2 và trả đánh giá của v2.
 
+### 5.11 Phần mở rộng: khoảng bất định, hiệu chuẩn mưa, mục tiêu mới
+
+Phiên bản `lgbm-hcmc-global-v3-20261017+ext`, huấn luyện lúc 2026-10-17 16:51. Code: `backend/scripts/train_global_v3_ext.py` (chạy ngay sau `train_global_v3.py`, cùng snapshot dữ liệu và cùng cách chia train/validation/test); kết quả: `backend/models/v3/extension_v3.json`, `per_cell_metrics_ext.csv`. Backend đọc file này trong `ai_model.py`; nếu file thiếu hoặc lệch phiên bản, v3 gốc vẫn chạy bình thường.
+
+**Khoảng p10–p90 cho nhiệt độ.** Hai mô hình LightGBM phân vị (α = 0,1 và 0,9) cho mỗi tầm. Khoảng phục vụ = [min(p10, dự báo điểm) − d, max(p90, dự báo điểm) + d], với d là độ nới chọn theo conformal (CQR) trên validation. d chỉ được áp dụng khi độ phủ thô trên validation lệch khỏi 80% quá 3 điểm %. Cả 3 tầm đều phải nới.
+
+| Tầm | Độ phủ thô trên val | d (°C) | Độ phủ trên test (thô → sau nới) | Độ rộng TB (°C) | Độ phủ theo ô trên test |
+|---|---|---|---|---|---|
+| 1 giờ | 75,0% | 0,040 | 72,1% → **77,2%** | 0,93 | 74,7–83,0% |
+| 3 giờ | 74,2% | 0,083 | 69,5% → **75,5%** | 1,63 | 71,1–85,0% |
+| 6 giờ | 74,3% | 0,099 | 69,0% → **74,9%** | 1,97 | 71,1–84,6% |
+
+**Độ phủ trên test vẫn thấp hơn mục tiêu 80%** khoảng 3–5 điểm %. Nguyên nhân: d được chọn trên validation (nửa cuối 2024), nhưng trên test (từ 2025) chính mô hình phân vị đã phủ thấp hơn validation khoảng 3–5 điểm %, nên phần nới không đủ. Báo cáo ghi đúng số này; câu `uncertainty_note` mà API trả về cũng nêu độ phủ thực tế của từng ô và nói rõ "Đây là mức bất định, không phải điểm độ chính xác".
+
+![Độ phủ khoảng p10–p90 theo ô](../notebooks/figures/v3_interval_coverage.png)
+
+*Hình 8. Trái: phân bố độ phủ trên test theo ô (đường đứt = 80%). Phải: độ phủ so với độ rộng khoảng, mỗi chấm là một ô.*
+
+**Hiệu chuẩn xác suất mưa.** Thử isotonic regression: khớp trên validation đến 30/09/2024, kiểm tra trên phần còn lại; chỉ áp dụng nếu Brier giảm ít nhất 1%. Không tầm nào đạt điều kiện này nên app vẫn dùng xác suất gốc của LightGBM. Trên test, xác suất gốc đã khá sát thực tế:
+
+| Tầm | Brier v3 | Brier climatology | ECE |
+|---|---|---|---|
+| 1 giờ | 0,0839 | 0,1306 | 0,016 |
+| 3 giờ | 0,1135 | 0,1306 | 0,030 |
+| 6 giờ | 0,1212 | 0,1306 | 0,035 |
+
+![Biểu đồ độ tin cậy xác suất mưa](../notebooks/figures/v3_rain_reliability.png)
+
+*Hình 9. Xác suất mưa dự báo so với tần suất mưa thực tế trên test, mọi ô. Ở 3–6 giờ, nhóm xác suất trên 0,6 hơi tự tin quá mức.*
+
+**Mục tiêu mới và cổng phục vụ.** Thêm độ ẩm, tốc độ gió, gió giật (hồi quy, chỉ số MAE) và lượng mưa mm (Tweedie, dự báo giá trị kỳ vọng, chỉ số RMSE vì MAE thưởng cho việc luôn đoán 0 mm). Quy tắc: một ô được tính là "thắng" khi mô hình tốt hơn **cả persistence lẫn climatology ở cả 3 tầm**; mục tiêu chỉ được phục vụ khi thắng ở **≥ 80% số ô**. Mục tiêu không qua cổng vẫn được đánh giá nhưng API không trả về.
+
+| Mục tiêu | Chỉ số | Mô hình / Persistence / Climatology (1 giờ) | (6 giờ) | Ô thắng | Phục vụ |
+|---|---|---|---|---|---|
+| Độ ẩm (%) | MAE | 2,08 / 3,32 / 6,16 | 4,29 / 14,08 / 6,16 | 66/67 | Có |
+| Tốc độ gió (km/h) | MAE | 1,60 / 1,85 / 3,32 | 2,65 / 4,04 / 3,32 | 66/67 | Có |
+| Gió giật (km/h) | MAE | 1,94 / 3,06 / 5,53 | 4,46 / 9,01 / 5,53 | 67/67 | Có |
+| Lượng mưa (mm/giờ) | RMSE | 0,848 / 1,126 / 0,956 | 0,922 / 1,348 / 0,956 | 67/67 | Có |
+
+Ô duy nhất không thắng ở độ ẩm và tốc độ gió là Côn Đảo (thua persistence ở tầm 1 giờ). Lượng mưa 6 giờ chỉ hơn climatology rất ít (0,922 so với 0,956).
+
+**Chưa làm với phần mở rộng:** chưa có spatial holdout cho các mục tiêu mới và cho khoảng p10–p90 (chỉ đánh giá trên các ô đã thấy lúc huấn luyện); app Flutter chưa hiển thị khoảng và 4 mục tiêu mới.
+
 ## 6. Ứng dụng
 
 ### 6.1 Địa điểm
@@ -306,7 +371,7 @@ Mỗi kết quả AI trả `model_version`; app hiển thị nó. `metadata_v3.j
 
 ### 6.4 Cài đặt, lỗi và offline
 
-- Sáng/tối, °C/°F, thông tin nguồn dữ liệu, lưu ý dự báo AI chỉ để tham khảo, cảnh báo chính thức xem tại Đài KTTV khu vực Nam Bộ.
+- Giao diện, đơn vị, chỉ số trang chủ, trợ năng, máy chủ dữ liệu (mục 7.6); thông tin nguồn dữ liệu, lưu ý dự báo AI chỉ để tham khảo, cảnh báo chính thức xem tại Đài KTTV khu vực Nam Bộ.
 - Lưu dữ liệu lần tải thành công gần nhất; mất mạng thì hiện dữ liệu đã lưu kèm thông báo; không có cache thì hiện lỗi và nút "Thử lại".
 
 Ảnh chụp giao diện (bản web, khung 390×844, dữ liệu thật từ backend):
@@ -321,7 +386,7 @@ Mỗi kết quả AI trả `model_version`; app hiển thị nó. `metadata_v3.j
 
 Ảnh bản đồ chụp khi trình duyệt không tải được nền OpenStreetMap nên nền tối; mỗi ô màu là một ô lưới khoảng 8 km.
 
-## 7. Cảnh báo, hoạt động, bản đồ theo giờ và khí hậu theo ô
+## 7. Các nhóm chức năng chi tiết
 
 ### 7.1 Cảnh báo chạy trên máy (nhóm 5)
 
@@ -425,30 +490,131 @@ Với ngày ngoài tầm dự báo, backend dùng trung bình nhiều năm theo 
 
 Ví dụ Côn Đảo (`om-8.6819-106.5892`), `/weather/daily?days=14` chạy ngày 2026-10-17, ngày 8–14: trước đây dùng khí hậu `tsn` nên nhiệt độ thấp/cao là **23,5–31,1 °C**; nay dùng khí hậu riêng của ô, còn **26,1–28,8 °C**. Biên độ hẹp này phù hợp với một đảo xa bờ (xem mục 5.5).
 
-## 8. Hạn chế
+### 7.5 Cảnh báo khi di chuyển (nhóm 6)
+
+Code: `backend/routers/route.py`, `lib/providers/trip_provider.dart`, `lib/screens/trip_screen.dart`, `lib/services/route_service.dart`, `lib/services/trip_location.dart`.
+
+**Tuyến đường (OSRM qua backend).** App chỉ gọi backend; backend gọi OSRM bằng httpx (timeout 10 s, User-Agent riêng, tối đa 1 yêu cầu/giây, cache LRU 256 tuyến theo profile và tọa độ làm tròn 4 chữ số). Lái xe dùng máy chủ demo `router.project-osrm.org`; xe đạp và đi bộ dùng máy chủ FOSSGIS `routing.openstreetmap.de`, vì máy chủ demo bỏ qua profile và luôn tính đường cho ô tô. Tuyến dài tối đa 300 km. Dữ liệu tuyến © OpenStreetMap contributors.
+
+**Thời tiết dọc tuyến.** Backend lấy mẫu khoảng mỗi 2 km. Mỗi mẫu có giờ đến dự kiến = giờ xuất phát + thời gian cộng dồn của OSRM; điểm nằm trong ranh giới TP.HCM mới được gán ô lưới gần nhất và lấy thời tiết của ô đó đúng giờ đến (đã ghi nhận → dự báo NWP mới nhất → trung bình nhiều năm). Một mẫu bị đánh dấu cảnh báo khi có mã dông 95–99, mưa ≥ 5 mm/giờ hoặc gió giật ≥ 50 km/h (theo dữ liệu mô hình, không chính thức). Trên màn Chuyến đi, tuyến được tô màu theo thời tiết trên bản đồ. Nút so sánh tính lại thời tiết cùng tuyến khi **đi sớm hoặc muộn 30/60 phút** (bỏ giờ đã qua), không gọi lại OSRM.
+
+**Hai chế độ theo dõi:**
+
+| Chế độ | Cách kiểm tra |
+|---|---|
+| Có tuyến | Mỗi 10 phút gọi `POST /route/along-weather` cho phần tuyến còn lại (giờ xuất phát = bây giờ), báo trước đoạn sắp đi qua có mưa lớn hoặc dông; chống trùng theo đoạn đường |
+| Không có tuyến | Khi sang ô lưới khác hoặc mỗi 15 phút: `/locations/nearest` → thời tiết hiện tại và 3 giờ tới của nơi đang đến |
+
+**Vị trí và chạy nền.** Vị trí chỉ cập nhật khi đi thêm khoảng 500 m, độ chính xác trung bình để tiết kiệm pin. Android dùng foreground service của geolocator (thông báo cố định, quyền `FOREGROUND_SERVICE_LOCATION`, không cần `ACCESS_BACKGROUND_LOCATION`); iOS dùng `UIBackgroundModes: location` với quyền "Khi dùng ứng dụng"; web chỉ chạy khi tab đang mở.
+
+**Khi lái xe.** Khi chuyến đi đang chạy, màn hình chuyển sang giao diện tối giản: chữ lớn, trạng thái, quãng đường còn lại, nút Tạm dừng/Kết thúc lớn và dòng "Không thao tác khi đang lái xe". Cảnh báo là thông báo ngắn, có thể bật/tắt âm thanh.
+
+**Lịch sử chuyến đi** lưu tối đa 30 chuyến **trên máy**: id phường điểm đầu/cuối, thời gian, các cảnh báo. **Không lưu vết GPS**; người dùng xoá từng chuyến hoặc xoá tất cả. Lưu ý: để tính toán, tọa độ vẫn được gửi kèm yêu cầu `/locations/nearest` và `/route` (backend không ghi lại), và với chế độ có tuyến, tọa độ điểm đi/đến được backend chuyển tiếp tới máy chủ OSRM công cộng.
+
+### 7.6 Cá nhân hoá (nhóm 8)
+
+Code: `lib/models/units.dart`, `lib/providers/preferences_provider.dart`, `lib/screens/settings_screen.dart`, `lib/services/home_widget_service.dart`.
+
+| Mục | Nội dung |
+|---|---|
+| Giao diện | Sáng / tối / theo hệ thống |
+| Đơn vị | Nhiệt độ °C/°F; gió km/h, m/s, mph, Beaufort; áp suất hPa, mmHg, inHg; mưa mm, inch; khoảng cách km, mi |
+| Chỉ số trang chủ | Chọn và sắp xếp 10 chỉ số: AQI, cảm giác như, UV, gió, độ ẩm, tầm nhìn, áp suất, lượng mưa, mây, mặt trời mọc/lặn |
+| Cảnh báo theo địa điểm | Bật/tắt cảnh báo và ngưỡng riêng cho từng địa điểm đã lưu; mức nhạy cảm riêng theo từng lịch hoạt động (mục 7.2) |
+| Trợ năng | Cỡ chữ 0,9 / 1,0 / 1,15 / 1,3 (nhân với cỡ chữ hệ thống, tối đa 3,0); tương phản cao; giảm chuyển động (tắt hoạt ảnh, tắt nút phát bản đồ) |
+| Máy chủ dữ liệu | Đổi địa chỉ backend ngay trong app, có nút kiểm tra kết nối; lưu trên máy, ưu tiên hơn địa chỉ nhúng lúc build |
+| Widget | Android: nhiệt độ, trạng thái, khả năng mưa 3 giờ, tên địa điểm; cập nhật khi app tải dữ liệu và khi tác vụ nền chạy. iOS: chưa có (README có hướng dẫn thêm bằng Xcode). Chưa hỗ trợ đồng hồ thông minh |
+
+### 7.7 Tài khoản và quyền riêng tư (nhóm 9)
+
+Code: `backend/routers/auth.py`, `backend/routers/sync.py`, `lib/providers/account_provider.dart`, `lib/services/account_service.dart`, `lib/screens/account_screen.dart`.
+
+- **Tuỳ chọn:** mọi chức năng xem thời tiết, cảnh báo, chuyến đi chạy không cần đăng nhập. Tài khoản (email + mật khẩu) chỉ để đồng bộ giữa các thiết bị.
+- **Mật khẩu:** băm bcrypt (12 vòng) trên base64(sha256(mật khẩu)) để tránh giới hạn 72 byte của bcrypt; dài 8–128 ký tự. Tối đa 5 lần đăng nhập sai mỗi email trong 15 phút. Thông báo lỗi không tiết lộ email có tồn tại hay không; email không tồn tại vẫn tốn một lần kiểm tra bcrypt để thời gian phản hồi giống nhau.
+- **Token:** chuỗi ngẫu nhiên `secrets.token_urlsafe(32)`, gửi qua `Authorization: Bearer`; máy chủ **chỉ lưu sha256 của token**; hết hạn sau 30 ngày. Không dùng cookie nên không có bề mặt CSRF.
+- **Lưu token trên máy:** iOS lưu trong Keychain (chỉ thiết bị này), Android trong Keystore, qua `flutter_secure_storage`. **Web lưu trong localStorage**: mã JavaScript chạy trên cùng trang (ví dụ khi bị XSS) có thể đọc được token; đây là rủi ro đã biết của bản web.
+- **Đồng bộ:** một tài liệu JSON mỗi tài khoản (địa điểm đã lưu, cài đặt, hoạt động; thói quen chỉ khi đã đồng ý), tối đa 256 KB. Tài liệu có `version`; `PUT /me/data` gửi `base_version`, nếu thiết bị khác đã lưu trước thì máy chủ trả **409** kèm bản hiện tại. App gộp theo id (địa điểm, lịch: hợp hai bên, bản sửa mới hơn thắng; cài đặt theo `updated_at` mới hơn) rồi thử lại một lần. Địa điểm bị xoá được ghi **tombstone** (id + thời điểm, giữ 30 ngày) để bản gộp hoặc thiết bị khác không làm nó xuất hiện lại.
+- **Không gửi GPS lên máy chủ để lưu:** tài liệu đồng bộ không chứa tọa độ và không chứa "Vị trí hiện tại"; máy chủ không lưu IP.
+- **Quyền của người dùng:** xuất dữ liệu (`GET /me/export`; trên web tải về trực tiếp thành file), xoá dữ liệu đồng bộ, xoá tài khoản (cần mật khẩu), xuất dữ liệu trên máy khi không có tài khoản, xem chính sách tại `GET /privacy`.
+- **Thời hạn lưu:** phiên đăng nhập 30 ngày; tài khoản không hoạt động 2 năm bị xoá cùng mọi dữ liệu; phản hồi 365 ngày; nhật ký dự báo AI 90 ngày; lịch sử cảnh báo tối đa 50 mục và lịch sử chuyến đi tối đa 30 chuyến trên máy.
+
+### 7.8 Phản hồi người dùng (nhóm 10)
+
+Code: `backend/routers/feedback.py`, `lib/screens/feedback_screen.dart`, `lib/services/share_service.dart`.
+
+- Ba loại: báo lỗi, góp ý, báo dự báo sai (có thể kèm "trời đang mưa hay không", cảm giác nóng/vừa/mát và ảnh chụp nhỏ của dự báo lúc đó). Không cần đăng nhập; giới hạn 10 lần/giờ mỗi IP, IP chỉ dùng trong bộ nhớ, không lưu.
+- Phản hồi lưu ở **bảng riêng** với `verified = false`, **không bao giờ được ghi vào `hourly_weather`** (dữ liệu quan trắc), nên không ảnh hưởng tới huấn luyện hay đánh giá.
+- `GET /feedback/summary` (quản trị) đếm theo loại, theo ô và tỉ lệ báo sai dự báo mưa.
+- Chia sẻ dự báo hoặc địa điểm qua `share_plus`; nơi không hỗ trợ thì chép vào bộ nhớ tạm.
+
+### 7.9 Giám sát và quản trị mô hình (nhóm 11)
+
+Code: `backend/routers/monitor.py`.
+
+- **Nhật ký dự báo:** sau mỗi lần ingest thành công, backend ghi vào bảng `ai_forecast_log` dự báo AI 1/3/6 giờ của mọi chuỗi và cảnh báo bản đồ (mã dông hoặc ≥ 10 mm trong 3 giờ). Chỉ ghi lần phát hành đầu tiên, để chấm điểm đúng thứ đã công bố.
+- **`GET /admin/monitor`** (mặc định 7 ngày): MAE nhiệt độ và F1 mưa của các dự báo đã phát hành so với thực tế, số cảnh báo nhầm và bỏ sót của bản đồ, lỗi ingest, số lần gọi Open-Meteo và OSRM, phản hồi mới.
+- **`POST /admin/retrain`:** chạy nền **tuần tự** `train_global_v3.py` rồi `train_global_v3_ext.py`, cả hai ghi vào `models/v3_candidate/`. Ứng viên chỉ thay `models/v3` khi MAE nhiệt độ trung bình thấp hơn và F1 mưa trung bình không thấp hơn; mô hình cũ được giữ ở `models/v3_prev/`. Nếu đang có một lần huấn luyện chạy, trả 409.
+- **`POST /admin/rollback`:** hoán đổi `v3` và `v3_prev` (gọi lần nữa để quay lại bản mới).
+- Huấn luyện lại chạy khi quản trị gọi; chưa có lịch tự động.
+
+## 8. Nền tảng và triển khai
+
+| Nền tảng | Trạng thái | Cách chạy / cài | Ghi chú |
+|---|---|---|---|
+| Android | Chạy được | `flutter run` hoặc file `apk` debug (artifact của CI) | Thông báo hệ thống, chạy nền (`workmanager`, foreground service khi đi đường), widget màn hình chính |
+| Web | Chạy được | `flutter run -d chrome`, `flutter build web` | Không có thông báo hệ thống và chạy nền; GPS chỉ qua https hoặc localhost; xuất dữ liệu tải về trực tiếp thành file |
+| iOS | Build CI thành công | GitHub Actions build IPA chưa ký, ký và cài bằng 3uTools | Chưa có nhật ký chạy trên iPhone thật; không có widget iOS |
+
+**iOS khi không có máy Mac.** Workflow `.github/workflows/ios-ipa.yml` chạy trên runner macOS: `flutter build ios --release --no-codesign`, đóng gói `SkyWeather-unsigned.ipa` và tải lên làm artifact (cùng workflow còn build web, apk debug và chạy `flutter test --exclude-tags golden`). Lần chạy gần nhất của workflow trên repo (2026-10-17 17:43 giờ Việt Nam, commit `b71166b`) kết thúc **success** (kiểm tra qua GitHub API lúc 17:50). Người dùng tải IPA, ký bằng Apple ID trong 3uTools rồi cài lên iPhone. Với **Apple ID miễn phí**: app hết hạn sau **7 ngày** và phải ký lại; tối đa 3 app tự ký; không có push từ server và App Groups. Thông báo cục bộ vẫn chạy; tác vụ nền dùng BGAppRefreshTask nên iOS tự quyết định thời điểm chạy.
+
+**Đặt địa chỉ máy chủ.** Ba cách, theo thứ tự ưu tiên:
+
+1. Trong app: **Cài đặt → Máy chủ dữ liệu**, nhập địa chỉ và kiểm tra kết nối; không cần build lại.
+2. Lúc build: `--dart-define=API_BASE_URL=...`; với CI, nhập ô `api_base_url` khi chạy tay workflow hoặc đặt biến repo `API_BASE_URL`.
+3. Mặc định: `http://10.0.2.2:8000` (Android emulator); web dùng `http://localhost:8000`.
+
+Điện thoại thật dùng IP LAN của máy chạy backend (`--host 0.0.0.0`, mở cổng 8000), hoặc tunnel https (ví dụ `cloudflared`). Bản Android release chỉ cho HTTP tới localhost/10.0.2.2; iOS bật `NSAllowsArbitraryLoads` để gọi được HTTP qua LAN, đổi lại dữ liệu không mã hoá trên mạng (chi tiết trong README).
+
+**Kiểm thử tự động** (chạy 2026-10-17):
+
+| Phần | Lệnh | Kết quả |
+|---|---|---|
+| Backend | `python -m pytest tests -q` (trong `backend/`, 17:43) | 195 passed (59 giây) |
+| Flutter | `flutter test --exclude-tags golden` (thư mục gốc, 17:44) | 439 passed, 4 skipped |
+
+## 9. Hạn chế
 
 1. **Dữ liệu là đầu ra mô hình** của Open-Meteo, không phải số đo trạm. Mô hình AI học cách dự báo lại chính dữ liệu này, nên **chưa biết độ chính xác so với thời tiết thực tế tại TP.HCM**.
 2. **Lưới khoảng 8 km**: các phường trong cùng một ô có cùng số liệu; mưa cục bộ nhỏ hơn ô lưới không thể hiện được.
 3. **Lịch sử ngắn với hầu hết ô**: lúc huấn luyện v3, 66/67 ô chỉ có dữ liệu từ 2023 (train khoảng 18 tháng). Cần huấn luyện lại khi backfill xong; mốc chia đã cố định để so sánh được.
 4. **Côn Đảo**: v3 không vượt persistence, và kiểm tra holdout cho thấy mô hình không tổng quát được sang đảo chưa thấy.
 5. **Khoảng cách tới biển ước lượng tay**, sai số vài km; ranh giới phường từ OSM là gần đúng.
-6. Một ngưỡng mưa chung cho mọi ô; không tìm kiếm siêu tham số; chưa có khoảng bất định.
-7. Ô chưa đủ khoảng 2 năm dữ liệu (sau khi ghép lịch sử backfill) vẫn dùng trung bình nhiều năm của `tsn`, có thể lệch với khí hậu thật của ô. Khí hậu riêng của ô chỉ tính trên lịch sử từ 2022 hoặc 2023 (bảng độ phủ mục 3.2), ngắn hơn nhiều so với khoảng 10 năm của `tsn`.
-8. Cảnh báo trong app và trên bản đồ là ngưỡng đơn giản trên dữ liệu mô hình, **không phải cảnh báo chính thức**. Cảnh báo chính thức do Đài KTTV khu vực Nam Bộ phát hành. Dự báo AI là **thử nghiệm**, không dùng cho mục đích an toàn.
-9. Chưa ghi nhận kiểm thử trên điện thoại Android thật.
+6. Một ngưỡng mưa chung cho mọi ô; không tìm kiếm siêu tham số.
+7. **Khoảng p10–p90 phủ dưới mục tiêu:** trên test chỉ 77,2 / 75,5 / 74,9% (mục tiêu 80%), dù đã nới theo conformal trên validation (mục 5.11).
+8. **Phần mở rộng chưa có spatial holdout:** khoảng p10–p90 và 4 mục tiêu mới (độ ẩm, gió, gió giật, lượng mưa) chỉ được đánh giá trên các ô đã có trong huấn luyện. App chưa hiển thị các kết quả này.
+9. Ô chưa đủ khoảng 2 năm dữ liệu (sau khi ghép lịch sử backfill) vẫn dùng trung bình nhiều năm của `tsn`, có thể lệch với khí hậu thật của ô. Khí hậu riêng của ô chỉ tính trên lịch sử từ 2022 hoặc 2023 (bảng độ phủ mục 3.2), ngắn hơn nhiều so với khoảng 10 năm của `tsn`.
+10. Cảnh báo trong app, trên bản đồ và dọc tuyến là ngưỡng đơn giản trên dữ liệu mô hình, **không phải cảnh báo chính thức**. Cảnh báo chính thức do Đài KTTV khu vực Nam Bộ phát hành. Dự báo AI là **thử nghiệm**, không dùng cho mục đích an toàn.
+11. **iOS mới được kiểm chứng bằng build CI** (IPA build thành công trên GitHub Actions); chưa có nhật ký chạy trên iPhone thật. Chưa ghi nhận kiểm thử chuyến đi trên đường thật ở cả Android và iOS.
+12. **Không có widget iOS** (cần WidgetKit extension và App Groups, mà Apple ID miễn phí không có) và **không hỗ trợ đồng hồ thông minh**.
+13. **Không có push từ server:** Apple ID miễn phí không dùng được push notification; cảnh báo dựa trên thông báo cục bộ và tác vụ nền, nên có thể đến muộn (iOS tự quyết định lúc chạy nền). App ký bằng Apple ID miễn phí hết hạn sau 7 ngày.
+14. **Dịch vụ OSRM công cộng bị giới hạn:** máy chủ demo và FOSSGIS chỉ cho khoảng 1 yêu cầu/giây, dành cho dùng nhẹ và không cam kết hoạt động liên tục. Khi chúng lỗi, chế độ có tuyến không dùng được (chế độ không có tuyến vẫn chạy). Tọa độ điểm đi/đến được gửi tới máy chủ bên thứ ba này.
+15. Token đăng nhập trên web nằm trong localStorage, có thể bị đọc nếu trang bị chèn mã độc (XSS).
+16. Huấn luyện lại chỉ chạy khi quản trị gọi `/admin/retrain`, chưa có lịch tự động; giám sát chưa tự gửi cảnh báo khi chất lượng giảm.
 
-## 9. Hướng phát triển
+## 10. Hướng phát triển
 
 | Hướng | Nội dung | Rủi ro / điều kiện |
 |---|---|---|
 | Dữ liệu | Hoàn tất backfill 2017–2022 cho mọi ô, huấn luyện lại v3 | Ngân sách API miễn phí của Open-Meteo |
 | Đánh giá với số đo thật | So với số liệu trạm (nếu xin được) | Khả năng tiếp cận dữ liệu trạm |
-| Mô hình | Ngưỡng mưa theo vùng, xử lý riêng ô đảo, khoảng bất định (quantile), tìm siêu tham số | Chỉ mở rộng sau khi kiểm chứng chất lượng |
+| Mô hình | Ngưỡng mưa theo vùng, xử lý riêng ô đảo, tìm siêu tham số; chọn độ nới conformal trên dữ liệu gần hơn để khoảng p10–p90 đạt 80%; spatial holdout cho phần mở rộng | Chỉ mở rộng sau khi kiểm chứng chất lượng |
+| App | Hiển thị khoảng p10–p90 và 4 mục tiêu AI mới đã qua cổng | Backend đã sẵn sàng |
 | Đặc trưng tĩnh | Khoảng cách tới biển từ đường bờ biển chuẩn (ví dụ OSM) thay cho bản vẽ tay | Cần thêm bước xử lý dữ liệu địa lý |
-| Nhóm 6 – Khi di chuyển | Cảnh báo theo tuyến | Quyền vị trí nền, pin, chính sách cửa hàng ứng dụng |
-| Nhóm 7 – Bản đồ | Hoàn tất lớp gió và thanh thời gian trong app; radar thật | Open-Meteo không có radar; chưa có nguồn radar công khai phù hợp cho TP.HCM |
-| Nhóm 11 – Vận hành | Giám sát sai số theo ô bằng `/weather/ai-verify`, huấn luyện lại định kỳ | Cần lịch chạy và lưu kết quả |
+| Nhóm 6 – Khi di chuyển | Kiểm thử trên đường thật; tự chạy máy chủ OSRM riêng | Pin, quyền vị trí, tài nguyên máy chủ |
+| Nhóm 7 – Bản đồ | Radar thật | Open-Meteo không có radar; chưa có nguồn radar công khai phù hợp cho TP.HCM |
+| Nhóm 8 / nền tảng | Widget iOS, đồng hồ thông minh, push từ server | Cần tài khoản Apple Developer trả phí và máy Mac |
+| Nhóm 11 – Vận hành | Lịch huấn luyện lại tự động, cảnh báo khi chất lượng giảm | Cần lịch chạy và ngưỡng cảnh báo |
 
-## 10. Kết luận
+## 11. Kết luận
 
-Nhóm đã mở rộng từ một điểm gần Tân Sơn Nhất ra toàn bộ TP.HCM mới: 168 phường/xã/đặc khu gộp thành 67 ô lưới, dữ liệu cập nhật hằng giờ, backfill lịch sử có kiểm soát ngân sách API, và một mô hình LightGBM toàn cục. Trên tập test từ 2025, v3 tốt hơn persistence và climatology ở 63/67 ô, và tốt hơn v2 tại `tsn` về nhiệt độ. Kiểm tra spatial holdout cho thấy mô hình tổng quát khá tốt sang vùng đất liền chưa thấy nhưng không tổng quát được sang đảo Côn Đảo; app hiển thị trung thực kết quả của từng ô. Hạn chế lớn nhất vẫn là dữ liệu là đầu ra mô hình chứ không phải số đo trạm, nên kết quả là bằng chứng phương pháp khả thi, chưa phải một sản phẩm dự báo dùng được ngoài thực tế.
+Nhóm đã mở rộng từ một điểm gần Tân Sơn Nhất ra toàn bộ TP.HCM mới: 168 phường/xã/đặc khu gộp thành 67 ô lưới, dữ liệu cập nhật hằng giờ, backfill lịch sử có kiểm soát ngân sách API, và một mô hình LightGBM toàn cục. Trên tập test từ 2025, v3 tốt hơn persistence và climatology ở 63/67 ô, và tốt hơn v2 tại `tsn` về nhiệt độ. Kiểm tra spatial holdout cho thấy mô hình tổng quát khá tốt sang vùng đất liền chưa thấy nhưng không tổng quát được sang đảo Côn Đảo; app hiển thị trung thực kết quả của từng ô. Phần mở rộng thêm khoảng bất định (phủ khoảng 75–77%, chưa đạt 80%) và 4 mục tiêu mới, mỗi mục tiêu chỉ được phục vụ khi thắng cả hai mô hình cơ sở. Đối chiếu 42 mục con của đề bài: 38 đã xong, 4 một phần; app chạy trên Android và web, bản iOS mới được kiểm chứng bằng build CI. Hạn chế lớn nhất vẫn là dữ liệu là đầu ra mô hình chứ không phải số đo trạm, nên kết quả là bằng chứng phương pháp khả thi, chưa phải một sản phẩm dự báo dùng được ngoài thực tế.

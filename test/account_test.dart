@@ -90,7 +90,7 @@ class _Rig {
     account = AccountProvider(
       service: AccountService(client: backend.client, baseUrl: _base),
       store: store,
-      debounce: const Duration(milliseconds: 40),
+      debounce: const Duration(milliseconds: 150),
       retryDelay: const Duration(milliseconds: 60),
     );
   }
@@ -108,6 +108,21 @@ class _Rig {
 
 Future<void> _wait([int ms = 150]) =>
     Future<void>.delayed(Duration(milliseconds: ms));
+
+/// Retries [check] until it passes (or rethrows after [timeoutMs]); fixed
+/// sleeps were flaky when the whole suite loaded the machine.
+Future<void> _eventually(void Function() check, {int timeoutMs = 5000}) async {
+  final sw = Stopwatch()..start();
+  while (true) {
+    try {
+      check();
+      return;
+    } catch (_) {
+      if (sw.elapsedMilliseconds > timeoutMs) rethrow;
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+  }
+}
 
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
@@ -292,6 +307,7 @@ void main() {
       rig.wp.setTemperatureUnit(false);
       await _wait(15);
       expect(b.puts, hasLength(1), reason: 'Chua het thoi gian debounce');
+      await _eventually(() => expect(b.puts.length, greaterThanOrEqualTo(2)));
       await _wait();
       expect(b.puts, hasLength(2), reason: 'Ba thay doi -> mot lan PUT');
       final doc = b.puts.last['data'] as Map<String, dynamic>;
@@ -332,14 +348,17 @@ void main() {
 
       rig.pp.setHabitLearning(true);
       rig.pp.recordAppOpen();
-      await _wait();
+      await _eventually(
+        () => expect((b.puts.last['data'] as Map)['habits_consent'], isTrue),
+      );
       final doc = b.puts.last['data'] as Map;
       expect(doc['habits_consent'], isTrue);
       expect((doc['habits'] as Map)['opens'], isNotEmpty);
 
       rig.pp.setHabitLearning(false);
-      await _wait();
-      expect((b.puts.last['data'] as Map)['habits'], isNull);
+      await _eventually(
+        () => expect((b.puts.last['data'] as Map)['habits'], isNull),
+      );
     });
 
     test('409: gop dia diem theo id roi gui lai mot lan', () async {
@@ -365,6 +384,7 @@ void main() {
         'habits': null,
       };
       rig.lp.addSaved('q1', label: PlaceLabel.home);
+      await _eventually(() => expect(b.puts.length, greaterThanOrEqualTo(3)));
       await _wait();
 
       expect(b.puts, hasLength(3), reason: 'PUT -> 409 -> gop -> PUT lai');
@@ -440,7 +460,12 @@ void main() {
       final rig = _Rig(b, session: _session());
       await rig.start();
       rig.lp.addSaved('q9');
-      await _wait();
+      await _eventually(
+        () => expect([
+          for (final p in (b.puts.last['data'] as Map)['saved_places'] as List)
+            p['id'],
+        ], contains('q9')),
+      );
       rig.lp.removeSavedAt(
         rig.lp.saved.indexWhere((s) => s.locationId == 'q9'),
       );
@@ -455,7 +480,12 @@ void main() {
         'habits_consent': false,
         'habits': null,
       };
-      await _wait();
+      await _eventually(
+        () => expect(
+          ((b.puts.last['data'] as Map)['settings'] as Map)['deleted_places'],
+          contains('q9'),
+        ),
+      );
       final doc = b.puts.last['data'] as Map;
       expect([for (final p in doc['saved_places'] as List) p['id']], ['tsn']);
       expect((doc['settings'] as Map)['deleted_places'], contains('q9'));
@@ -473,7 +503,13 @@ void main() {
           const PlaceAlertOverride(enabled: false),
         ),
       );
-      await _wait();
+      await _eventually(
+        () => expect(
+          (((b.puts.last['data'] as Map)['settings'] as Map)['alerts']
+              as Map)['places'],
+          isNotNull,
+        ),
+      );
       final s = (b.puts.last['data'] as Map)['settings'] as Map;
       expect(((s['preferences'] as Map)['units'] as Map)['wind'], 'ms');
       expect(((s['alerts'] as Map)['places'] as Map)['tsn'], isNotNull);
@@ -515,8 +551,7 @@ void main() {
       await rig.start();
       b.unauthorized = true;
       rig.lp.addSaved('q2');
-      await _wait();
-      expect(rig.account.isLoggedIn, isFalse);
+      await _eventually(() => expect(rig.account.isLoggedIn, isFalse));
       expect(rig.store.session, isNull);
       expect(rig.account.notice, AccountProvider.expiredMessage);
       expect(rig.lp.isSaved('q2'), isTrue, reason: 'Du lieu tren may giu');
@@ -537,12 +572,10 @@ void main() {
       await rig.start();
       b.offline = true;
       rig.lp.addSaved('q5');
-      await _wait(80);
-      expect(rig.account.state, SyncState.pending);
+      await _eventually(() => expect(rig.account.state, SyncState.pending));
       expect(rig.account.hasPendingChanges, isTrue);
       b.offline = false;
-      await _wait(200);
-      expect(rig.account.state, SyncState.idle);
+      await _eventually(() => expect(rig.account.state, SyncState.idle));
       expect([
         for (final p in b.data!['saved_places'] as List) p['id'],
       ], contains('q5'));

@@ -31,7 +31,8 @@ def _hist(tmp_path, syn_rows, until=T, hours=ai_model.MIN_HISTORY_HOURS):
 V3_EXT_READY = os.path.exists(os.path.join(ai_model.V3_DIR, "extension_v3.json"))
 needs_ext = pytest.mark.skipif(not (V3_READY and V3_EXT_READY), reason="v3 extension not trained yet")
 OLD_KEYS = {"temperature", "rain_probability"}
-EXT_KEYS = {"temperature_p10", "temperature_p90", "uncertainty_note"}
+EXT_KEYS = {"temperature_low", "temperature_high", "interval_level",
+            "temperature_p10", "temperature_p90", "uncertainty_note"}   # p10/p90: deprecated aliases
 
 
 def _check_format(out):
@@ -55,8 +56,10 @@ def _check_format_v3(out):
         assert isinstance(p["temperature"], float) and 10 < p["temperature"] < 45
         assert 0 <= p["rain_probability"] <= 1
         if has_ext:
-            assert p["temperature_p10"] <= p["temperature"] <= p["temperature_p90"]
-            assert isinstance(p["uncertainty_note"], str) and "p10" in p["uncertainty_note"]
+            assert p["temperature_low"] <= p["temperature"] <= p["temperature_high"]
+            assert (p["temperature_p10"], p["temperature_p90"]) == (p["temperature_low"], p["temperature_high"])
+            assert p["interval_level"] == 0.9
+            assert isinstance(p["uncertainty_note"], str) and "khoảng tin cậy 90%" in p["uncertainty_note"]
         if "humidity" in extra:
             assert 0 <= p["humidity"] <= 100
         for k in extra - {"humidity"}:
@@ -197,6 +200,19 @@ def test_temperature_interval_contains_point():
     assert (lo[0], hi[0]) == (29.75, 31.25)
 
 
+def test_conformal_interval_groups_and_point():
+    lo, hi = ai_model.conformal_interval([30.0, 29.0], [31.0, 28.0], [0.5, 0.0], "abs", [30.5, 30.0])
+    assert list(lo) == [29.5, 28.0] and list(hi) == [31.5, 30.0]
+    lo, hi = ai_model.conformal_interval([30.0], [31.0], [0.5], "norm")          # scaled by q95 - q05
+    assert (lo[0], hi[0]) == (29.5, 31.5)
+    lo, hi = ai_model.conformal_interval([30.0], [31.0], [-2.0], "abs", [30.2])   # never inverted
+    assert lo[0] <= 30.2 <= hi[0]
+    st = {"a": {"lat": 10.8, "dist_to_coast_km": 50}, "b": {"lat": 8.7, "dist_to_coast_km": 1}}
+    k = ai_model.interval_group_keys("coast_month", [1, 6], ["a", "b"], [7, 1], [13, 2], st)
+    assert list(k) == ["1|inland|m7", "6|island|m1"]
+    assert list(ai_model.interval_group_keys("month_hour", [3], ["a"], [12], [23], st)) == ["3|m12|b3"]
+
+
 @needs_ext
 def test_ext_evaluation_metrics():
     ext = _ext()
@@ -214,8 +230,13 @@ def test_ext_evaluation_metrics():
         for t in ai_model.EXT_TARGETS:
             assert isinstance(e[f"beats_baselines_{t}"], bool)
         assert isinstance(e["beats_baselines"], bool) and "temperature_mae_1h" in e   # old keys kept
-    cov = ext["interval"]["test_mean_coverage"]
-    assert all(0.7 < cov[h] < 0.9 for h in ("1h", "3h", "6h"))
+    iv = ext["interval"]
+    assert iv["version"] == 2 and iv["nominal"] == 0.9 and "2024-01-01" in iv["split"]["cal"][0]
+    for h in ("1h", "3h", "6h"):
+        new, old = iv["test"][h], iv["test_previous_p10_p90"][h]
+        assert new["cov_mean"] >= 0.9 and new["cov_min_cell"] >= 0.85      # held-out test, 2025-01-01..
+        assert old["cov_mean"] < 0.8 and new["width"] > old["width"]
+    assert "interval_previous_p10_p90" in ext and "conformal" in ext["interval_previous_p10_p90"]
 
 
 @needs_ext
@@ -226,5 +247,6 @@ def test_ext_router_passes_new_fields(client):
     assert "temperature_interval" in body["enabled_targets"]
     for p in body["predictions"].values():
         assert {"temperature", "rain_probability", "target_time", "temperature_p10", "temperature_p90",
-                "uncertainty_note"} <= set(p)
+                "temperature_low", "temperature_high", "interval_level", "uncertainty_note"} <= set(p)
+        assert p["interval_level"] == 0.9 and p["temperature_low"] <= p["temperature"] <= p["temperature_high"]
     assert "temperature_interval_coverage_1h" in body["evaluation"]

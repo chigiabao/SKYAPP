@@ -1,0 +1,898 @@
+{
+ "model_version": "lgbm-hcmc-global-v3-20261017+ext",
+ "base_model_version": "lgbm-hcmc-global-v3-20261017",
+ "trained_at": "2026-10-17T16:51:29",
+ "data": "same per-cell snapshot and split as metadata_v3.json",
+ "rows": {
+  "val": 272958,
+  "test": 1051629
+ },
+ "serving_rule": "A target is served only if, on the test window, the model beats BOTH persistence and climatology (primary metric) at ALL of 1/3/6 h in >= 80% of the cells. Disabled targets are still evaluated in evaluation_v3.json but not returned.",
+ "enabled_targets": [
+  "temperature",
+  "rain_probability",
+  "temperature_interval",
+  "humidity",
+  "wind_speed",
+  "wind_gusts",
+  "precipitation_mm"
+ ],
+ "gate": {
+  "humidity": {
+   "metric": "mae",
+   "cells_won": 66,
+   "cells": 67,
+   "share": 0.9851,
+   "enabled": true
+  },
+  "wind_speed": {
+   "metric": "mae",
+   "cells_won": 66,
+   "cells": 67,
+   "share": 0.9851,
+   "enabled": true
+  },
+  "wind_gusts": {
+   "metric": "mae",
+   "cells_won": 67,
+   "cells": 67,
+   "share": 1.0,
+   "enabled": true
+  },
+  "precipitation_mm": {
+   "metric": "rmse",
+   "cells_won": 67,
+   "cells": 67,
+   "share": 1.0,
+   "enabled": true
+  }
+ },
+ "interval": {
+  "nominal": 0.8,
+  "method": "LightGBM quantile p10/p90, interval [min(p10, point) - offset, max(p90, point) + offset]; offset = split-conformal (CQR) on val, applied only if raw val coverage is outside 80% +/- 3%",
+  "conformal": {
+   "1h": {
+    "val_raw_coverage": 0.7496,
+    "offset": 0.04,
+    "applied": true
+   },
+   "3h": {
+    "val_raw_coverage": 0.7418,
+    "offset": 0.0825,
+    "applied": true
+   },
+   "6h": {
+    "val_raw_coverage": 0.743,
+    "offset": 0.0986,
+    "applied": true
+   }
+  },
+  "test_mean_coverage": {
+   "1h": 0.7721,
+   "3h": 0.7551,
+   "6h": 0.7486
+  },
+  "test_mean_coverage_raw": {
+   "1h": 0.7205,
+   "3h": 0.695,
+   "6h": 0.6896
+  },
+  "test_cell_coverage_min_max": {
+   "1h": [
+    0.7465,
+    0.8301
+   ],
+   "3h": [
+    0.7108,
+    0.8496
+   ],
+   "6h": [
+    0.7111,
+    0.8459
+   ]
+  }
+ },
+ "rain_calibration": {
+  "method": "isotonic, fit on val <= 2024-09-30, checked on the rest of val; applied (refit on all val) if Brier improves >= 1%",
+  "per_horizon": {
+   "1h": {
+    "val_check_brier_raw": 0.08087,
+    "val_check_brier_isotonic": 0.08162,
+    "val_check_ece_raw": 0.0033,
+    "applied": false
+   },
+   "3h": {
+    "val_check_brier_raw": 0.112,
+    "val_check_brier_isotonic": 0.11231,
+    "val_check_ece_raw": 0.0154,
+    "applied": false
+   },
+   "6h": {
+    "val_check_brier_raw": 0.1199,
+    "val_check_brier_isotonic": 0.11932,
+    "val_check_ece_raw": 0.0217,
+    "applied": false
+   }
+  },
+  "test_reliability_bins": {
+   "1h": {
+    "raw": [
+     [
+      0.0217,
+      0.0287,
+      677809
+     ],
+     [
+      0.1444,
+      0.1741,
+      84943
+     ],
+     [
+      0.2469,
+      0.2852,
+      54105
+     ],
+     [
+      0.3486,
+      0.3863,
+      40737
+     ],
+     [
+      0.4493,
+      0.4871,
+      36837
+     ],
+     [
+      0.5501,
+      0.5891,
+      34835
+     ],
+     [
+      0.6502,
+      0.6796,
+      35659
+     ],
+     [
+      0.7502,
+      0.7638,
+      36468
+     ],
+     [
+      0.8489,
+      0.863,
+      35264
+     ],
+     [
+      0.9285,
+      0.9424,
+      14905
+     ]
+    ],
+    "served": [
+     [
+      0.0217,
+      0.0287,
+      677809
+     ],
+     [
+      0.1444,
+      0.1741,
+      84943
+     ],
+     [
+      0.2469,
+      0.2852,
+      54105
+     ],
+     [
+      0.3486,
+      0.3863,
+      40737
+     ],
+     [
+      0.4493,
+      0.4871,
+      36837
+     ],
+     [
+      0.5501,
+      0.5891,
+      34835
+     ],
+     [
+      0.6502,
+      0.6796,
+      35659
+     ],
+     [
+      0.7502,
+      0.7638,
+      36468
+     ],
+     [
+      0.8489,
+      0.863,
+      35264
+     ],
+     [
+      0.9285,
+      0.9424,
+      14905
+     ]
+    ]
+   },
+   "3h": {
+    "raw": [
+     [
+      0.0264,
+      0.0471,
+      603240
+     ],
+     [
+      0.1447,
+      0.1964,
+      133541
+     ],
+     [
+      0.2474,
+      0.2907,
+      85572
+     ],
+     [
+      0.3478,
+      0.3871,
+      63660
+     ],
+     [
+      0.4482,
+      0.4748,
+      50229
+     ],
+     [
+      0.5482,
+      0.5449,
+      40738
+     ],
+     [
+      0.6487,
+      0.6216,
+      33188
+     ],
+     [
+      0.7467,
+      0.6747,
+      24855
+     ],
+     [
+      0.8431,
+      0.774,
+      14789
+     ],
+     [
+      0.9148,
+      0.867,
+      1616
+     ]
+    ],
+    "served": [
+     [
+      0.0264,
+      0.0471,
+      603240
+     ],
+     [
+      0.1447,
+      0.1964,
+      133541
+     ],
+     [
+      0.2474,
+      0.2907,
+      85572
+     ],
+     [
+      0.3478,
+      0.3871,
+      63660
+     ],
+     [
+      0.4482,
+      0.4748,
+      50229
+     ],
+     [
+      0.5482,
+      0.5449,
+      40738
+     ],
+     [
+      0.6487,
+      0.6216,
+      33188
+     ],
+     [
+      0.7467,
+      0.6747,
+      24855
+     ],
+     [
+      0.8431,
+      0.774,
+      14789
+     ],
+     [
+      0.9148,
+      0.867,
+      1616
+     ]
+    ]
+   },
+   "6h": {
+    "raw": [
+     [
+      0.0295,
+      0.0551,
+      583572
+     ],
+     [
+      0.1446,
+      0.2002,
+      148439
+     ],
+     [
+      0.2472,
+      0.295,
+      94441
+     ],
+     [
+      0.3473,
+      0.3713,
+      67661
+     ],
+     [
+      0.4479,
+      0.4464,
+      50108
+     ],
+     [
+      0.5483,
+      0.5233,
+      40333
+     ],
+     [
+      0.6478,
+      0.5791,
+      32183
+     ],
+     [
+      0.7466,
+      0.6449,
+      22896
+     ],
+     [
+      0.8376,
+      0.7508,
+      11421
+     ],
+     [
+      0.9063,
+      0.948,
+      173
+     ]
+    ],
+    "served": [
+     [
+      0.0295,
+      0.0551,
+      583572
+     ],
+     [
+      0.1446,
+      0.2002,
+      148439
+     ],
+     [
+      0.2472,
+      0.295,
+      94441
+     ],
+     [
+      0.3473,
+      0.3713,
+      67661
+     ],
+     [
+      0.4479,
+      0.4464,
+      50108
+     ],
+     [
+      0.5483,
+      0.5233,
+      40333
+     ],
+     [
+      0.6478,
+      0.5791,
+      32183
+     ],
+     [
+      0.7466,
+      0.6449,
+      22896
+     ],
+     [
+      0.8376,
+      0.7508,
+      11421
+     ],
+     [
+      0.9063,
+      0.948,
+      173
+     ]
+    ]
+   }
+  }
+ },
+ "precipitation_mm_method": "expected value (LightGBM Tweedie, variance power 1.5); primary metric RMSE",
+ "test_mean_metrics": {
+  "1h": {
+   "n": 15694.9552,
+   "cov": 0.7721,
+   "cov_raw": 0.7205,
+   "width": 0.9337,
+   "brier_raw": 0.0839,
+   "brier_served": 0.0839,
+   "brier_clim": 0.1306,
+   "ece_served": 0.0159,
+   "humidity_mae_m": 2.0767,
+   "humidity_rmse_m": 3.1844,
+   "humidity_mae_p": 3.318,
+   "humidity_rmse_p": 4.8584,
+   "humidity_mae_c": 6.1602,
+   "humidity_rmse_c": 8.2164,
+   "wind_speed_mae_m": 1.5957,
+   "wind_speed_rmse_m": 2.184,
+   "wind_speed_mae_p": 1.8457,
+   "wind_speed_rmse_p": 2.6383,
+   "wind_speed_mae_c": 3.3229,
+   "wind_speed_rmse_c": 4.2057,
+   "wind_gusts_mae_m": 1.9425,
+   "wind_gusts_rmse_m": 2.8145,
+   "wind_gusts_mae_p": 3.0623,
+   "wind_gusts_rmse_p": 4.4806,
+   "wind_gusts_mae_c": 5.5343,
+   "wind_gusts_rmse_c": 7.0291,
+   "precipitation_mm_mae_m": 0.2573,
+   "precipitation_mm_rmse_m": 0.8477,
+   "precipitation_mm_mae_p": 0.3041,
+   "precipitation_mm_rmse_p": 1.1262,
+   "precipitation_mm_mae_c": 0.3642,
+   "precipitation_mm_rmse_c": 0.9557
+  },
+  "3h": {
+   "n": 15692.9552,
+   "cov": 0.7551,
+   "cov_raw": 0.695,
+   "width": 1.6324,
+   "brier_raw": 0.1135,
+   "brier_served": 0.1135,
+   "brier_clim": 0.1306,
+   "ece_served": 0.0301,
+   "humidity_mae_m": 3.5308,
+   "humidity_rmse_m": 4.9909,
+   "humidity_mae_p": 8.2742,
+   "humidity_rmse_p": 11.0751,
+   "humidity_mae_c": 6.1599,
+   "humidity_rmse_c": 8.2162,
+   "wind_speed_mae_m": 2.3365,
+   "wind_speed_rmse_m": 3.0002,
+   "wind_speed_mae_p": 3.1116,
+   "wind_speed_rmse_p": 4.0646,
+   "wind_speed_mae_c": 3.3227,
+   "wind_speed_rmse_c": 4.2055,
+   "wind_gusts_mae_m": 3.8193,
+   "wind_gusts_rmse_m": 4.964,
+   "wind_gusts_mae_p": 6.2193,
+   "wind_gusts_rmse_p": 8.1315,
+   "wind_gusts_mae_c": 5.5339,
+   "wind_gusts_rmse_c": 7.0287,
+   "precipitation_mm_mae_m": 0.2978,
+   "precipitation_mm_rmse_m": 0.9086,
+   "precipitation_mm_mae_p": 0.3906,
+   "precipitation_mm_rmse_p": 1.2829,
+   "precipitation_mm_mae_c": 0.3642,
+   "precipitation_mm_rmse_c": 0.9558
+  },
+  "6h": {
+   "n": 15689.9552,
+   "cov": 0.7486,
+   "cov_raw": 0.6896,
+   "width": 1.9737,
+   "brier_raw": 0.1212,
+   "brier_served": 0.1212,
+   "brier_clim": 0.1306,
+   "ece_served": 0.0351,
+   "humidity_mae_m": 4.2896,
+   "humidity_rmse_m": 5.8953,
+   "humidity_mae_p": 14.0763,
+   "humidity_rmse_p": 17.7115,
+   "humidity_mae_c": 6.1594,
+   "humidity_rmse_c": 8.2159,
+   "wind_speed_mae_m": 2.6492,
+   "wind_speed_rmse_m": 3.3714,
+   "wind_speed_mae_p": 4.0363,
+   "wind_speed_rmse_p": 5.1249,
+   "wind_speed_mae_c": 3.3225,
+   "wind_speed_rmse_c": 4.2053,
+   "wind_gusts_mae_m": 4.4556,
+   "wind_gusts_rmse_m": 5.6905,
+   "wind_gusts_mae_p": 9.0051,
+   "wind_gusts_rmse_p": 11.2894,
+   "wind_gusts_mae_c": 5.5335,
+   "wind_gusts_rmse_c": 7.0284,
+   "precipitation_mm_mae_m": 0.3067,
+   "precipitation_mm_rmse_m": 0.9222,
+   "precipitation_mm_mae_p": 0.4324,
+   "precipitation_mm_rmse_p": 1.3483,
+   "precipitation_mm_mae_c": 0.3643,
+   "precipitation_mm_rmse_c": 0.9559
+  }
+ },
+ "best_iterations": {
+  "temp_p10_1h": 891,
+  "temp_p90_1h": 1605,
+  "temp_p10_3h": 523,
+  "temp_p90_3h": 527,
+  "temp_p10_6h": 306,
+  "temp_p90_6h": 335,
+  "humidity_1h": 838,
+  "wind_speed_1h": 597,
+  "wind_gusts_1h": 760,
+  "precipitation_mm_1h": 166,
+  "humidity_3h": 1395,
+  "wind_speed_3h": 560,
+  "wind_gusts_3h": 689,
+  "precipitation_mm_3h": 157,
+  "humidity_6h": 897,
+  "wind_speed_6h": 919,
+  "wind_gusts_6h": 449,
+  "precipitation_mm_6h": 205
+ },
+ "params_quantile": {
+  "p10": {
+   "objective": "quantile",
+   "metric": "quantile",
+   "learning_rate": 0.05,
+   "num_leaves": 63,
+   "feature_fraction": 0.8,
+   "bagging_fraction": 0.8,
+   "bagging_freq": 5,
+   "min_data_in_leaf": 100,
+   "seed": 42,
+   "deterministic": true,
+   "verbose": -1,
+   "num_threads": 12,
+   "alpha": 0.1
+  },
+  "p90": {
+   "objective": "quantile",
+   "metric": "quantile",
+   "learning_rate": 0.05,
+   "num_leaves": 63,
+   "feature_fraction": 0.8,
+   "bagging_fraction": 0.8,
+   "bagging_freq": 5,
+   "min_data_in_leaf": 100,
+   "seed": 42,
+   "deterministic": true,
+   "verbose": -1,
+   "num_threads": 12,
+   "alpha": 0.9
+  }
+ },
+ "params_tweedie": {
+  "objective": "tweedie",
+  "metric": "rmse",
+  "learning_rate": 0.05,
+  "num_leaves": 63,
+  "feature_fraction": 0.8,
+  "bagging_fraction": 0.8,
+  "bagging_freq": 5,
+  "min_data_in_leaf": 100,
+  "seed": 42,
+  "deterministic": true,
+  "verbose": -1,
+  "num_threads": 12,
+  "tweedie_variance_power": 1.5
+ },
+ "params_regression": {
+  "objective": "regression",
+  "metric": "mae",
+  "learning_rate": 0.05,
+  "num_leaves": 63,
+  "feature_fraction": 0.8,
+  "bagging_fraction": 0.8,
+  "bagging_freq": 5,
+  "min_data_in_leaf": 100,
+  "seed": 42,
+  "deterministic": true,
+  "verbose": -1,
+  "num_threads": 12
+ },
+ "serving_samples": [
+  {
+   "cell_id": "om-10.7909-106.6313",
+   "issued_at": "2025-10-14 23:00:00",
+   "temp_p10": {
+    "1h": 25.300051738210897,
+    "3h": 24.506968137352064,
+    "6h": 23.912719997971628
+   },
+   "temp_p90": {
+    "1h": 25.841601367511842,
+    "3h": 25.417813088267216,
+    "6h": 25.13808026732106
+   },
+   "humidity": {
+    "1h": 96.0330285077057,
+    "3h": 96.97575258867788,
+    "6h": 97.52801264393992
+   },
+   "wind_speed": {
+    "1h": 2.972889701147593,
+    "3h": 3.811917354962006,
+    "6h": 4.2791102695918015
+   },
+   "wind_gusts": {
+    "1h": 5.046637359416122,
+    "3h": 6.6946076158316865,
+    "6h": 7.513060278019625
+   },
+   "precipitation_mm": {
+    "1h": 0.019103045851128292,
+    "3h": 0.041534320114714064,
+    "6h": 0.048821960051181806
+   }
+  },
+  {
+   "cell_id": "om-10.7909-106.6313",
+   "issued_at": "2025-02-28 08:00:00",
+   "temp_p10": {
+    "1h": 28.93536601612593,
+    "3h": 31.87211947452421,
+    "6h": 33.343988413023595
+   },
+   "temp_p90": {
+    "1h": 29.373484876476063,
+    "3h": 33.13660980054779,
+    "6h": 35.76699188086304
+   },
+   "humidity": {
+    "1h": 57.94257050194566,
+    "3h": 44.38868834329564,
+    "6h": 36.23637029535394
+   },
+   "wind_speed": {
+    "1h": 6.652467762876548,
+    "3h": 8.101630866180699,
+    "6h": 9.384238909531446
+   },
+   "wind_gusts": {
+    "1h": 18.833113287622655,
+    "3h": 22.293794315472596,
+    "6h": 23.158101523052977
+   },
+   "precipitation_mm": {
+    "1h": 0.00014970328621772633,
+    "3h": 0.004213405486609145,
+    "6h": 0.01102480364094325
+   }
+  },
+  {
+   "cell_id": "om-10.7909-106.6313",
+   "issued_at": "2026-03-04 23:00:00",
+   "temp_p10": {
+    "1h": 25.12671018090683,
+    "3h": 24.516063530000697,
+    "6h": 23.844677161542176
+   },
+   "temp_p90": {
+    "1h": 25.333234361430826,
+    "3h": 25.064143907284123,
+    "6h": 24.765064158589368
+   },
+   "humidity": {
+    "1h": 91.36425678381609,
+    "3h": 93.2091405294723,
+    "6h": 96.09668409712795
+   },
+   "wind_speed": {
+    "1h": 8.010830352202818,
+    "3h": 7.165393117320017,
+    "6h": 5.936996532865859
+   },
+   "wind_gusts": {
+    "1h": 15.569087547674222,
+    "3h": 12.083082045174555,
+    "6h": 9.171431318875785
+   },
+   "precipitation_mm": {
+    "1h": 5.681382610999584e-05,
+    "3h": 0.0008295480987335506,
+    "6h": 0.0027865682133038075
+   }
+  },
+  {
+   "cell_id": "om-10.7909-106.6313",
+   "issued_at": "2026-05-22 00:00:00",
+   "temp_p10": {
+    "1h": 26.7741096272489,
+    "3h": 26.298041978970744,
+    "6h": 25.529634896686204
+   },
+   "temp_p90": {
+    "1h": 27.224958532242063,
+    "3h": 26.90435011392881,
+    "6h": 26.679343247299617
+   },
+   "humidity": {
+    "1h": 93.20081347305882,
+    "3h": 94.52243696863204,
+    "6h": 94.70032128804066
+   },
+   "wind_speed": {
+    "1h": 3.9487545193097886,
+    "3h": 4.3609562867222635,
+    "6h": 4.318690727083661
+   },
+   "wind_gusts": {
+    "1h": 6.368016321087528,
+    "3h": 7.111192198290867,
+    "6h": 7.846932718404467
+   },
+   "precipitation_mm": {
+    "1h": 0.020042658948542593,
+    "3h": 0.05481741516662757,
+    "6h": 0.03843206263246889
+   }
+  },
+  {
+   "cell_id": "om-8.6819-106.5892",
+   "issued_at": "2026-04-01 23:00:00",
+   "temp_p10": {
+    "1h": 26.917547677856245,
+    "3h": 26.306358391698474,
+    "6h": 25.723279676651643
+   },
+   "temp_p90": {
+    "1h": 27.51107441431337,
+    "3h": 27.4536262325601,
+    "6h": 27.41266637817263
+   },
+   "humidity": {
+    "1h": 79.98987658353528,
+    "3h": 80.39799155097342,
+    "6h": 81.43520267827823
+   },
+   "wind_speed": {
+    "1h": 16.477316855958485,
+    "3h": 16.014820353807348,
+    "6h": 15.354728838336738
+   },
+   "wind_gusts": {
+    "1h": 21.616833426988716,
+    "3h": 22.03794216512262,
+    "6h": 21.936696090765654
+   },
+   "precipitation_mm": {
+    "1h": 0.001997559875405523,
+    "3h": 0.004204933919921369,
+    "6h": 0.005772311295630862
+   }
+  },
+  {
+   "cell_id": "om-8.6819-106.5892",
+   "issued_at": "2025-05-12 17:00:00",
+   "temp_p10": {
+    "1h": 28.54717005376603,
+    "3h": 27.767006028189147,
+    "6h": 27.39329527817506
+   },
+   "temp_p90": {
+    "1h": 29.235525048762906,
+    "3h": 29.560106844077442,
+    "6h": 29.340954075474777
+   },
+   "humidity": {
+    "1h": 79.32354160885157,
+    "3h": 79.12175715103147,
+    "6h": 80.61261588690184
+   },
+   "wind_speed": {
+    "1h": 17.22654026346553,
+    "3h": 16.717931386521247,
+    "6h": 15.307777837285716
+   },
+   "wind_gusts": {
+    "1h": 25.021416962460464,
+    "3h": 22.73399926265907,
+    "6h": 21.787757037175957
+   },
+   "precipitation_mm": {
+    "1h": 0.07604909227388328,
+    "3h": 0.1742613451917833,
+    "6h": 0.37024633957443925
+   }
+  },
+  {
+   "cell_id": "om-8.6819-106.5892",
+   "issued_at": "2025-03-03 14:00:00",
+   "temp_p10": {
+    "1h": 25.56662629244027,
+    "3h": 25.355296481244295,
+    "6h": 25.738145454957415
+   },
+   "temp_p90": {
+    "1h": 26.252622045850806,
+    "3h": 26.160438754121717,
+    "6h": 25.87323646483968
+   },
+   "humidity": {
+    "1h": 87.87463128646631,
+    "3h": 88.25739161568397,
+    "6h": 89.38422865845664
+   },
+   "wind_speed": {
+    "1h": 14.694251214614397,
+    "3h": 15.057054689568151,
+    "6h": 13.52774801776283
+   },
+   "wind_gusts": {
+    "1h": 19.633970845792472,
+    "3h": 20.322604042324876,
+    "6h": 20.663106902475764
+   },
+   "precipitation_mm": {
+    "1h": 0.002104063949965877,
+    "3h": 0.00345301474840909,
+    "6h": 0.002475666300186011
+   }
+  },
+  {
+   "cell_id": "om-8.6819-106.5892",
+   "issued_at": "2025-12-11 07:00:00",
+   "temp_p10": {
+    "1h": 24.23953321241384,
+    "3h": 24.899471564875196,
+    "6h": 25.35092061368825
+   },
+   "temp_p90": {
+    "1h": 25.492308134323892,
+    "3h": 27.45297540919468,
+    "6h": 28.645169739289614
+   },
+   "humidity": {
+    "1h": 87.13546966110374,
+    "3h": 83.77911216222638,
+    "6h": 80.6442080565602
+   },
+   "wind_speed": {
+    "1h": 28.927588504804223,
+    "3h": 29.934989764673134,
+    "6h": 32.17747975270799
+   },
+   "wind_gusts": {
+    "1h": 44.74858121574637,
+    "3h": 44.46534566516242,
+    "6h": 47.871262541256996
+   },
+   "precipitation_mm": {
+    "1h": 0.1273378724199286,
+    "3h": 0.1609924702645161,
+    "6h": 0.1981858395631727
+   }
+  }
+ ]
+}

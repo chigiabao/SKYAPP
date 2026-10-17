@@ -1,6 +1,5 @@
 // Tai khoan tuy chon + dong bo (nhom 9). Backend gia bang MockClient (khong
 // goi mang that); du lieu trong test la du lieu gia.
-import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';

@@ -19,8 +19,12 @@ class BottomPillBar extends StatelessWidget {
     required this.currentPage,
     required this.onMap,
     required this.onLocations,
+    this.onTrip,
     this.firstIsCurrentLocation = true,
   });
+
+  /// Mo man "Chuyến đi" (null = an nut).
+  final VoidCallback? onTrip;
 
   /// Trang dau la "Vị trí hiện tại" (cham hinh mui ten).
   final bool firstIsCurrentLocation;
@@ -44,6 +48,12 @@ class BottomPillBar extends StatelessWidget {
             tooltip: 'Bản đồ',
             onPressed: onMap,
           ),
+          if (onTrip != null)
+            GlassIconButton(
+              icon: Icons.directions_car_outlined,
+              tooltip: 'Chuyến đi',
+              onPressed: onTrip!,
+            ),
           Expanded(
             child: Semantics(
               label: 'Địa điểm ${currentPage + 1} trên $pageCount',

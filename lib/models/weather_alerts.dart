@@ -78,9 +78,8 @@ class AlertSettings {
       places[id] ?? const PlaceAlertOverride();
 
   /// Dat (hoac xoa khi la mac dinh) cai dat rieng cua [id].
-  AlertSettings withPlace(String id, PlaceAlertOverride o) => copyWith(
-    places: {...places, id: o}..removeWhere((_, v) => v.isDefault),
-  );
+  AlertSettings withPlace(String id, PlaceAlertOverride o) =>
+      copyWith(places: {...places, id: o}..removeWhere((_, v) => v.isDefault));
 
   /// Cai dat hieu luc cho [id]: nguong rieng ghi de nguong chung.
   AlertSettings forPlace(String id) {
@@ -304,7 +303,9 @@ class PlaceAlertOverride {
 
   /// Dat nguong rieng; null -> bo (dung nguong chung).
   PlaceAlertOverride withThreshold(AlertType t, double? v) => copyWith(
-    thresholds: {...thresholds}..remove(t)..addAll({t: ?v}),
+    thresholds: {...thresholds}
+      ..remove(t)
+      ..addAll({t: ?v}),
   );
 
   Map<String, dynamic> toJson() => {

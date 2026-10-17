@@ -211,25 +211,38 @@ class GlassCardTitle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final Color c = GlassInk.of(context).title;
+    // Chu rat lon (>= 1,8x): dua [trailing] xuong dong rieng de khong tran.
+    final bool stack =
+        trailing != null && MediaQuery.textScalerOf(context).scale(10) >= 18;
+    final Widget row = Row(
+      children: [
+        if (icon != null) ...[
+          ExcludeSemantics(
+            child: Icon(icon, size: IconSizes.sm, color: c),
+          ),
+          const SizedBox(width: 6),
+        ],
+        Expanded(
+          child: Text(
+            title.toUpperCase(),
+            style: TypeScale.cardTitle.copyWith(color: c),
+          ),
+        ),
+        if (!stack) ?trailing,
+      ],
+    );
     return Semantics(
       header: true,
-      child: Row(
-        children: [
-          if (icon != null) ...[
-            ExcludeSemantics(
-              child: Icon(icon, size: IconSizes.sm, color: c),
-            ),
-            const SizedBox(width: 6),
-          ],
-          Expanded(
-            child: Text(
-              title.toUpperCase(),
-              style: TypeScale.cardTitle.copyWith(color: c),
-            ),
-          ),
-          ?trailing,
-        ],
-      ),
+      child: stack
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                row,
+                const SizedBox(height: Space.xs),
+                trailing!,
+              ],
+            )
+          : row,
     );
   }
 }

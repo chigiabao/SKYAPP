@@ -7,6 +7,11 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <!-- Hen lai nhac hoat dong sau khi khoi dong lai may. -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+    <!-- Chuyen di (nhom 6) chay nen: foreground service cua geolocator
+         (thong bao co dinh). Service bat dau khi app dang mo nen quyen vi tri
+         khi dung app la du, KHONG can ACCESS_BACKGROUND_LOCATION. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION"/>
     <application
         android:label="Sky Weather"
         android:name="${applicationName}"

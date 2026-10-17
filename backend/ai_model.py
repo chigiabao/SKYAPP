@@ -304,7 +304,8 @@ def _load_v3_ext() -> Optional[Dict[str, Any]]:
 
 
 def _uncertainty_note(lo: float, hi: float, coverage: Optional[float], period: Optional[str]) -> str:
-    note = f"Nhiệt độ nhiều khả năng trong khoảng {lo:.1f}–{hi:.1f} °C (khoảng p10–p90)."
+    vi = lambda v: f"{v:.1f}".replace(".", ",")  # noqa: E731 - Vietnamese decimal comma
+    note = f"Nhiệt độ nhiều khả năng trong khoảng {vi(lo)}–{vi(hi)} °C (khoảng p10–p90)."
     if coverage is not None:
         when = f" {period.replace('..', ' đến ')}" if period else ""
         note += f" Kiểm chứng trên dữ liệu{when} ở ô này: thực tế rơi vào khoảng ~{coverage * 100:.0f}% số lần."

@@ -1,6 +1,11 @@
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
 
+import '../config/api_config.dart';
 import '../models/units.dart';
 import '../models/weather_alerts.dart';
 import '../providers/location_provider.dart';
@@ -8,9 +13,12 @@ import '../providers/planner_provider.dart';
 import '../providers/preferences_provider.dart';
 import '../providers/weather_provider.dart';
 import 'account_screen.dart';
+import 'feedback_screen.dart';
 import '../ui/weather/app_scene.dart';
 import '../ui/weather/debug/weather_simulator_screen.dart';
 import '../ui/weather/widgets/glass_page.dart';
+import '../ui/weather/design_tokens.dart';
+import '../ui/weather/glass_ink.dart';
 import '../utils/constants.dart';
 import '../widgets/replay_settings_card.dart';
 
@@ -24,13 +32,17 @@ class SettingsScreen extends StatelessWidget {
   /// Noi dung (context nam duoi theme kinh cua GlassPage).
   Widget _buildPage(BuildContext context) {
     final theme = Theme.of(context);
-    final provider = context.watch<WeatherProvider>();
     // Mau chu canh bao du tuong phan (>= 4.5:1) tren nen cam nhat
     final warningText = theme.brightness == Brightness.dark
         ? Colors.orange.shade200
         : Colors.deepOrange.shade900;
 
     final sceneOverride = maybeSceneOverride(context, listen: false);
+    // Man rong (web / may tinh bang): cot noi dung toi da 640, can giua.
+    final width = MediaQuery.sizeOf(context).width;
+    final hPad = width > Space.contentMaxWidth + 2 * AppSizes.paddingM
+        ? (width - Space.contentMaxWidth) / 2
+        : AppSizes.paddingM;
 
     return Scaffold(
       appBar: AppBar(
@@ -42,7 +54,10 @@ class SettingsScreen extends StatelessWidget {
         ),
       ),
       body: ListView(
-        padding: const EdgeInsets.all(AppSizes.paddingM),
+        padding: EdgeInsets.symmetric(
+          horizontal: hPad,
+          vertical: AppSizes.paddingM,
+        ),
         children: [
           _SectionHeader(title: 'Giao diện'),
           const _AppearanceSection(),
@@ -77,9 +92,22 @@ class SettingsScreen extends StatelessWidget {
               title: const Text('Tài khoản và đồng bộ'),
               subtitle: const Text('Tuỳ chọn, không cần để dùng app'),
               trailing: const Icon(Icons.chevron_right_rounded),
-              onTap: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const AccountScreen()),
-              ),
+              onTap: () => Navigator.of(
+                context,
+              ).push(MaterialPageRoute(builder: (_) => const AccountScreen())),
+            ),
+          ),
+
+          // Gop y (nhom 10)
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.feedback_outlined),
+              title: const Text('Góp ý và báo lỗi'),
+              subtitle: const Text('Báo lỗi, góp ý, báo dự báo sai'),
+              trailing: const Icon(Icons.chevron_right_rounded),
+              onTap: () => Navigator.of(
+                context,
+              ).push(MaterialPageRoute(builder: (_) => const FeedbackScreen())),
             ),
           ),
 
@@ -190,6 +218,10 @@ class SettingsScreen extends StatelessWidget {
             ),
           ),
 
+          const SizedBox(height: AppSizes.paddingL),
+          _SectionHeader(title: 'Nâng cao'),
+          const _ServerSection(),
+
           // Cong cu debug: gia lap canh thoi tiet cho toan app.
           if (WeatherSimulatorScreen.available && sceneOverride != null) ...[
             const SizedBox(height: AppSizes.paddingL),
@@ -251,17 +283,6 @@ IconData _themeIcon(ThemeMode mode) {
   }
 }
 
-String _themeLabel(ThemeMode mode) {
-  switch (mode) {
-    case ThemeMode.light:
-      return 'Sáng';
-    case ThemeMode.dark:
-      return 'Tối';
-    case ThemeMode.system:
-      return 'Theo hệ thống';
-  }
-}
-
 class _SectionHeader extends StatelessWidget {
   final String title;
 
@@ -292,13 +313,11 @@ class _SettingsTile extends StatelessWidget {
   final IconData icon;
   final String title;
   final String subtitle;
-  final Widget? trailing;
 
   const _SettingsTile({
     required this.icon,
     required this.title,
     required this.subtitle,
-    this.trailing,
   });
 
   @override
@@ -325,7 +344,6 @@ class _SettingsTile extends StatelessWidget {
           color: theme.textTheme.bodySmall?.color,
         ),
       ),
-      trailing: trailing,
       contentPadding: const EdgeInsets.symmetric(
         horizontal: AppSizes.paddingM,
         vertical: AppSizes.paddingXS,
@@ -590,7 +608,7 @@ class _HomeMetricsSection extends StatelessWidget {
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             buildDefaultDragHandles: false,
-            onReorder: prefs.reorderMetric,
+            onReorderItem: prefs.reorderMetric,
             proxyDecorator: (child, _, _) =>
                 Material(color: Colors.transparent, child: child),
             children: [
@@ -668,11 +686,13 @@ class _MetricRow extends StatelessWidget {
           ),
           IconButton(
             tooltip: 'Đưa $name lên',
+            style: IconButton.styleFrom(minimumSize: const Size(48, 48)),
             onPressed: index == 0 ? null : () => prefs.moveMetric(metric, -1),
             icon: const Icon(Icons.keyboard_arrow_up_rounded),
           ),
           IconButton(
             tooltip: 'Đưa $name xuống',
+            style: IconButton.styleFrom(minimumSize: const Size(48, 48)),
             onPressed: index == count - 1
                 ? null
                 : () => prefs.moveMetric(metric, 1),
@@ -956,6 +976,243 @@ class _AccessibilitySection extends StatelessWidget {
             onChanged: systemMotion ? null : prefs.setReduceMotion,
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Nang cao - May chu du lieu (URL backend luc chay)
+// ---------------------------------------------------------------------------
+
+/// Ket qua kiem tra `/health`.
+typedef ServerHealth = ({bool ok, String message});
+
+/// Goi `GET {baseUrl}/health` va mo ta ket qua bang tieng Viet.
+Future<ServerHealth> checkServerHealth(
+  String baseUrl, {
+  http.Client? client,
+  Duration timeout = const Duration(seconds: 6),
+}) async {
+  final c = client ?? http.Client();
+  try {
+    final r = await c.get(Uri.parse('$baseUrl/health')).timeout(timeout);
+    if (r.statusCode != 200) {
+      return (ok: false, message: 'Máy chủ trả lỗi HTTP ${r.statusCode}.');
+    }
+    final j = jsonDecode(r.body);
+    if (j is! Map || j['status'] == null) {
+      return (ok: false, message: 'Không phải máy chủ Sky Weather.');
+    }
+    final age = j['data_age_hours'];
+    final db = j['database'];
+    final parts = [
+      'Kết nối được (${j['status']})',
+      if (db != null) 'CSDL: $db',
+      if (age is num) 'dữ liệu mới nhất cách đây ${age.toStringAsFixed(1)} giờ',
+    ];
+    return (ok: true, message: '${parts.join(' · ')}.');
+  } on TimeoutException {
+    return (ok: false, message: 'Hết thời gian chờ. Kiểm tra địa chỉ và mạng.');
+  } catch (_) {
+    return (
+      ok: false,
+      message: 'Không kết nối được. Kiểm tra địa chỉ, mạng và máy chủ.',
+    );
+  } finally {
+    if (client == null) c.close();
+  }
+}
+
+class _ServerSection extends StatefulWidget {
+  const _ServerSection();
+
+  @override
+  State<_ServerSection> createState() => _ServerSectionState();
+}
+
+class _ServerSectionState extends State<_ServerSection> {
+  late final TextEditingController _ctrl = TextEditingController(
+    text: ApiConfig.baseUrl,
+  );
+  String? _error;
+  ServerHealth? _health;
+  bool _checking = false;
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  /// Tai lai du lieu sau khi doi may chu.
+  void _reload() {
+    context.read<WeatherProvider>().fetchWeatherData();
+    try {
+      context.read<LocationProvider>().refreshRemote();
+    } on ProviderNotFoundException {
+      // Man hinh don le (test): khong co danh sach dia diem.
+    }
+  }
+
+  Future<void> _save() async {
+    final ok = await ApiConfig.setBaseUrl(_ctrl.text);
+    if (!mounted) return;
+    setState(() {
+      _error = ok ? null : 'Địa chỉ không hợp lệ. Dùng http:// hoặc https://';
+      _health = null;
+    });
+    if (!ok) return;
+    _ctrl.text = ApiConfig.baseUrl;
+    _reload();
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+      SnackBar(content: Text('Đã lưu máy chủ ${ApiConfig.baseUrl}')),
+    );
+  }
+
+  Future<void> _reset() async {
+    await ApiConfig.setBaseUrl(null);
+    if (!mounted) return;
+    setState(() {
+      _ctrl.text = ApiConfig.baseUrl;
+      _error = null;
+      _health = null;
+    });
+    _reload();
+  }
+
+  Future<void> _check() async {
+    final url = ApiConfig.normalizeBaseUrl(_ctrl.text);
+    if (url == null) {
+      setState(
+        () => _error = 'Địa chỉ không hợp lệ. Dùng http:// hoặc https://',
+      );
+      return;
+    }
+    setState(() {
+      _error = null;
+      _checking = true;
+      _health = null;
+    });
+    final h = await checkServerHealth(url);
+    if (!mounted) return;
+    setState(() {
+      _checking = false;
+      _health = h;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final ink = GlassInk.of(context);
+    final custom = ApiConfig.baseUrlOverride != null;
+    final h = _health;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(AppSizes.paddingM),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Semantics(
+              header: true,
+              child: Text(
+                'Máy chủ dữ liệu',
+                style: AppTextStyles.bodyLarge.copyWith(
+                  color: theme.textTheme.bodyLarge?.color,
+                ),
+              ),
+            ),
+            const SizedBox(height: AppSizes.paddingXS),
+            _Note(
+              custom
+                  ? 'Đang dùng địa chỉ tự đặt. Mặc định: '
+                        '${ApiConfig.defaultBaseUrl}'
+                  : 'Đang dùng địa chỉ mặc định của bản cài.',
+            ),
+            const SizedBox(height: AppSizes.paddingM),
+            TextField(
+              controller: _ctrl,
+              keyboardType: TextInputType.url,
+              autocorrect: false,
+              textInputAction: TextInputAction.done,
+              onSubmitted: (_) => _save(),
+              style: const TextStyle(color: Colors.white),
+              decoration: InputDecoration(
+                labelText: 'Địa chỉ máy chủ (URL)',
+                hintText: 'http://192.168.1.10:8000',
+                errorText: _error,
+                border: const OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: AppSizes.paddingS),
+            Wrap(
+              spacing: AppSizes.paddingS,
+              runSpacing: AppSizes.paddingXS,
+              children: [
+                FilledButton.icon(
+                  onPressed: _save,
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size(48, 48),
+                    backgroundColor: Colors.white,
+                    foregroundColor: _onSelected,
+                  ),
+                  icon: const Icon(Icons.save_outlined),
+                  label: const Text('Lưu và tải lại'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: _checking ? null : _check,
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size(48, 48),
+                  ),
+                  icon: const Icon(Icons.network_check_rounded),
+                  label: const Text('Kiểm tra kết nối'),
+                ),
+                TextButton.icon(
+                  onPressed: custom ? _reset : null,
+                  style: TextButton.styleFrom(minimumSize: const Size(48, 48)),
+                  icon: const Icon(Icons.restart_alt_rounded),
+                  label: const Text('Khôi phục mặc định'),
+                ),
+              ],
+            ),
+            if (_checking)
+              const Padding(
+                padding: EdgeInsets.only(top: AppSizes.paddingS),
+                child: LinearProgressIndicator(
+                  semanticsLabel: 'Đang kiểm tra kết nối',
+                ),
+              ),
+            if (h != null)
+              Padding(
+                padding: const EdgeInsets.only(top: AppSizes.paddingS),
+                child: Semantics(
+                  liveRegion: true,
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(
+                        h.ok
+                            ? Icons.check_circle_outline_rounded
+                            : Icons.error_outline_rounded,
+                        color: h.ok ? ink.accent : ink.warning,
+                        size: AppSizes.iconSizeS,
+                      ),
+                      const SizedBox(width: AppSizes.paddingS),
+                      Expanded(
+                        child: Text(
+                          h.message,
+                          style: AppTextStyles.bodySmall.copyWith(
+                            color: h.ok ? Colors.white : ink.warning,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }

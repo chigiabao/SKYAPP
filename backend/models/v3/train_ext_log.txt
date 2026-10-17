@@ -14,3 +14,19 @@
 [16:42:57] wind_speed_3h: iters=560 (50s)
 [16:44:10] wind_gusts_3h: iters=689 (74s)
 [16:44:34] precipitation_mm_3h: iters=157 (24s)
+[16:46:02] humidity_6h: iters=897 (87s)
+[16:47:03] wind_speed_6h: iters=919 (61s)
+[16:47:42] wind_gusts_6h: iters=449 (39s)
+[16:48:05] precipitation_mm_6h: iters=205 (22s)
+[16:51:23] interval 1h: val raw coverage=0.750 offset=0.040
+[16:51:23] interval 3h: val raw coverage=0.742 offset=0.082
+[16:51:23] interval 6h: val raw coverage=0.743 offset=0.099
+[16:51:23] rain calib 1h: {'val_check_brier_raw': 0.08087, 'val_check_brier_isotonic': 0.08162, 'val_check_ece_raw': 0.0033, 'applied': False}
+[16:51:23] rain calib 3h: {'val_check_brier_raw': 0.112, 'val_check_brier_isotonic': 0.11231, 'val_check_ece_raw': 0.0154, 'applied': False}
+[16:51:23] rain calib 6h: {'val_check_brier_raw': 0.1199, 'val_check_brier_isotonic': 0.11932, 'val_check_ece_raw': 0.0217, 'applied': False}
+[16:51:27] gate humidity: 66/67 cells (98.5%) -> ON
+[16:51:27] gate wind_speed: 66/67 cells (98.5%) -> ON
+[16:51:27] gate wind_gusts: 67/67 cells (100.0%) -> ON
+[16:51:27] gate precipitation_mm: 67/67 cells (100.0%) -> ON
+[16:51:29] enabled=['temperature', 'rain_probability', 'temperature_interval', 'humidity', 'wind_speed', 'wind_gusts', 'precipitation_mm']
+[16:51:29] done in 1511s

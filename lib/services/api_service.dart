@@ -78,7 +78,10 @@ class ApiService {
   static const String cacheKey = 'weather_cache_v2';
 
   final http.Client _client;
-  final String baseUrl;
+  final String? _baseUrl;
+
+  /// Doc moi lan goi: ApiConfig.baseUrl co the doi luc chay.
+  String get baseUrl => _baseUrl ?? ApiConfig.baseUrl;
   final Duration timeout;
 
   /// Tra ve thoi diem that hien tai (thay duoc khi test).
@@ -86,7 +89,7 @@ class ApiService {
 
   ApiService({
     http.Client? client,
-    this.baseUrl = ApiConfig.baseUrl,
+    this._baseUrl,
     this.timeout = ApiConfig.timeout,
     DateTime Function()? clock,
   }) : _client = client ?? http.Client(),

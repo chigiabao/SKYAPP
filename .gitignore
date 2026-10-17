@@ -62,3 +62,6 @@ android/.gradle/
 
 # Ban sao luu DB (lon)
 *.backup-*.db
+
+# Golden test failure artifacts
+**/failures/

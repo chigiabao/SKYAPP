@@ -285,12 +285,15 @@ class MemoryTokenStore implements TokenStore {
 class AccountService {
   AccountService({
     http.Client? client,
-    this.baseUrl = ApiConfig.baseUrl,
+    this._baseUrl,
     this.timeout = ApiConfig.timeout,
   }) : _client = client ?? http.Client();
 
   final http.Client _client;
-  final String baseUrl;
+  final String? _baseUrl;
+
+  /// Doc moi lan goi: ApiConfig.baseUrl co the doi luc chay.
+  String get baseUrl => _baseUrl ?? ApiConfig.baseUrl;
   final Duration timeout;
 
   Future<AuthSession> register(String email, String password) =>

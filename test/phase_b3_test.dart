@@ -474,6 +474,46 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
+    testWidgets('AI verify: MAE muc tieu moi + do phu p10-p90', (tester) async {
+      final body = jsonDecode(jsonEncode(_verifyFull)) as Map<String, dynamic>;
+      body['evaluation'] = {
+        'temperature_mae_1h': 0.355,
+        'beats_baselines': true,
+        'humidity_mae_1h': 2.096,
+        'wind_speed_mae_1h': 1.531,
+        'precipitation_mm_mae_1h': 0.257,
+        'wind_gusts_mae_1h': 3.1,
+        'temperature_interval_coverage_1h': 0.7713,
+        'temperature_interval_coverage_3h': 0.75,
+        'interval_nominal_coverage': 0.8,
+        // wind_gusts tat -> an.
+        'enabled_targets': [
+          'temperature',
+          'temperature_interval',
+          'humidity',
+          'wind_speed',
+          'precipitation_mm',
+        ],
+      };
+      final client = MockClient(
+        (req) async => http.Response(jsonEncode(body), 200),
+      );
+      await pumpApp(tester, const AIVerifyScreen(), verifyClient: client);
+      await tester.pumpAndSettle();
+      expect(find.text('Sai số độ ẩm: ±2,1% (1h)'), findsOneWidget);
+      expect(find.text('Sai số gió: ±1,5 km/h (1h)'), findsOneWidget);
+      expect(find.text('Sai số lượng mưa: ±0,26 mm (1h)'), findsOneWidget);
+      expect(find.textContaining('gió giật'), findsNothing);
+      expect(
+        find.textContaining(
+          'p10–p90 phủ 77% (1h) · 75% (3h) trên tập kiểm tra',
+        ),
+        findsOneWidget,
+      );
+      expect(find.textContaining('mục tiêu 80%'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
     testWidgets('AI verify: target not yet available', (tester) async {
       final client = MockClient(
         (req) async => http.Response(jsonEncode(_verifyPartial), 200),

@@ -211,6 +211,9 @@ class CollapsingHeaderDelegate extends SliverPersistentHeaderDelegate {
   /// Key cua vung cat noi dung lon (dung trong test).
   static const Key heroClipKey = ValueKey<String>('hero-clip');
 
+  /// Key cua khoi chu o thanh gon (dung trong test).
+  static const Key compactTitleKey = ValueKey<String>('compact-title');
+
   @override
   double get maxExtent => metrics.maxExtent;
 
@@ -329,51 +332,61 @@ class CollapsingHeaderDelegate extends SliverPersistentHeaderDelegate {
               ),
             ),
           ),
-        if (compactOpacity > 0)
-          Positioned(
-            top: top,
-            left: 104,
-            right: 104,
-            height: barHeight,
-            child: Opacity(
-              opacity: compactOpacity,
-              child: Semantics(
-                header: true,
-                label: compact == null ? info.city : '${info.city}, $compact',
-                excludeSemantics: true,
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      info.city,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TypeScale.label.copyWith(
-                        fontWeight: FontWeight.w600,
-                        color: Palette.white,
+        // Hang nut + dong thu gon: ten can giua man hinh neu du cho, neu
+        // khong thi day sang phai cua nhom nut va cat "..." (khong de len nut).
+        Positioned(
+          top: top,
+          left: 0,
+          right: 0,
+          height: barHeight,
+          child: CustomMultiChildLayout(
+            delegate: _BarLayout(),
+            children: [
+              LayoutId(id: _BarSlot.actions, child: actions),
+              if (compactOpacity > 0)
+                LayoutId(
+                  id: _BarSlot.title,
+                  child: Opacity(
+                    opacity: compactOpacity,
+                    child: Semantics(
+                      header: true,
+                      label: compact == null
+                          ? info.city
+                          : '${info.city}, $compact',
+                      excludeSemantics: true,
+                      child: Column(
+                        key: compactTitleKey,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            info.city,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            softWrap: false,
+                            style: TypeScale.label.copyWith(
+                              fontWeight: FontWeight.w600,
+                              color: Palette.white,
+                            ),
+                          ),
+                          if (compact != null)
+                            Text(
+                              compact,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              softWrap: false,
+                              style: TypeScale.body.copyWith(
+                                height: 1.2,
+                                color: Palette.white,
+                                fontFeatures: kTabular,
+                              ),
+                            ),
+                        ],
                       ),
                     ),
-                    if (compact != null)
-                      Text(
-                        compact,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TypeScale.body.copyWith(
-                          height: 1.2,
-                          color: Palette.white,
-                          fontFeatures: kTabular,
-                        ),
-                      ),
-                  ],
+                  ),
                 ),
-              ),
-            ),
+            ],
           ),
-        Positioned(
-          top: top + (barHeight - HeaderMetrics.actionsHeight) / 2,
-          left: Space.xs,
-          height: HeaderMetrics.actionsHeight,
-          child: actions,
         ),
       ],
     );
@@ -388,6 +401,46 @@ class CollapsingHeaderDelegate extends SliverPersistentHeaderDelegate {
       old.glassColor != glassColor ||
       old.ink != ink ||
       old.actions != actions;
+}
+
+enum _BarSlot { actions, title }
+
+/// Bo cuc hang tren: nhom nut ben trai (cao [HeaderMetrics.actionsHeight],
+/// can giua doc); ten can giua theo chieu ngang neu khong cham nut, neu
+/// khong thi bat dau sau nut + [Space.s] va bi gioi han rong (ellipsis).
+class _BarLayout extends MultiChildLayoutDelegate {
+  @override
+  void performLayout(Size size) {
+    double actionsRight = 0;
+    if (hasChild(_BarSlot.actions)) {
+      final Size a = layoutChild(
+        _BarSlot.actions,
+        BoxConstraints.loose(Size(size.width, HeaderMetrics.actionsHeight)),
+      );
+      positionChild(
+        _BarSlot.actions,
+        Offset(Space.xs, (size.height - a.height) / 2),
+      );
+      actionsRight = Space.xs + a.width;
+    }
+    if (hasChild(_BarSlot.title)) {
+      final double start = actionsRight + Space.s;
+      final double end = size.width - Space.l;
+      final double maxW = (end - start).clamp(0.0, size.width);
+      final Size t = layoutChild(
+        _BarSlot.title,
+        BoxConstraints(maxWidth: maxW, maxHeight: size.height),
+      );
+      final double centered = (size.width - t.width) / 2;
+      final double x = centered < start
+          ? start
+          : (centered + t.width > end ? end - t.width : centered);
+      positionChild(_BarSlot.title, Offset(x, (size.height - t.height) / 2));
+    }
+  }
+
+  @override
+  bool shouldRelayout(_BarLayout oldDelegate) => false;
 }
 
 /// Khoi dau trang day du (dung trong delegate va o cot trai man hinh rong).

@@ -1,0 +1,716 @@
+[
+ {
+  "cell_id": "om-8.6819-106.5892",
+  "lat": 8.681898,
+  "lon": 106.58915,
+  "location_ids": [
+   "dac-khu-con-dao"
+  ],
+  "elevation_mean_of_locations": 7.0
+ },
+ {
+  "cell_id": "om-10.3691-107.0976",
+  "lat": 10.369068,
+  "lon": 107.09763,
+  "location_ids": [
+   "phuong-rach-dua",
+   "phuong-tam-thang",
+   "phuong-vung-tau"
+  ],
+  "elevation_mean_of_locations": 10.0
+ },
+ {
+  "cell_id": "om-10.4394-106.8750",
+  "lat": 10.439367,
+  "lon": 106.875,
+  "location_ids": [
+   "xa-can-gio"
+  ],
+  "elevation_mean_of_locations": 4.0
+ },
+ {
+  "cell_id": "om-10.4394-107.1127",
+  "lat": 10.439367,
+  "lon": 107.11268,
+  "location_ids": [
+   "xa-long-son"
+  ],
+  "elevation_mean_of_locations": 2.0
+ },
+ {
+  "cell_id": "om-10.4394-107.1919",
+  "lat": 10.439367,
+  "lon": 107.1919,
+  "location_ids": [
+   "phuong-phuoc-thang",
+   "xa-long-dien",
+   "xa-long-hai"
+  ],
+  "elevation_mean_of_locations": 7.0
+ },
+ {
+  "cell_id": "om-10.4394-107.2711",
+  "lat": 10.439367,
+  "lon": 107.271126,
+  "location_ids": [
+   "xa-phuoc-hai"
+  ],
+  "elevation_mean_of_locations": 5.0
+ },
+ {
+  "cell_id": "om-10.5097-106.8106",
+  "lat": 10.509666,
+  "lon": 106.81057,
+  "location_ids": [
+   "xa-an-thoi-dong"
+  ],
+  "elevation_mean_of_locations": 13.0
+ },
+ {
+  "cell_id": "om-10.5097-106.9692",
+  "lat": 10.509666,
+  "lon": 106.96916,
+  "location_ids": [
+   "xa-thanh-an-hcm"
+  ],
+  "elevation_mean_of_locations": 7.0
+ },
+ {
+  "cell_id": "om-10.5097-107.1278",
+  "lat": 10.509666,
+  "lon": 107.12775,
+  "location_ids": [
+   "phuong-long-huong",
+   "phuong-tan-hai"
+  ],
+  "elevation_mean_of_locations": 6.0
+ },
+ {
+  "cell_id": "om-10.5097-107.2070",
+  "lat": 10.509666,
+  "lon": 107.20705,
+  "location_ids": [
+   "phuong-ba-ria",
+   "phuong-tam-long"
+  ],
+  "elevation_mean_of_locations": 15.5
+ },
+ {
+  "cell_id": "om-10.5097-107.2863",
+  "lat": 10.509666,
+  "lon": 107.28634,
+  "location_ids": [
+   "xa-dat-do"
+  ],
+  "elevation_mean_of_locations": 40.0
+ },
+ {
+  "cell_id": "om-10.5097-107.3656",
+  "lat": 10.509666,
+  "lon": 107.36563,
+  "location_ids": [
+   "xa-ho-tram"
+  ],
+  "elevation_mean_of_locations": 19.0
+ },
+ {
+  "cell_id": "om-10.5800-107.0635",
+  "lat": 10.579965,
+  "lon": 107.0635,
+  "location_ids": [
+   "phuong-tan-phuoc"
+  ],
+  "elevation_mean_of_locations": 7.0
+ },
+ {
+  "cell_id": "om-10.5800-107.1429",
+  "lat": 10.579965,
+  "lon": 107.14286,
+  "location_ids": [
+   "xa-chau-pha"
+  ],
+  "elevation_mean_of_locations": 39.0
+ },
+ {
+  "cell_id": "om-10.5800-107.3016",
+  "lat": 10.579965,
+  "lon": 107.30159,
+  "location_ids": [
+   "xa-nghia-thanh"
+  ],
+  "elevation_mean_of_locations": 71.0
+ },
+ {
+  "cell_id": "om-10.5800-107.4603",
+  "lat": 10.579965,
+  "lon": 107.46032,
+  "location_ids": [
+   "xa-xuyen-moc"
+  ],
+  "elevation_mean_of_locations": 26.0
+ },
+ {
+  "cell_id": "om-10.5800-107.5397",
+  "lat": 10.579965,
+  "lon": 107.53969,
+  "location_ids": [
+   "xa-binh-chau"
+  ],
+  "elevation_mean_of_locations": 57.0
+ },
+ {
+  "cell_id": "om-10.6503-106.6019",
+  "lat": 10.650264,
+  "lon": 106.60194,
+  "location_ids": [
+   "xa-binh-chanh",
+   "xa-hung-long"
+  ],
+  "elevation_mean_of_locations": 5.0
+ },
+ {
+  "cell_id": "om-10.6503-106.7608",
+  "lat": 10.650264,
+  "lon": 106.76081,
+  "location_ids": [
+   "xa-binh-khanh",
+   "xa-hiep-phuoc"
+  ],
+  "elevation_mean_of_locations": 4.0
+ },
+ {
+  "cell_id": "om-10.6503-107.0786",
+  "lat": 10.650264,
+  "lon": 107.07855,
+  "location_ids": [
+   "phuong-phu-my"
+  ],
+  "elevation_mean_of_locations": 8.0
+ },
+ {
+  "cell_id": "om-10.6503-107.1580",
+  "lat": 10.650264,
+  "lon": 107.15798,
+  "location_ids": [
+   "phuong-tan-thanh"
+  ],
+  "elevation_mean_of_locations": 56.0
+ },
+ {
+  "cell_id": "om-10.6503-107.2374",
+  "lat": 10.650264,
+  "lon": 107.23742,
+  "location_ids": [
+   "xa-kim-long",
+   "xa-ngai-giao"
+  ],
+  "elevation_mean_of_locations": 103.5
+ },
+ {
+  "cell_id": "om-10.6503-107.3169",
+  "lat": 10.650264,
+  "lon": 107.31686,
+  "location_ids": [
+   "xa-binh-gia",
+   "xa-xuan-son"
+  ],
+  "elevation_mean_of_locations": 115.0
+ },
+ {
+  "cell_id": "om-10.6503-107.3963",
+  "lat": 10.650264,
+  "lon": 107.396286,
+  "location_ids": [
+   "xa-hoa-hoi"
+  ],
+  "elevation_mean_of_locations": 60.0
+ },
+ {
+  "cell_id": "om-10.7206-106.5371",
+  "lat": 10.720562,
+  "lon": 106.5371,
+  "location_ids": [
+   "xa-binh-loi",
+   "xa-tan-nhut"
+  ],
+  "elevation_mean_of_locations": 4.0
+ },
+ {
+  "cell_id": "om-10.7206-106.6166",
+  "lat": 10.720562,
+  "lon": 106.61661,
+  "location_ids": [
+   "phuong-an-lac",
+   "phuong-binh-dong",
+   "phuong-binh-phu",
+   "phuong-binh-tay",
+   "phuong-binh-tien",
+   "phuong-phu-dinh",
+   "phuong-phu-lam",
+   "phuong-tan-tao",
+   "xa-binh-hung"
+  ],
+  "elevation_mean_of_locations": 6.2
+ },
+ {
+  "cell_id": "om-10.7206-106.6961",
+  "lat": 10.720562,
+  "lon": 106.69611,
+  "location_ids": [
+   "phuong-an-dong",
+   "phuong-chanh-hung",
+   "phuong-cho-quan",
+   "phuong-phu-thuan",
+   "phuong-tan-hung",
+   "phuong-tan-my",
+   "phuong-vinh-hoi",
+   "xa-nha-be"
+  ],
+  "elevation_mean_of_locations": 7.0
+ },
+ {
+  "cell_id": "om-10.7206-107.2527",
+  "lat": 10.720562,
+  "lon": 107.252655,
+  "location_ids": [
+   "xa-chau-duc"
+  ],
+  "elevation_mean_of_locations": 162.0
+ },
+ {
+  "cell_id": "om-10.7206-107.4117",
+  "lat": 10.720562,
+  "lon": 107.41166,
+  "location_ids": [
+   "xa-bau-lam"
+  ],
+  "elevation_mean_of_locations": 107.0
+ },
+ {
+  "cell_id": "om-10.7206-107.4912",
+  "lat": 10.720562,
+  "lon": 107.491165,
+  "location_ids": [
+   "xa-hoa-hiep"
+  ],
+  "elevation_mean_of_locations": 78.0
+ },
+ {
+  "cell_id": "om-10.7909-106.5517",
+  "lat": 10.790861,
+  "lon": 106.55173,
+  "location_ids": [
+   "phuong-binh-tan",
+   "xa-tan-vinh-loc",
+   "xa-vinh-loc"
+  ],
+  "elevation_mean_of_locations": 4.7
+ },
+ {
+  "cell_id": "om-10.7909-106.6313",
+  "lat": 10.790861,
+  "lon": 106.6313,
+  "location_ids": [
+   "phuong-bay-hien",
+   "phuong-binh-hung-hoa",
+   "phuong-binh-thoi",
+   "phuong-binh-tri-dong",
+   "phuong-cho-lon",
+   "phuong-dien-hong",
+   "phuong-hoa-binh",
+   "phuong-hoa-hung",
+   "phuong-minh-phung",
+   "phuong-phu-thanh",
+   "phuong-phu-tho",
+   "phuong-phu-tho-hoa",
+   "phuong-tan-binh",
+   "phuong-tan-hoa",
+   "phuong-tan-phu",
+   "phuong-tan-son",
+   "phuong-tan-son-hoa",
+   "phuong-tan-son-nhat",
+   "phuong-tan-son-nhi",
+   "phuong-tay-thanh"
+  ],
+  "elevation_mean_of_locations": 10.6
+ },
+ {
+  "cell_id": "om-10.7909-106.7109",
+  "lat": 10.790861,
+  "lon": 106.71088,
+  "location_ids": [
+   "phuong-an-khanh",
+   "phuong-ban-co",
+   "phuong-ben-thanh",
+   "phuong-binh-loi-trung",
+   "phuong-binh-thanh",
+   "phuong-cau-kieu",
+   "phuong-cau-ong-lanh",
+   "phuong-duc-nhuan",
+   "phuong-gia-dinh",
+   "phuong-hanh-thong",
+   "phuong-khanh-hoi",
+   "phuong-nhieu-loc",
+   "phuong-phu-nhuan",
+   "phuong-sai-gon",
+   "phuong-tan-dinh",
+   "phuong-tan-thuan",
+   "phuong-thanh-my-tay",
+   "phuong-vuon-lai",
+   "phuong-xom-chieu",
+   "phuong-xuan-hoa"
+  ],
+  "elevation_mean_of_locations": 10.5
+ },
+ {
+  "cell_id": "om-10.7909-106.7905",
+  "lat": 10.790861,
+  "lon": 106.79045,
+  "location_ids": [
+   "phuong-binh-trung",
+   "phuong-cat-lai",
+   "phuong-long-truong",
+   "phuong-phuoc-long"
+  ],
+  "elevation_mean_of_locations": 5.8
+ },
+ {
+  "cell_id": "om-10.7909-106.8700",
+  "lat": 10.790861,
+  "lon": 106.870026,
+  "location_ids": [
+   "phuong-long-phuoc"
+  ],
+  "elevation_mean_of_locations": 5.0
+ },
+ {
+  "cell_id": "om-10.8612-106.5664",
+  "lat": 10.86116,
+  "lon": 106.566376,
+  "location_ids": [
+   "xa-ba-diem",
+   "xa-xuan-thoi-son"
+  ],
+  "elevation_mean_of_locations": 5.5
+ },
+ {
+  "cell_id": "om-10.8612-106.6460",
+  "lat": 10.86116,
+  "lon": 106.64602,
+  "location_ids": [
+   "phuong-an-hoi-dong",
+   "phuong-an-hoi-tay",
+   "phuong-an-nhon",
+   "phuong-dong-hung-thuan",
+   "phuong-go-vap",
+   "phuong-tan-thoi-hiep",
+   "phuong-thoi-an",
+   "phuong-thong-tay-hoi",
+   "phuong-trung-my-tay",
+   "xa-dong-thanh"
+  ],
+  "elevation_mean_of_locations": 10.6
+ },
+ {
+  "cell_id": "om-10.8612-106.7257",
+  "lat": 10.86116,
+  "lon": 106.72567,
+  "location_ids": [
+   "phuong-an-phu-dong",
+   "phuong-binh-quoi",
+   "phuong-hiep-binh",
+   "phuong-linh-xuan",
+   "phuong-tam-binh",
+   "phuong-thu-duc"
+  ],
+  "elevation_mean_of_locations": 11.8
+ },
+ {
+  "cell_id": "om-10.8612-106.8053",
+  "lat": 10.86116,
+  "lon": 106.80531,
+  "location_ids": [
+   "phuong-dong-hoa",
+   "phuong-long-binh",
+   "phuong-tang-nhon-phu"
+  ],
+  "elevation_mean_of_locations": 25.3
+ },
+ {
+  "cell_id": "om-10.9315-106.5811",
+  "lat": 10.931458,
+  "lon": 106.58105,
+  "location_ids": [
+   "xa-hoc-mon"
+  ],
+  "elevation_mean_of_locations": 9.0
+ },
+ {
+  "cell_id": "om-10.9315-106.6608",
+  "lat": 10.931458,
+  "lon": 106.66076,
+  "location_ids": [
+   "phuong-lai-thieu",
+   "phuong-thuan-an"
+  ],
+  "elevation_mean_of_locations": 10.0
+ },
+ {
+  "cell_id": "om-10.9315-106.7405",
+  "lat": 10.931458,
+  "lon": 106.74048,
+  "location_ids": [
+   "phuong-an-phu",
+   "phuong-binh-hoa",
+   "phuong-di-an",
+   "phuong-tan-dong-hiep",
+   "phuong-thuan-giao"
+  ],
+  "elevation_mean_of_locations": 28.4
+ },
+ {
+  "cell_id": "om-11.0018-106.4362",
+  "lat": 11.001758,
+  "lon": 106.436165,
+  "location_ids": [
+   "xa-tan-an-hoi",
+   "xa-thai-my"
+  ],
+  "elevation_mean_of_locations": 8.0
+ },
+ {
+  "cell_id": "om-11.0018-106.5160",
+  "lat": 11.001758,
+  "lon": 106.51595,
+  "location_ids": [
+   "xa-cu-chi",
+   "xa-nhuan-duc"
+  ],
+  "elevation_mean_of_locations": 12.0
+ },
+ {
+  "cell_id": "om-11.0018-106.5957",
+  "lat": 11.001758,
+  "lon": 106.59574,
+  "location_ids": [
+   "xa-binh-my",
+   "xa-phu-hoa-dong"
+  ],
+  "elevation_mean_of_locations": 5.0
+ },
+ {
+  "cell_id": "om-11.0018-106.6755",
+  "lat": 11.001758,
+  "lon": 106.67553,
+  "location_ids": [
+   "phuong-chanh-hiep",
+   "phuong-phu-loi",
+   "phuong-thu-dau-mot"
+  ],
+  "elevation_mean_of_locations": 14.7
+ },
+ {
+  "cell_id": "om-11.0018-106.7553",
+  "lat": 11.001758,
+  "lon": 106.75532,
+  "location_ids": [
+   "phuong-tan-khanh"
+  ],
+  "elevation_mean_of_locations": 26.0
+ },
+ {
+  "cell_id": "om-11.0721-106.5306",
+  "lat": 11.072056,
+  "lon": 106.53061,
+  "location_ids": [
+   "xa-an-nhon-tay"
+  ],
+  "elevation_mean_of_locations": 24.0
+ },
+ {
+  "cell_id": "om-11.0721-106.6105",
+  "lat": 11.072056,
+  "lon": 106.610466,
+  "location_ids": [
+   "phuong-hoa-loi",
+   "phuong-phu-an",
+   "phuong-thoi-hoa"
+  ],
+  "elevation_mean_of_locations": 20.0
+ },
+ {
+  "cell_id": "om-11.0721-106.6903",
+  "lat": 11.072056,
+  "lon": 106.69032,
+  "location_ids": [
+   "phuong-binh-duong"
+  ],
+  "elevation_mean_of_locations": 34.0
+ },
+ {
+  "cell_id": "om-11.0721-106.7702",
+  "lat": 11.072056,
+  "lon": 106.77018,
+  "location_ids": [
+   "phuong-tan-hiep",
+   "phuong-tan-uyen"
+  ],
+  "elevation_mean_of_locations": 25.0
+ },
+ {
+  "cell_id": "om-11.0721-106.9299",
+  "lat": 11.072056,
+  "lon": 106.9299,
+  "location_ids": [
+   "xa-thuong-tan"
+  ],
+  "elevation_mean_of_locations": 22.0
+ },
+ {
+  "cell_id": "om-11.1424-106.5453",
+  "lat": 11.142355,
+  "lon": 106.54529,
+  "location_ids": [
+   "phuong-long-nguyen",
+   "phuong-tay-nam"
+  ],
+  "elevation_mean_of_locations": 13.5
+ },
+ {
+  "cell_id": "om-11.1424-106.6252",
+  "lat": 11.142355,
+  "lon": 106.62522,
+  "location_ids": [
+   "phuong-ben-cat"
+  ],
+  "elevation_mean_of_locations": 16.0
+ },
+ {
+  "cell_id": "om-11.1424-106.7052",
+  "lat": 11.142355,
+  "lon": 106.70515,
+  "location_ids": [
+   "phuong-chanh-phu-hoa",
+   "phuong-vinh-tan"
+  ],
+  "elevation_mean_of_locations": 39.5
+ },
+ {
+  "cell_id": "om-11.1424-106.7851",
+  "lat": 11.142355,
+  "lon": 106.78508,
+  "location_ids": [
+   "phuong-binh-co"
+  ],
+  "elevation_mean_of_locations": 52.0
+ },
+ {
+  "cell_id": "om-11.1424-106.8650",
+  "lat": 11.142355,
+  "lon": 106.865005,
+  "location_ids": [
+   "xa-bac-tan-uyen"
+  ],
+  "elevation_mean_of_locations": 70.0
+ },
+ {
+  "cell_id": "om-11.2830-106.4146",
+  "lat": 11.282952,
+  "lon": 106.41459,
+  "location_ids": [
+   "xa-thanh-an-bd"
+  ],
+  "elevation_mean_of_locations": 31.0
+ },
+ {
+  "cell_id": "om-11.2830-106.5747",
+  "lat": 11.282952,
+  "lon": 106.57473,
+  "location_ids": [
+   "xa-bau-bang"
+  ],
+  "elevation_mean_of_locations": 32.0
+ },
+ {
+  "cell_id": "om-11.2830-106.7349",
+  "lat": 11.282952,
+  "lon": 106.73487,
+  "location_ids": [
+   "xa-phuoc-hoa"
+  ],
+  "elevation_mean_of_locations": 65.0
+ },
+ {
+  "cell_id": "om-11.2830-106.8950",
+  "lat": 11.282952,
+  "lon": 106.89502,
+  "location_ids": [
+   "xa-phu-giao"
+  ],
+  "elevation_mean_of_locations": 81.0
+ },
+ {
+  "cell_id": "om-11.3533-106.4292",
+  "lat": 11.353251,
+  "lon": 106.42921,
+  "location_ids": [
+   "xa-dau-tieng"
+  ],
+  "elevation_mean_of_locations": 41.0
+ },
+ {
+  "cell_id": "om-11.3533-106.5093",
+  "lat": 11.353251,
+  "lon": 106.50935,
+  "location_ids": [
+   "xa-long-hoa"
+  ],
+  "elevation_mean_of_locations": 39.0
+ },
+ {
+  "cell_id": "om-11.3533-106.5895",
+  "lat": 11.353251,
+  "lon": 106.58949,
+  "location_ids": [
+   "xa-tru-van-tho"
+  ],
+  "elevation_mean_of_locations": 54.0
+ },
+ {
+  "cell_id": "om-11.3533-106.6696",
+  "lat": 11.353251,
+  "lon": 106.66963,
+  "location_ids": [
+   "xa-an-long"
+  ],
+  "elevation_mean_of_locations": 51.0
+ },
+ {
+  "cell_id": "om-11.3533-106.7498",
+  "lat": 11.353251,
+  "lon": 106.74978,
+  "location_ids": [
+   "xa-phuoc-thanh"
+  ],
+  "elevation_mean_of_locations": 56.0
+ },
+ {
+  "cell_id": "om-11.4236-106.4438",
+  "lat": 11.42355,
+  "lon": 106.44385,
+  "location_ids": [
+   "xa-minh-thanh"
+  ],
+  "elevation_mean_of_locations": 75.0
+ },
+ {
+  "cell_id": "tsn",
+  "lat": 10.790861,
+  "lon": 106.6313,
+  "location_ids": [
+   "tsn"
+  ],
+  "elevation_mean_of_locations": 6.0,
+  "note": "dedicated AI-training cell; same grid point as ward cell om-10.7909-106.6313"
+ }
+]

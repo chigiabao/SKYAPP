@@ -1,0 +1,188 @@
+{
+  "model_version": "lgbm-hcmc-v2-20261015",
+  "data": "backend/data/weather.db:hourly_weather",
+  "train": [
+    "2017-01-02 07:00:00",
+    "2023-12-31 17:00:00"
+  ],
+  "val": [
+    "2024-01-01 00:00:00",
+    "2024-12-31 17:00:00"
+  ],
+  "test": [
+    "2025-01-01 00:00:00",
+    "2026-10-10 17:00:00"
+  ],
+  "rain_threshold_mm": 0.1,
+  "rain_decision_threshold": {
+    "1h": 0.46,
+    "3h": 0.36,
+    "6h": 0.32
+  },
+  "test_metrics_temperature": [
+    {
+      "Horizon": "1h",
+      "Model": "Climatology",
+      "MAE": 1.1027,
+      "RMSE": 1.4528
+    },
+    {
+      "Horizon": "1h",
+      "Model": "LightGBM",
+      "MAE": 0.3716,
+      "RMSE": 0.6147
+    },
+    {
+      "Horizon": "1h",
+      "Model": "Persistence",
+      "MAE": 0.7576,
+      "RMSE": 1.0718
+    },
+    {
+      "Horizon": "3h",
+      "Model": "Climatology",
+      "MAE": 1.1026,
+      "RMSE": 1.4527
+    },
+    {
+      "Horizon": "3h",
+      "Model": "LightGBM",
+      "MAE": 0.6436,
+      "RMSE": 0.9185
+    },
+    {
+      "Horizon": "3h",
+      "Model": "Persistence",
+      "MAE": 1.9724,
+      "RMSE": 2.5708
+    },
+    {
+      "Horizon": "6h",
+      "Model": "Climatology",
+      "MAE": 1.1025,
+      "RMSE": 1.4526
+    },
+    {
+      "Horizon": "6h",
+      "Model": "LightGBM",
+      "MAE": 0.7699,
+      "RMSE": 1.059
+    },
+    {
+      "Horizon": "6h",
+      "Model": "Persistence",
+      "MAE": 3.3917,
+      "RMSE": 4.1925
+    }
+  ],
+  "test_metrics_rain": [
+    {
+      "Horizon": "1h",
+      "Model": "Climatology",
+      "Accuracy": 0.8353,
+      "Precision": 0.5779,
+      "Recall": 0.3043,
+      "F1": 0.3987,
+      "Brier": 0.1205
+    },
+    {
+      "Horizon": "1h",
+      "Model": "LightGBM (thr@0.46 val-tuned)",
+      "Accuracy": 0.8831,
+      "Precision": 0.6961,
+      "Recall": 0.6183,
+      "F1": 0.6549,
+      "Brier": 0.0825
+    },
+    {
+      "Horizon": "1h",
+      "Model": "LightGBM (thr@0.5)",
+      "Accuracy": 0.884,
+      "Precision": 0.7167,
+      "Recall": 0.5849,
+      "F1": 0.6442,
+      "Brier": 0.0825
+    },
+    {
+      "Horizon": "1h",
+      "Model": "Persistence",
+      "Accuracy": 0.8724,
+      "Precision": 0.6447,
+      "Recall": 0.6444,
+      "F1": 0.6446,
+      "Brier": NaN
+    },
+    {
+      "Horizon": "3h",
+      "Model": "Climatology",
+      "Accuracy": 0.8353,
+      "Precision": 0.5779,
+      "Recall": 0.3043,
+      "F1": 0.3987,
+      "Brier": 0.1205
+    },
+    {
+      "Horizon": "3h",
+      "Model": "LightGBM (thr@0.36 val-tuned)",
+      "Accuracy": 0.8293,
+      "Precision": 0.5235,
+      "Recall": 0.5473,
+      "F1": 0.5351,
+      "Brier": 0.1085
+    },
+    {
+      "Horizon": "3h",
+      "Model": "LightGBM (thr@0.5)",
+      "Accuracy": 0.8432,
+      "Precision": 0.6051,
+      "Recall": 0.3642,
+      "F1": 0.4547,
+      "Brier": 0.1085
+    },
+    {
+      "Horizon": "3h",
+      "Model": "Persistence",
+      "Accuracy": 0.7933,
+      "Precision": 0.4242,
+      "Recall": 0.424,
+      "F1": 0.4241,
+      "Brier": NaN
+    },
+    {
+      "Horizon": "6h",
+      "Model": "Climatology",
+      "Accuracy": 0.8352,
+      "Precision": 0.5779,
+      "Recall": 0.3042,
+      "F1": 0.3986,
+      "Brier": 0.1205
+    },
+    {
+      "Horizon": "6h",
+      "Model": "LightGBM (thr@0.32 val-tuned)",
+      "Accuracy": 0.8211,
+      "Precision": 0.5016,
+      "Recall": 0.5582,
+      "F1": 0.5284,
+      "Brier": 0.1123
+    },
+    {
+      "Horizon": "6h",
+      "Model": "LightGBM (thr@0.5)",
+      "Accuracy": 0.8396,
+      "Precision": 0.5984,
+      "Recall": 0.3235,
+      "F1": 0.42,
+      "Brier": 0.1123
+    },
+    {
+      "Horizon": "6h",
+      "Model": "Persistence",
+      "Accuracy": 0.7574,
+      "Precision": 0.3241,
+      "Recall": 0.3239,
+      "F1": 0.324,
+      "Brier": NaN
+    }
+  ]
+}

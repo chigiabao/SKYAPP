@@ -1,0 +1,672 @@
+{
+ "om-8.6819-106.5892": {
+  "lat": 8.681898,
+  "lon": 106.58915,
+  "elevation": 7.0,
+  "dist_to_coast_km": 2.29,
+  "region_hcm": 0.0,
+  "region_bd": 0.0,
+  "region_brvt": 1.0,
+  "region": "Bà Rịa–Vũng Tàu cũ"
+ },
+ "om-10.3691-107.0976": {
+  "lat": 10.369068,
+  "lon": 107.09763,
+  "elevation": 10.0,
+  "dist_to_coast_km": 2.74,
+  "region_hcm": 0.0,
+  "region_bd": 0.0,
+  "region_brvt": 1.0,
+  "region": "Bà Rịa–Vũng Tàu cũ"
+ },
+ "om-10.4394-106.8750": {
+  "lat": 10.439367,
+  "lon": 106.875,
+  "elevation": 4.0,
+  "dist_to_coast_km": 5.48,
+  "region_hcm": 1.0,
+  "region_bd": 0.0,
+  "region_brvt": 0.0,
+  "region": "TP.HCM cũ"
+ },
+ "om-10.4394-107.1127": {
+  "lat": 10.439367,
+  "lon": 107.11268,
+  "elevation": 2.0,
+  "dist_to_coast_km": 8.13,
+  "region_hcm": 0.0,
+  "region_bd": 0.0,
+  "region_brvt": 1.0,
+  "region": "Bà Rịa–Vũng Tàu cũ"
+ },
+ "om-10.4394-107.1919": {
+  "lat": 10.439367,
+  "lon": 107.1919,
+  "elevation": 7.0,
+  "dist_to_coast_km": 7.03,
+  "region_hcm": 0.0,
+  "region_bd": 0.0,
+  "region_brvt": 1.0,
+  "region": "Bà Rịa–Vũng Tàu cũ"
+ },
+ "om-10.4394-107.2711": {
+  "lat": 10.439367,
+  "lon": 107.271126,
+  "elevation": 5.0,
+  "dist_to_coast_km": 3.97,
+  "region_hcm": 0.0,
+  "region_bd": 0.0,
+  "region_brvt": 1.0,
+  "region": "Bà Rịa–Vũng Tàu cũ"
+ },
+ "om-10.5097-106.8106": {
+  "lat": 10.509666,
+  "lon": 106.81057,
+  "elevation": 13.0,
+  "dist_to_coast_km": 15.14,
+  "region_hcm": 1.0,
+  "region_bd": 0.0,
+  "region_brvt": 0.0,
+  "region": "TP.HCM cũ"
+ },
+ "om-10.5097-106.9692": {
+  "lat": 10.509666,
+  "lon": 106.96916,
+  "elevation": 7.0,
+  "dist_to_coast_km": 9.92,
+  "region_hcm": 1.0,
+  "region_bd": 0.0,
+  "region_brvt": 0.0,
+  "region": "TP.HCM cũ"
+ },
+ "om-10.5097-107.1278": {
+  "lat": 10.509666,
+  "lon": 107.12775,
+  "elevation": 6.0,
+  "dist_to_coast_km": 14.85,
+  "region_hcm": 0.0,
+  "region_bd": 0.0,
+  "region_brvt": 1.0,
+  "region": "Bà Rịa–Vũng Tàu cũ"
+ },
+ "om-10.5097-107.2070": {
+  "lat": 10.509666,
+  "lon": 107.20705,
+  "elevation": 15.5,
+  "dist_to_coast_km": 13.99,
+  "region_hcm": 0.0,
+  "region_bd": 0.0,
+  "region_brvt": 1.0,
+  "region": "Bà Rịa–Vũng Tàu cũ"
+ },
+ "om-10.5097-107.2863": {
+  "lat": 10.509666,
+  "lon": 107.28634,
+  "elevation": 40.0,
+  "dist_to_coast_km": 10.47,
+  "region_hcm": 0.0,
+  "region_bd": 0.0,
+  "region_brvt": 1.0,
+  "region": "Bà Rịa–Vũng Tàu cũ"
+ },
+ "om-10.5097-107.3656": {
+  "lat": 10.509666,
+  "lon": 107.36563,
+  "elevation": 19.0,
+  "dist_to_coast_km": 6.34,
+  "region_hcm": 0.0,
+  "region_bd": 0.0,
+  "region_brvt": 1.0,
+  "region": "Bà Rịa–Vũng Tàu cũ"
+ },
+ "om-10.5800-107.0635": {
+  "lat": 10.579965,
+  "lon": 107.0635,
+  "elevation": 7.0,
+  "dist_to_coast_km": 17.67,
+  "region_hcm": 0.0,
+  "region_bd": 0.0,
+  "region_brvt": 1.0,
+  "region": "Bà Rịa–Vũng Tàu cũ"
+ },
+ "om-10.5800-107.1429": {
+  "lat": 10.579965,
+  "lon": 107.14286,
+  "elevation": 39.0,
+  "dist_to_coast_km": 22.07,
+  "region_hcm": 0.0,
+  "region_bd": 0.0,
+  "region_brvt": 1.0,
+  "region": "Bà Rịa–Vũng Tàu cũ"
+ },
+ "om-10.5800-107.3016": {
+  "lat": 10.579965,
+  "lon": 107.30159,
+  "elevation": 71.0,
+  "dist_to_coast_km": 16.58,
+  "region_hcm": 0.0,
+  "region_bd": 0.0,
+  "region_brvt": 1.0,
+  "region": "Bà Rịa–Vũng Tàu cũ"
+ },
+ "om-10.5800-107.4603": {
+  "lat": 10.579965,
+  "lon": 107.46032,
+  "elevation": 26.0,
+  "dist_to_coast_km": 8.41,
+  "region_hcm": 0.0,
+  "region_bd": 0.0,
+  "region_brvt": 1.0,
+  "region": "Bà Rịa–Vũng Tàu cũ"
+ },
+ "om-10.5800-107.5397": {
+  "lat": 10.579965,
+  "lon": 107.53969,
+  "elevation": 57.0,
+  "dist_to_coast_km": 4.16,
+  "region_hcm": 0.0,
+  "region_bd": 0.0,
+  "region_brvt": 1.0,
+  "region": "Bà Rịa–Vũng Tàu cũ"
+ },
+ "om-10.6503-106.6019": {
+  "lat": 10.650264,
+  "lon": 106.60194,
+  "elevation": 5.0,
+  "dist_to_coast_km": 38.87,
+  "region_hcm": 1.0,
+  "region_bd": 0.0,
+  "region_brvt": 0.0,
+  "region": "TP.HCM cũ"
+ },
+ "om-10.6503-106.7608": {
+  "lat": 10.650264,
+  "lon": 106.76081,
+  "elevation": 4.0,
+  "dist_to_coast_km": 31.68,
+  "region_hcm": 1.0,
+  "region_bd": 0.0,
+  "region_brvt": 0.0,
+  "region": "TP.HCM cũ"
+ },
+ "om-10.6503-107.0786": {
+  "lat": 10.650264,
+  "lon": 107.07855,
+  "elevation": 8.0,
+  "dist_to_coast_km": 25.61,
+  "region_hcm": 0.0,
+  "region_bd": 0.0,
+  "region_brvt": 1.0,
+  "region": "Bà Rịa–Vũng Tàu cũ"
+ },
+ "om-10.6503-107.1580": {
+  "lat": 10.650264,
+  "lon": 107.15798,
+  "elevation": 56.0,
+  "dist_to_coast_km": 29.35,
+  "region_hcm": 0.0,
+  "region_bd": 0.0,
+  "region_brvt": 1.0,
+  "region": "Bà Rịa–Vũng Tàu cũ"
+ },
+ "om-10.6503-107.2374": {
+  "lat": 10.650264,
+  "lon": 107.23742,
+  "elevation": 103.5,
+  "dist_to_coast_km": 26.84,
+  "region_hcm": 0.0,
+  "region_bd": 0.0,
+  "region_brvt": 1.0,
+  "region": "Bà Rịa–Vũng Tàu cũ"
+ },
+ "om-10.6503-107.3169": {
+  "lat": 10.650264,
+  "lon": 107.31686,
+  "elevation": 115.0,
+  "dist_to_coast_km": 22.57,
+  "region_hcm": 0.0,
+  "region_bd": 0.0,
+  "region_brvt": 1.0,
+  "region": "Bà Rịa–Vũng Tàu cũ"
+ },
+ "om-10.6503-107.3963": {
+  "lat": 10.650264,
+  "lon": 107.396286,
+  "elevation": 60.0,
+  "dist_to_coast_km": 18.55,
+  "region_hcm": 0.0,
+  "region_bd": 0.0,
+  "region_brvt": 1.0,
+  "region": "Bà Rịa–Vũng Tàu cũ"
+ },
+ "om-10.7206-106.5371": {
+  "lat": 10.720562,
+  "lon": 106.5371,
+  "elevation": 4.0,
+  "dist_to_coast_km": 49.33,
+  "region_hcm": 1.0,
+  "region_bd": 0.0,
+  "region_brvt": 0.0,
+  "region": "TP.HCM cũ"
+ },
+ "om-10.7206-106.6166": {
+  "lat": 10.720562,
+  "lon": 106.61661,
+  "elevation": 6.2,
+  "dist_to_coast_km": 44.83,
+  "region_hcm": 1.0,
+  "region_bd": 0.0,
+  "region_brvt": 0.0,
+  "region": "TP.HCM cũ"
+ },
+ "om-10.7206-106.6961": {
+  "lat": 10.720562,
+  "lon": 106.69611,
+  "elevation": 7.0,
+  "dist_to_coast_km": 41.51,
+  "region_hcm": 1.0,
+  "region_bd": 0.0,
+  "region_brvt": 0.0,
+  "region": "TP.HCM cũ"
+ },
+ "om-10.7206-107.2527": {
+  "lat": 10.720562,
+  "lon": 107.252655,
+  "elevation": 162.0,
+  "dist_to_coast_km": 32.82,
+  "region_hcm": 0.0,
+  "region_bd": 0.0,
+  "region_brvt": 1.0,
+  "region": "Bà Rịa–Vũng Tàu cũ"
+ },
+ "om-10.7206-107.4117": {
+  "lat": 10.720562,
+  "lon": 107.41166,
+  "elevation": 107.0,
+  "dist_to_coast_km": 24.75,
+  "region_hcm": 0.0,
+  "region_bd": 0.0,
+  "region_brvt": 1.0,
+  "region": "Bà Rịa–Vũng Tàu cũ"
+ },
+ "om-10.7206-107.4912": {
+  "lat": 10.720562,
+  "lon": 107.491165,
+  "elevation": 78.0,
+  "dist_to_coast_km": 19.64,
+  "region_hcm": 0.0,
+  "region_bd": 0.0,
+  "region_brvt": 1.0,
+  "region": "Bà Rịa–Vũng Tàu cũ"
+ },
+ "om-10.7909-106.5517": {
+  "lat": 10.790861,
+  "lon": 106.55173,
+  "elevation": 4.7,
+  "dist_to_coast_km": 55.06,
+  "region_hcm": 1.0,
+  "region_bd": 0.0,
+  "region_brvt": 0.0,
+  "region": "TP.HCM cũ"
+ },
+ "om-10.7909-106.6313": {
+  "lat": 10.790861,
+  "lon": 106.6313,
+  "elevation": 6.0,
+  "dist_to_coast_km": 51.34,
+  "region_hcm": 1.0,
+  "region_bd": 0.0,
+  "region_brvt": 0.0,
+  "region": "TP.HCM cũ"
+ },
+ "om-10.7909-106.7109": {
+  "lat": 10.790861,
+  "lon": 106.71088,
+  "elevation": 10.5,
+  "dist_to_coast_km": 48.24,
+  "region_hcm": 1.0,
+  "region_bd": 0.0,
+  "region_brvt": 0.0,
+  "region": "TP.HCM cũ"
+ },
+ "om-10.7909-106.7905": {
+  "lat": 10.790861,
+  "lon": 106.79045,
+  "elevation": 5.8,
+  "dist_to_coast_km": 45.64,
+  "region_hcm": 1.0,
+  "region_bd": 0.0,
+  "region_brvt": 0.0,
+  "region": "TP.HCM cũ"
+ },
+ "om-10.7909-106.8700": {
+  "lat": 10.790861,
+  "lon": 106.870026,
+  "elevation": 5.0,
+  "dist_to_coast_km": 42.94,
+  "region_hcm": 1.0,
+  "region_bd": 0.0,
+  "region_brvt": 0.0,
+  "region": "TP.HCM cũ"
+ },
+ "om-10.8612-106.5664": {
+  "lat": 10.86116,
+  "lon": 106.566376,
+  "elevation": 5.5,
+  "dist_to_coast_km": 61.3,
+  "region_hcm": 1.0,
+  "region_bd": 0.0,
+  "region_brvt": 0.0,
+  "region": "TP.HCM cũ"
+ },
+ "om-10.8612-106.6460": {
+  "lat": 10.86116,
+  "lon": 106.64602,
+  "elevation": 10.6,
+  "dist_to_coast_km": 58.06,
+  "region_hcm": 1.0,
+  "region_bd": 0.0,
+  "region_brvt": 0.0,
+  "region": "TP.HCM cũ"
+ },
+ "om-10.8612-106.7257": {
+  "lat": 10.86116,
+  "lon": 106.72567,
+  "elevation": 11.8,
+  "dist_to_coast_km": 55.04,
+  "region_hcm": 1.0,
+  "region_bd": 0.0,
+  "region_brvt": 0.0,
+  "region": "TP.HCM cũ"
+ },
+ "om-10.8612-106.8053": {
+  "lat": 10.86116,
+  "lon": 106.80531,
+  "elevation": 25.3,
+  "dist_to_coast_km": 52.9,
+  "region_hcm": 1.0,
+  "region_bd": 0.0,
+  "region_brvt": 0.0,
+  "region": "TP.HCM cũ"
+ },
+ "om-10.9315-106.5811": {
+  "lat": 10.931458,
+  "lon": 106.58105,
+  "elevation": 9.0,
+  "dist_to_coast_km": 67.9,
+  "region_hcm": 1.0,
+  "region_bd": 0.0,
+  "region_brvt": 0.0,
+  "region": "TP.HCM cũ"
+ },
+ "om-10.9315-106.6608": {
+  "lat": 10.931458,
+  "lon": 106.66076,
+  "elevation": 10.0,
+  "dist_to_coast_km": 64.79,
+  "region_hcm": 0.0,
+  "region_bd": 1.0,
+  "region_brvt": 0.0,
+  "region": "Bình Dương cũ"
+ },
+ "om-10.9315-106.7405": {
+  "lat": 10.931458,
+  "lon": 106.74048,
+  "elevation": 28.4,
+  "dist_to_coast_km": 62.11,
+  "region_hcm": 0.0,
+  "region_bd": 1.0,
+  "region_brvt": 0.0,
+  "region": "Bình Dương cũ"
+ },
+ "om-11.0018-106.4362": {
+  "lat": 11.001758,
+  "lon": 106.436165,
+  "elevation": 8.0,
+  "dist_to_coast_km": 81.69,
+  "region_hcm": 1.0,
+  "region_bd": 0.0,
+  "region_brvt": 0.0,
+  "region": "TP.HCM cũ"
+ },
+ "om-11.0018-106.5160": {
+  "lat": 11.001758,
+  "lon": 106.51595,
+  "elevation": 12.0,
+  "dist_to_coast_km": 77.82,
+  "region_hcm": 1.0,
+  "region_bd": 0.0,
+  "region_brvt": 0.0,
+  "region": "TP.HCM cũ"
+ },
+ "om-11.0018-106.5957": {
+  "lat": 11.001758,
+  "lon": 106.59574,
+  "elevation": 5.0,
+  "dist_to_coast_km": 74.63,
+  "region_hcm": 1.0,
+  "region_bd": 0.0,
+  "region_brvt": 0.0,
+  "region": "TP.HCM cũ"
+ },
+ "om-11.0018-106.6755": {
+  "lat": 11.001758,
+  "lon": 106.67553,
+  "elevation": 14.7,
+  "dist_to_coast_km": 71.6,
+  "region_hcm": 0.0,
+  "region_bd": 1.0,
+  "region_brvt": 0.0,
+  "region": "Bình Dương cũ"
+ },
+ "om-11.0018-106.7553": {
+  "lat": 11.001758,
+  "lon": 106.75532,
+  "elevation": 26.0,
+  "dist_to_coast_km": 69.35,
+  "region_hcm": 0.0,
+  "region_bd": 1.0,
+  "region_brvt": 0.0,
+  "region": "Bình Dương cũ"
+ },
+ "om-11.0721-106.5306": {
+  "lat": 11.072056,
+  "lon": 106.53061,
+  "elevation": 24.0,
+  "dist_to_coast_km": 84.47,
+  "region_hcm": 1.0,
+  "region_bd": 0.0,
+  "region_brvt": 0.0,
+  "region": "TP.HCM cũ"
+ },
+ "om-11.0721-106.6105": {
+  "lat": 11.072056,
+  "lon": 106.610466,
+  "elevation": 20.0,
+  "dist_to_coast_km": 81.36,
+  "region_hcm": 0.0,
+  "region_bd": 1.0,
+  "region_brvt": 0.0,
+  "region": "Bình Dương cũ"
+ },
+ "om-11.0721-106.6903": {
+  "lat": 11.072056,
+  "lon": 106.69032,
+  "elevation": 34.0,
+  "dist_to_coast_km": 78.62,
+  "region_hcm": 0.0,
+  "region_bd": 1.0,
+  "region_brvt": 0.0,
+  "region": "Bình Dương cũ"
+ },
+ "om-11.0721-106.7702": {
+  "lat": 11.072056,
+  "lon": 106.77018,
+  "elevation": 25.0,
+  "dist_to_coast_km": 76.05,
+  "region_hcm": 0.0,
+  "region_bd": 1.0,
+  "region_brvt": 0.0,
+  "region": "Bình Dương cũ"
+ },
+ "om-11.0721-106.9299": {
+  "lat": 11.072056,
+  "lon": 106.9299,
+  "elevation": 22.0,
+  "dist_to_coast_km": 71.93,
+  "region_hcm": 0.0,
+  "region_bd": 1.0,
+  "region_brvt": 0.0,
+  "region": "Bình Dương cũ"
+ },
+ "om-11.1424-106.5453": {
+  "lat": 11.142355,
+  "lon": 106.54529,
+  "elevation": 13.5,
+  "dist_to_coast_km": 91.2,
+  "region_hcm": 0.0,
+  "region_bd": 1.0,
+  "region_brvt": 0.0,
+  "region": "Bình Dương cũ"
+ },
+ "om-11.1424-106.6252": {
+  "lat": 11.142355,
+  "lon": 106.62522,
+  "elevation": 16.0,
+  "dist_to_coast_km": 88.17,
+  "region_hcm": 0.0,
+  "region_bd": 1.0,
+  "region_brvt": 0.0,
+  "region": "Bình Dương cũ"
+ },
+ "om-11.1424-106.7052": {
+  "lat": 11.142355,
+  "lon": 106.70515,
+  "elevation": 39.5,
+  "dist_to_coast_km": 85.81,
+  "region_hcm": 0.0,
+  "region_bd": 1.0,
+  "region_brvt": 0.0,
+  "region": "Bình Dương cũ"
+ },
+ "om-11.1424-106.7851": {
+  "lat": 11.142355,
+  "lon": 106.78508,
+  "elevation": 52.0,
+  "dist_to_coast_km": 82.93,
+  "region_hcm": 0.0,
+  "region_bd": 1.0,
+  "region_brvt": 0.0,
+  "region": "Bình Dương cũ"
+ },
+ "om-11.1424-106.8650": {
+  "lat": 11.142355,
+  "lon": 106.865005,
+  "elevation": 70.0,
+  "dist_to_coast_km": 80.78,
+  "region_hcm": 0.0,
+  "region_bd": 1.0,
+  "region_brvt": 0.0,
+  "region": "Bình Dương cũ"
+ },
+ "om-11.2830-106.4146": {
+  "lat": 11.282952,
+  "lon": 106.41459,
+  "elevation": 31.0,
+  "dist_to_coast_km": 110.92,
+  "region_hcm": 0.0,
+  "region_bd": 1.0,
+  "region_brvt": 0.0,
+  "region": "Bình Dương cũ"
+ },
+ "om-11.2830-106.5747": {
+  "lat": 11.282952,
+  "lon": 106.57473,
+  "elevation": 32.0,
+  "dist_to_coast_km": 104.74,
+  "region_hcm": 0.0,
+  "region_bd": 1.0,
+  "region_brvt": 0.0,
+  "region": "Bình Dương cũ"
+ },
+ "om-11.2830-106.7349": {
+  "lat": 11.282952,
+  "lon": 106.73487,
+  "elevation": 65.0,
+  "dist_to_coast_km": 99.49,
+  "region_hcm": 0.0,
+  "region_bd": 1.0,
+  "region_brvt": 0.0,
+  "region": "Bình Dương cũ"
+ },
+ "om-11.2830-106.8950": {
+  "lat": 11.282952,
+  "lon": 106.89502,
+  "elevation": 81.0,
+  "dist_to_coast_km": 95.67,
+  "region_hcm": 0.0,
+  "region_bd": 1.0,
+  "region_brvt": 0.0,
+  "region": "Bình Dương cũ"
+ },
+ "om-11.3533-106.4292": {
+  "lat": 11.353251,
+  "lon": 106.42921,
+  "elevation": 41.0,
+  "dist_to_coast_km": 117.62,
+  "region_hcm": 0.0,
+  "region_bd": 1.0,
+  "region_brvt": 0.0,
+  "region": "Bình Dương cũ"
+ },
+ "om-11.3533-106.5093": {
+  "lat": 11.353251,
+  "lon": 106.50935,
+  "elevation": 39.0,
+  "dist_to_coast_km": 114.5,
+  "region_hcm": 0.0,
+  "region_bd": 1.0,
+  "region_brvt": 0.0,
+  "region": "Bình Dương cũ"
+ },
+ "om-11.3533-106.5895": {
+  "lat": 11.353251,
+  "lon": 106.58949,
+  "elevation": 54.0,
+  "dist_to_coast_km": 111.71,
+  "region_hcm": 0.0,
+  "region_bd": 1.0,
+  "region_brvt": 0.0,
+  "region": "Bình Dương cũ"
+ },
+ "om-11.3533-106.6696": {
+  "lat": 11.353251,
+  "lon": 106.66963,
+  "elevation": 51.0,
+  "dist_to_coast_km": 109.18,
+  "region_hcm": 0.0,
+  "region_bd": 1.0,
+  "region_brvt": 0.0,
+  "region": "Bình Dương cũ"
+ },
+ "om-11.3533-106.7498": {
+  "lat": 11.353251,
+  "lon": 106.74978,
+  "elevation": 56.0,
+  "dist_to_coast_km": 106.52,
+  "region_hcm": 0.0,
+  "region_bd": 1.0,
+  "region_brvt": 0.0,
+  "region": "Bình Dương cũ"
+ },
+ "om-11.4236-106.4438": {
+  "lat": 11.42355,
+  "lon": 106.44385,
+  "elevation": 75.0,
+  "dist_to_coast_km": 124.35,
+  "region_hcm": 0.0,
+  "region_bd": 1.0,
+  "region_brvt": 0.0,
+  "region": "Bình Dương cũ"
+ }
+}

@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+pandas
+numpy
+openpyxl
+lightgbm
+scikit-learn
+joblib
+tzdata
+httpx
+bcrypt

@@ -2,8 +2,10 @@
 ///
 /// - Android: `WeatherWidgetProvider` (AppWidgetProvider + XML layout) doc
 ///   cac khoa [HomeWidgetData.toMap] tu SharedPreferences cua home_widget.
-/// - iOS: CHUA co WidgetKit extension (xem README); chi luu du lieu, loi
-///   (vd. chua co App Group) duoc bo qua.
+/// - iOS: WidgetKit extension `SkyWeatherWidget` (ios/SkyWeatherWidget) doc
+///   cung cac khoa + `sw_updated` tu UserDefaults cua App Group. Ban ky khong
+///   co App Group (vd. Apple ID mien phi qua 3uTools) -> bo qua, widget hien
+///   placeholder.
 /// - Web / desktop: khong lam gi.
 ///
 /// Cap nhat: moi khi app tai xong du lieu truc tiep cua trang dau tien
@@ -11,6 +13,7 @@
 library;
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:home_widget/home_widget.dart';
 
 import '../models/weather.dart';
@@ -21,6 +24,20 @@ import 'share_service.dart' show rainNext3h;
 /// Ten day du cua AppWidgetProvider (namespace Android cua app).
 const String kAndroidWidgetProvider =
     'com.example.sky_weather_app.WeatherWidgetProvider';
+
+/// `kind` cua widget iOS (SkyWeatherWidget.swift).
+const String kIosWidgetKind = 'SkyWeatherWidget';
+
+/// AppGroupChannel trong ios/Runner/AppDelegate.swift.
+const MethodChannel _appGroupChannel = MethodChannel('sky_weather/app_group');
+
+/// iOS: dat App Group thuc te cho home_widget; false neu khong co App Group.
+Future<bool> _iosAppGroupReady() async {
+  final id = await _appGroupChannel.invokeMethod<String>('appGroupId');
+  if (id == null) return false;
+  await HomeWidget.setAppGroupId(id);
+  return true;
+}
 
 /// Noi dung widget (da dinh dang san).
 @immutable
@@ -75,10 +92,17 @@ bool get _ios => !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
 Future<void> pushHomeWidget(HomeWidgetData d) async {
   if (kIsWeb || !(_android || _ios)) return;
   try {
+    if (_ios && !await _iosAppGroupReady()) return;
     for (final e in d.toMap().entries) {
       await HomeWidget.saveWidgetData<String>(e.key, e.value);
     }
-    // iOS: chua co extension -> khong goi updateWidget.
+    if (_ios) {
+      await HomeWidget.saveWidgetData<int>(
+        'sw_updated',
+        DateTime.now().millisecondsSinceEpoch ~/ 1000,
+      );
+      await HomeWidget.updateWidget(iOSName: kIosWidgetKind);
+    }
     if (_android) {
       await HomeWidget.updateWidget(
         qualifiedAndroidName: kAndroidWidgetProvider,

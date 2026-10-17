@@ -5,7 +5,7 @@ name: Build iOS / Web / Android
 
 on:
   push:
-    branches: [main]
+    branches: [main, ios-widget]
   workflow_dispatch:
     inputs:
       api_base_url:
@@ -58,18 +58,42 @@ jobs:
           ARGS=()
           if [ -n "$API_BASE_URL" ]; then ARGS+=("--dart-define=API_BASE_URL=$API_BASE_URL"); fi
           flutter build ios --release --no-codesign "${ARGS[@]}"
+      # Giu Runner.app/PlugIns (widget SkyWeatherWidget.appex) trong IPA.
       - name: Dong goi SkyWeather-unsigned.ipa
         run: |
           cd build/ios/iphoneos
+          test -d Runner.app/PlugIns/SkyWeatherWidget.appex
           rm -rf Payload SkyWeather-unsigned.ipa
           mkdir Payload
           cp -R Runner.app Payload/
+          ls Payload/Runner.app/PlugIns
           zip -qry SkyWeather-unsigned.ipa Payload
           ls -lh SkyWeather-unsigned.ipa
+      # Ban ky ad-hoc mang entitlements App Group: AltStore/SideStore doc
+      # entitlements nay de tao App Group khi ky lai bang Apple ID (widget co
+      # du lieu). Loi buoc nay khong chan ban unsigned o tren.
+      - name: Dong goi SkyWeather-adhoc-appgroup.ipa
+        continue-on-error: true
+        run: |
+          cd build/ios/iphoneos
+          rm -rf AdHoc SkyWeather-adhoc-appgroup.ipa
+          mkdir -p AdHoc/Payload
+          cp -R Runner.app AdHoc/Payload/
+          APP=AdHoc/Payload/Runner.app
+          for f in "$APP"/Frameworks/*; do codesign --force --sign - "$f"; done
+          codesign --force --sign - --entitlements "$GITHUB_WORKSPACE/ios/SkyWeatherWidget/SkyWeatherWidget.entitlements" "$APP/PlugIns/SkyWeatherWidget.appex"
+          codesign --force --sign - --entitlements "$GITHUB_WORKSPACE/ios/Runner/Runner.entitlements" "$APP"
+          codesign -d --entitlements - "$APP/PlugIns/SkyWeatherWidget.appex"
+          codesign -d --entitlements - "$APP"
+          cd AdHoc
+          zip -qry ../SkyWeather-adhoc-appgroup.ipa Payload
+          ls -lh ../SkyWeather-adhoc-appgroup.ipa
       - uses: actions/upload-artifact@v4
         with:
           name: SkyWeather-unsigned-ipa
-          path: build/ios/iphoneos/SkyWeather-unsigned.ipa
+          path: |
+            build/ios/iphoneos/SkyWeather-unsigned.ipa
+            build/ios/iphoneos/SkyWeather-adhoc-appgroup.ipa
           retention-days: 14
 
   web:

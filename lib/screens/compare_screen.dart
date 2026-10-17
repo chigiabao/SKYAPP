@@ -39,8 +39,18 @@ class CompareSeriesStyle {
   final String shapeName;
 
   static const List<CompareSeriesStyle> all = [
-    CompareSeriesStyle(Color(0xFF7DD3FC), null, CompareDotShape.circle, 'nét liền'),
-    CompareSeriesStyle(Color(0xFFFCD34D), [8, 5], CompareDotShape.square, 'nét đứt'),
+    CompareSeriesStyle(
+      Color(0xFF7DD3FC),
+      null,
+      CompareDotShape.circle,
+      'nét liền',
+    ),
+    CompareSeriesStyle(
+      Color(0xFFFCD34D),
+      [8, 5],
+      CompareDotShape.square,
+      'nét đứt',
+    ),
     CompareSeriesStyle(
       Color(0xFFF0ABFC),
       [2, 4],

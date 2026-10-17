@@ -32,7 +32,9 @@ class HourlyItem extends StatelessWidget {
     // Gio thuc te: hien luong mua da do (mm) thay vi "100%".
     final mm = forecast.precipitationMm;
     final rainText = forecast.isObserved
-        ? (mm != null && mm > 0 ? PreferencesProvider.unitsOf(context).rainText(mm) : null)
+        ? (mm != null && mm > 0
+              ? PreferencesProvider.unitsOf(context).rainText(mm)
+              : null)
         : (forecast.rainPercent > 0 ? '${forecast.rainPercent}%' : null);
 
     return Semantics(

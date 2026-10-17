@@ -653,7 +653,7 @@ class _MapScreenState extends State<MapScreen> {
         if (widget.showTiles)
           TileLayer(
             urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-            userAgentPackageName: 'com.example.sky_weather_app',
+            userAgentPackageName: 'com.skyweather.app',
             maxNativeZoom: 19,
             errorTileCallback: _onTileError,
           ),

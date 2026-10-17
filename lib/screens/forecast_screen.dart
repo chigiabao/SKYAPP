@@ -1,16 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../config/api_config.dart';
 import '../models/weather.dart';
 import '../providers/planner_provider.dart';
 import '../providers/weather_provider.dart';
+import '../services/feedback_service.dart';
+import '../services/share_service.dart';
 import '../ui/weather/widgets/glass_page.dart';
+import '../ui/weather/design_tokens.dart';
 import '../utils/constants.dart';
 import '../widgets/planner_cards.dart';
 import 'forecast/forecast_charts.dart';
 import 'forecast/forecast_format.dart';
 import 'forecast/forecast_source.dart';
 import 'forecast/forecast_widgets.dart';
+import 'feedback_screen.dart';
 
 export 'forecast/forecast_source.dart' show ForecastSource;
 
@@ -113,13 +118,17 @@ class _ForecastScreenState extends State<ForecastScreen> {
     } else {
       final day = days[selectedIndex];
       title = ForecastFormat.title(day.date);
+      final width = MediaQuery.sizeOf(context).width;
+      final hPad = width > Space.contentMaxWidth + 2 * AppSizes.paddingM
+          ? (width - Space.contentMaxWidth) / 2
+          : AppSizes.paddingM;
       body = RefreshIndicator(
         onRefresh: provider.fetchWeatherData,
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(
-            AppSizes.paddingM,
+          padding: EdgeInsets.fromLTRB(
+            hPad,
             AppSizes.paddingS,
-            AppSizes.paddingM,
+            hPad,
             AppSizes.paddingXL,
           ),
           children: [
@@ -171,6 +180,12 @@ class _ForecastScreenState extends State<ForecastScreen> {
         ),
         actions: [
           IconButton(
+            tooltip: 'Báo dự báo sai',
+            icon: const Icon(Icons.report_outlined),
+            onPressed: () => _openWrongForecast(context, provider, hours),
+          ),
+          _ShareMenu(provider: provider, hours: hours),
+          IconButton(
             tooltip: 'Làm mới',
             icon: const Icon(Icons.refresh_rounded),
             onPressed: provider.isLoading ? null : provider.fetchWeatherData,
@@ -184,6 +199,28 @@ class _ForecastScreenState extends State<ForecastScreen> {
         ),
       ),
       body: body,
+    );
+  }
+
+  /// Mo man Gop y voi loai "Dự báo sai" + du bao gio hien tai dinh kem.
+  void _openWrongForecast(
+    BuildContext context,
+    WeatherProvider provider,
+    List<HourlyForecast> hours,
+  ) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => FeedbackScreen(
+          initialKind: FeedbackKind.wrongForecast,
+          locationId: provider.locationId,
+          snapshot: forecastSnapshot(
+            locationId: provider.locationId,
+            nowHcm: provider.nowHcm,
+            hours: hours,
+            current: provider.currentWeather,
+          ),
+        ),
+      ),
     );
   }
 
@@ -338,6 +375,75 @@ class _ForecastScreenState extends State<ForecastScreen> {
             : null,
       ),
     ];
+  }
+}
+
+/// Menu chia se: tom tat thoi tiet / goi y khung gio hoat dong (van ban).
+class _ShareMenu extends StatelessWidget {
+  const _ShareMenu({required this.provider, required this.hours});
+
+  final WeatherProvider provider;
+  final List<HourlyForecast> hours;
+
+  String get _place =>
+      provider.currentWeather?.locationName ?? ApiConfig.locationName;
+
+  Future<void> _share(BuildContext context, String? text) async {
+    final messenger = ScaffoldMessenger.of(context);
+    if (text == null) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Chưa có dữ liệu để chia sẻ.')),
+      );
+      return;
+    }
+    final r = await shareOrCopy(text);
+    if (r == ShareOutcome.shared) return;
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(
+          r == ShareOutcome.copied
+              ? 'Thiết bị không hỗ trợ chia sẻ. Đã sao chép nội dung vào bộ nhớ tạm.'
+              : 'Không chia sẻ được.',
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final planner = maybePlanner(context);
+    return PopupMenuButton<int>(
+      tooltip: 'Chia sẻ',
+      icon: const Icon(Icons.share_outlined),
+      onSelected: (v) => _share(
+        context,
+        v == 0
+            ? forecastShareText(
+                placeName: _place,
+                nowHcm: provider.nowHcm,
+                hours: hours,
+                current: provider.currentWeather,
+                formatTempValue: provider.formatTempValue,
+              )
+            : (hours.isEmpty || planner == null
+                  ? null
+                  : activityShareText(
+                      placeName: _place,
+                      activities: planner.favorites,
+                      hours: hours,
+                      nowHcm: provider.nowHcm,
+                      sensitivity: planner.sensitivity,
+                    )),
+      ),
+      itemBuilder: (_) => [
+        const PopupMenuItem(value: 0, child: Text('Chia sẻ thời tiết')),
+        if (planner != null)
+          const PopupMenuItem(
+            value: 1,
+            child: Text('Chia sẻ gợi ý giờ hoạt động'),
+          ),
+      ],
+    );
   }
 }
 

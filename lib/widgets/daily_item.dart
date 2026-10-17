@@ -114,7 +114,8 @@ class DailyItem extends StatelessWidget {
                       ),
                     _fitStart(
                       Text(
-                        PreferencesProvider.unitsOf(context).rainText(_rainAmount),
+                        PreferencesProvider.unitsOf(context)
+                            .rainText(_rainAmount),
                         maxLines: 1,
                         style: AppTextStyles.caption.copyWith(
                           color: forecast.rainDayPercent != null

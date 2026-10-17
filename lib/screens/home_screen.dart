@@ -37,6 +37,7 @@ import 'forecast/forecast_format.dart';
 import 'forecast_screen.dart';
 import 'locations_screen.dart';
 import 'settings_screen.dart';
+import 'trip_screen.dart';
 
 /// Man hinh chinh: nen canh thoi tiet dong + the kinh kieu iOS.
 /// Moi dia diem (vi tri hien tai + dia diem da luu) la mot trang PageView.
@@ -303,6 +304,8 @@ class _HomeScreenState extends State<HomeScreen> {
                                   firstIsCurrentLocation:
                                       pages.first.isCurrentLocation,
                                   onMap: _openMap,
+                                  onTrip: () =>
+                                      openTripScreen(context, locations: _lp),
                                   onLocations: _openLocations,
                                 ),
                               ),

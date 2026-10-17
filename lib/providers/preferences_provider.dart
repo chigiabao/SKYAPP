@@ -264,4 +264,12 @@ class _ScaledTextScaler extends TextScaler {
   double get textScaleFactor => scale(14) / 14;
 
   @override
-  
+  bool operator ==(Object other) =>
+      other is _ScaledTextScaler &&
+      other.base == base &&
+      other.factor == factor &&
+      other.max == max;
+
+  @override
+  int get hashCode => Object.hash(base, factor, max);
+}

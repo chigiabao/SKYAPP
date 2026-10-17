@@ -466,6 +466,8 @@ class _NotesCard extends StatelessWidget {
     final notes = [
       '"Thực tế" là dữ liệu phân tích của mô hình (Open-Meteo), '
           'không phải số đo từ trạm khí tượng.',
+      'Thực tế = dữ liệu phân tích của mô hình; phản hồi người dùng không '
+          'được dùng làm thực tế.',
       '"Có mưa / Không mưa" do máy chủ đánh giá từ lượng mưa thực tế '
           'trong giờ đó.',
       'Vài mốc kiểm chứng không đủ để đánh giá độ chính xác của mô hình.',

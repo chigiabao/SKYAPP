@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import 'config/api_config.dart';
 import 'models/app_settings.dart';
 import 'providers/account_provider.dart';
 import 'providers/location_provider.dart';
 import 'providers/planner_provider.dart';
 import 'providers/preferences_provider.dart';
+import 'providers/trip_provider.dart';
 import 'providers/weather_provider.dart';
 import 'screens/home_screen.dart';
 import 'services/background_check.dart';
@@ -21,6 +23,8 @@ Future<void> main() async {
 
   // Doc cai dat truoc frame dau de khong bi nhay giao dien sang/toi
   final settings = await AppSettings.load();
+  // URL may chu nguoi dung tu dat (Cai dat > Nang cao), neu co.
+  await ApiConfig.loadBaseUrl();
 
   runApp(SkyWeatherApp(initialSettings: settings));
 }
@@ -60,6 +64,13 @@ class SkyWeatherApp extends StatelessWidget {
         // Don vi, chi so trang chu, tro nang (nhom 8).
         ChangeNotifierProvider(
           create: (context) => PreferencesProvider()..load(),
+        ),
+        // Canh bao khi di chuyen (nhom 6); lich su chuyen di chi tren may.
+        ChangeNotifierProvider(
+          create: (context) => TripProvider(
+            units: () => context.read<PreferencesProvider>().units,
+            alertSettings: () => context.read<PlannerProvider>().settings,
+          )..load(),
         ),
         // Tai khoan tuy chon + dong bo (nhom 9).
         ChangeNotifierProvider(

@@ -44,11 +44,13 @@ class AIForecastCard extends StatelessWidget {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  'Kiểm chứng',
-                  style: TypeScale.body.copyWith(
-                    fontWeight: FontWeight.w600,
-                    color: ink.accent,
+                Flexible(
+                  child: Text(
+                    'Kiểm chứng',
+                    style: TypeScale.body.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: ink.accent,
+                    ),
                   ),
                 ),
                 Icon(

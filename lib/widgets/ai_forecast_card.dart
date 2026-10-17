@@ -131,12 +131,13 @@ class AIForecastCard extends StatelessWidget {
         'Open-Meteo; chỉ mang tính tham khảo.';
   }
 
-  /// Mien chung (do C) cho thanh khoang: tu p10 thap nhat toi p90 cao nhat.
+  /// Mien chung (do C) cho thanh khoang: tu can duoi thap nhat toi can tren
+  /// cao nhat.
   static (double, double)? _domain(AIForecast f) {
     if (!_showsInterval(f)) return null;
     double? lo, hi;
     for (final p in f.predictions) {
-      for (final v in [p.temperature, p.temperatureP10, p.temperatureP90]) {
+      for (final v in [p.temperature, p.intervalLow, p.intervalHigh]) {
         if (v == null) continue;
         lo = lo == null || v < lo ? v : lo;
         hi = hi == null || v > hi ? v : hi;
@@ -263,7 +264,11 @@ class _UnavailableState extends StatelessWidget {
   }
 }
 
-/// Do phu thuc te cua khoang p10-p90 (%, lam tron) - lay tu
+/// Ten khoang theo muc tin cay: "khoảng 90%"; khong ro muc -> "khoảng dự báo".
+String intervalLevelLabel(double? level) =>
+    level == null ? 'khoảng dự báo' : 'khoảng ${(level * 100).round()}%';
+
+/// Do phu thuc te cua khoang nhiet do (%, lam tron) - lay tu
 /// `uncertainty_note` ("~77% số lần"), neu thieu thi tu danh gia o luoi.
 int? intervalCoveragePercent(AIPrediction p, AIEvaluation? e) {
   final note = p.uncertaintyNote;
@@ -290,7 +295,8 @@ class AIIntervalNote extends StatelessWidget {
     final covText = cov == null
         ? ''
         : ', kiểm chứng thực tế rơi vào khoảng ~$cov% số lần';
-    return 'Trong ngoặc: khoảng p10–p90$covText. Đây là mức bất định, '
+    final label = intervalLevelLabel(first?.effectiveIntervalLevel);
+    return 'Trong ngoặc: $label$covText. Đây là mức bất định, '
         'không phải điểm độ chính xác.';
   }
 
@@ -370,7 +376,7 @@ class _PredictionColumn extends StatelessWidget {
     final showRain = forecast.isEnabled('rain_probability');
     String t(double c) => provider.formatTempValue(c);
     final rangeText = showInterval
-        ? '${t(p.temperatureP10!)}–${t(p.temperatureP90!)}°'
+        ? '${t(p.intervalLow!)}–${t(p.intervalHigh!)}°'
         : null;
 
     final extras = <(IconData, String, String)>[
@@ -390,8 +396,8 @@ class _PredictionColumn extends StatelessWidget {
     );
     if (rangeText != null) {
       semantics.write(
-        ', khoảng p10 đến p90 từ ${t(p.temperatureP10!)} '
-        'đến ${t(p.temperatureP90!)} độ',
+        ', ${intervalLevelLabel(p.effectiveIntervalLevel)} từ '
+        '${t(p.intervalLow!)} đến ${t(p.intervalHigh!)} độ',
       );
     }
     if (showRain) semantics.write(', khả năng mưa ${p.rainPercent}%');
@@ -448,8 +454,8 @@ class _PredictionColumn extends StatelessWidget {
               const SizedBox(height: Space.xs),
               _IntervalBar(
                 domain: domain!,
-                low: p.temperatureP10!,
-                high: p.temperatureP90!,
+                low: p.intervalLow!,
+                high: p.intervalHigh!,
                 point: p.temperature,
                 color: ink.accent,
               ),
@@ -511,7 +517,7 @@ class _PredictionColumn extends StatelessWidget {
   }
 }
 
-/// Thanh nho: vach p10-p90 tren mien chung cua 3 moc, cham = gia tri du bao.
+/// Thanh nho: vach khoang nhiet do tren mien chung cua 3 moc, cham = gia tri du bao.
 class _IntervalBar extends StatelessWidget {
   const _IntervalBar({
     required this.domain,

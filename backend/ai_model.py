@@ -245,6 +245,55 @@ def temperature_interval(q10, q90, point, offset: float = 0.0):
     return np.minimum(lo, point), np.maximum(hi, point)
 
 
+# ---- 90 % interval (scripts/train_global_v3_interval.py): q05/q95 + Mondrian CQR offsets per group.
+# Group keys are built from the TARGET time (t+h); same code in training and serving.
+INTERVAL_GROUPINGS: Dict[str, Dict[str, Any]] = {
+    "const": {}, "month_hour": {}, "coast_season": {}, "coast_month": {},
+    "cell_season": {"needs_cell": True}, "cell_month": {"needs_cell": True},
+}
+INTERVAL_MIN_SCALE = 0.3   # degC, floor of q95-q05 for normalized scores
+
+
+def coast_class(static: Dict[str, float]) -> str:
+    if static["lat"] < 9.5:
+        return "island"                       # Con Dao
+    return "coastal" if static["dist_to_coast_km"] <= 10 else "inland"
+
+
+def interval_group_keys(grouping: str, h, cell_id, month, hour, static: Dict[str, Dict[str, float]]):
+    h, cell_id = np.asarray(h).astype(str), np.asarray(cell_id).astype(str)
+    month, hour = np.asarray(month).astype(int), np.asarray(hour).astype(int)
+    season = np.where(np.isin(month, RAINY_MONTHS), "wet", "dry")
+    coast = pd.Series(cell_id).map({c: coast_class(s) for c, s in static.items()}).fillna("inland").values
+    m, b = np.char.add("m", month.astype(str)), np.char.add("b", (hour // 6).astype(str))
+    parts = {"const": [h], "month_hour": [h, m, b], "coast_season": [h, coast, season],
+             "coast_month": [h, coast, m], "cell_season": [h, cell_id, season], "cell_month": [h, cell_id, m]}[grouping]
+    key = parts[0].astype(object)
+    for p in parts[1:]:
+        key = key + "|" + np.asarray(p).astype(object)
+    return key.astype(str)
+
+
+def interval_scale(qlo, qhi, scale: str):
+    if scale == "abs":
+        return np.ones_like(np.asarray(qlo, float))
+    return np.maximum(np.asarray(qhi, float) - np.asarray(qlo, float), INTERVAL_MIN_SCALE)
+
+
+def conformal_interval(qlo, qhi, offset, scale: str, point=None):
+    """[qlo - off*s, qhi + off*s] (CQR), widened to contain `point` when given."""
+    qlo, qhi = np.asarray(qlo, float), np.asarray(qhi, float)
+    a, b = np.minimum(qlo, qhi), np.maximum(qlo, qhi)
+    s = interval_scale(a, b, scale) * np.asarray(offset, float)
+    lo, hi = a - s, b + s
+    mid = (lo + hi) / 2
+    lo, hi = np.minimum(lo, mid), np.maximum(hi, mid)      # negative offsets never invert the interval
+    if point is not None:
+        point = np.asarray(point, float)
+        lo, hi = np.minimum(lo, point), np.maximum(hi, point)
+    return lo, hi
+
+
 def reset_v3_cache() -> None:
     _v3.clear()
 
@@ -290,26 +339,48 @@ def _load_v3_ext() -> Optional[Dict[str, Any]]:
             raise RuntimeError("extension_v3.json was trained for another v3 model; re-run train_global_v3_ext.py")
         enabled = [t for t in ext["enabled_targets"] if t in EXT_TARGETS]
         models, calib = {}, {}
+        iv = ext["interval"]
+        qs = ("q05", "q95") if iv.get("version") == 2 else ("p10", "p90")
         for h in HORIZONS:
-            for q in ("p10", "p90"):
+            for q in qs:
                 models[f"temp_{q}_{h}h"] = joblib.load(os.path.join(V3_DIR, f"temperature_{q}_model_{h}h.pkl"))
             for t in enabled:
                 models[f"{t}_{h}h"] = joblib.load(os.path.join(V3_DIR, f"{t}_model_{h}h.pkl"))
             if ext["rain_calibration"]["per_horizon"][f"{h}h"]["applied"]:
                 calib[f"{h}h"] = joblib.load(os.path.join(V3_DIR, f"rain_calibrator_{h}h.pkl"))
-        offsets = {k: float(v["offset"]) for k, v in ext["interval"]["conformal"].items()}
-        return {"meta": ext, "enabled": enabled, "models": models, "calibrators": calib, "offsets": offsets}
+        if iv.get("version") == 2:
+            offsets = {k: float(v) for k, v in iv["offsets"].items()}
+        else:
+            offsets = {k: float(v["offset"]) for k, v in iv["conformal"].items()}
+        return {"meta": ext, "enabled": enabled, "models": models, "calibrators": calib, "offsets": offsets,
+                "interval": iv}
     except Exception:  # noqa: BLE001 - extension is optional; base v3 output stays valid
         return None
 
 
-def _uncertainty_note(lo: float, hi: float, coverage: Optional[float], period: Optional[str]) -> str:
+def _uncertainty_note(lo: float, hi: float, coverage: Optional[float], period: Optional[str],
+                      level: Optional[float] = None) -> str:
     vi = lambda v: f"{v:.1f}".replace(".", ",")  # noqa: E731 - Vietnamese decimal comma
-    note = f"Nhiệt độ nhiều khả năng trong khoảng {vi(lo)}–{vi(hi)} °C (khoảng p10–p90)."
+    kind = f"khoảng tin cậy {level * 100:.0f}%" if level else "khoảng p10–p90"
+    note = f"Nhiệt độ nhiều khả năng trong khoảng {vi(lo)}–{vi(hi)} °C ({kind})."
     if coverage is not None:
         when = f" {period.replace('..', ' đến ')}" if period else ""
         note += f" Kiểm chứng trên dữ liệu{when} ở ô này: thực tế rơi vào khoảng ~{coverage * 100:.0f}% số lần."
     return note + " Đây là mức bất định, không phải điểm độ chính xác."
+
+
+def _interval_v3(ext: Dict[str, Any], xv, temp: float, h: int, cid: str, issued: pd.Timestamp):
+    m, k, iv = ext["models"], f"{h}h", ext["interval"]
+    if iv.get("version") != 2:   # legacy p10/p90 extension
+        lo, hi = temperature_interval(m[f"temp_p10_{k}"].predict(xv), m[f"temp_p90_{k}"].predict(xv),
+                                      [temp], ext["offsets"].get(k, 0.0))
+        return float(lo[0]), float(hi[0]), None
+    tt = issued + pd.Timedelta(hours=h)
+    key = interval_group_keys(iv["grouping"], [h], [cid], [tt.month], [tt.hour], _v3["static"])[0]
+    off = ext["offsets"].get(key, ext["offsets"][str(h)])
+    lo, hi = conformal_interval(m[f"temp_q05_{k}"].predict(xv), m[f"temp_q95_{k}"].predict(xv), [off],
+                                iv["scale"], [temp])
+    return float(lo[0]), float(hi[0]), float(iv["nominal"])
 
 
 def _prepare_history(history: pd.DataFrame) -> pd.DataFrame:
@@ -353,15 +424,20 @@ def predict_for_location(history: pd.DataFrame, cell_id: Optional[str]) -> Dict[
                              "rain_probability": round(min(max(prob, 0.0), 1.0), 4)}
         if ext:
             m = ext["models"]
-            lo, hi = temperature_interval(m[f"temp_p10_{k}"].predict(xv), m[f"temp_p90_{k}"].predict(xv),
-                                          [temp], ext["offsets"].get(k, 0.0))
-            p["temperature_p10"], p["temperature_p90"] = round(float(lo[0]), 2), round(float(hi[0]), 2)
+            lo, hi, level = _interval_v3(ext, xv, temp, h, cid, ts.iloc[-1])
+            p["temperature_low"], p["temperature_high"] = round(lo, 2), round(hi, 2)
+            if level is not None:
+                p["interval_level"] = level
+            # DEPRECATED: temperature_p10 / temperature_p90 are kept only for old clients. They equal
+            # temperature_low / temperature_high (a 90 % interval when interval_level == 0.9), NOT quantiles.
+            p["temperature_p10"], p["temperature_p90"] = p["temperature_low"], p["temperature_high"]
             for t in ext["enabled"]:
                 a, b = _EXT_BOUNDS[t]
                 v = float(np.clip(m[f"{t}_{k}"].predict(xv)[0], a, b if b is not None else np.inf))
                 p[t] = round(v, 2 if t == "precipitation_mm" else 1)
-            p["uncertainty_note"] = _uncertainty_note(p["temperature_p10"], p["temperature_p90"],
-                                                      ev.get(f"temperature_interval_coverage_{k}"), ev.get("test_period"))
+            p["uncertainty_note"] = _uncertainty_note(
+                p["temperature_low"], p["temperature_high"], ev.get(f"temperature_interval_coverage_{k}"),
+                ev.get("interval_test_period") or ev.get("test_period"), level)
         preds[k] = p
     out = {
         "issued_at": ts.iloc[-1].isoformat(),

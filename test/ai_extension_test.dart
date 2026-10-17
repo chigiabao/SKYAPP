@@ -70,6 +70,36 @@ Map<String, dynamic> _fullJson({List<String>? enabled}) => {
   },
 };
 
+/// Hop dong moi: low/high + interval_level 0,9 (p10/p90 deprecated).
+Map<String, dynamic> _newJson() => {
+  'issued_at': '2026-10-17T17:00:00+07:00',
+  'model_version': 'lgbm-hcmc-global-v4',
+  'predictions': {
+    '1h': {
+      'temperature': 26.1,
+      'rain_probability': 0.5,
+      'temperature_low': 24.6,
+      'temperature_high': 27.4,
+      'interval_level': 0.9,
+      'temperature_p10': 24.6,
+      'temperature_p90': 27.4,
+      'uncertainty_note':
+          'Khoảng 90%: kiểm chứng thực tế rơi vào khoảng ~88% số lần.',
+    },
+    '3h': {
+      'temperature': 26.4,
+      'temperature_low': 25.0,
+      'temperature_high': 28.2,
+      'interval_level': 0.9,
+    },
+  },
+  'evaluation': {
+    'temperature_interval_coverage_1h': 0.884,
+    'temperature_interval_width_1h': 2.8,
+    'interval_level': 0.9,
+  },
+};
+
 void main() {
   group('AIForecast parse truong mo rong', () {
     test('day du truong', () {
@@ -125,6 +155,37 @@ void main() {
       expect(e.intervalCoverage, isEmpty);
       expect(e.intervalNominalCoverage, isNull);
       expect(e.enabledTargets, isNull);
+    });
+
+    test('hop dong moi: uu tien low/high + interval_level', () {
+      final f = AIForecast.fromJson(_newJson());
+      final p = f.predictions.first;
+      expect(p.temperatureLow, 24.6);
+      expect(p.temperatureHigh, 27.4);
+      expect(p.intervalLevel, 0.9);
+      expect(p.intervalLow, 24.6);
+      expect(p.intervalHigh, 27.4);
+      expect(p.effectiveIntervalLevel, 0.9);
+      expect(p.hasInterval, isTrue);
+      expect(f.predictions[1].temperatureP10, isNull);
+      expect(f.predictions[1].intervalLow, 25.0);
+      expect(f.predictions[1].effectiveIntervalLevel, 0.9);
+      final e = f.evaluation!;
+      expect(e.intervalNominalCoverage, 0.9);
+      expect(e.intervalWidth['1h'], 2.8);
+      expect(intervalCoveragePercent(p, e), 88);
+      expect(intervalCoveragePercent(f.predictions[1], e), isNull);
+    });
+
+    test('dang cu chi p10/p90 -> fallback muc 0,8', () {
+      final p = AIForecast.fromJson(_fullJson()).predictions.first;
+      expect(p.temperatureLow, isNull);
+      expect(p.intervalLevel, isNull);
+      expect(p.intervalLow, 25.81);
+      expect(p.intervalHigh, 26.58);
+      expect(p.effectiveIntervalLevel, 0.8);
+      expect(intervalLevelLabel(p.effectiveIntervalLevel), 'khoảng 80%');
+      expect(intervalLevelLabel(null), 'khoảng dự báo');
     });
 
     test('kieu sai bi bo qua, p10 > p90 khong tinh la khoang', () {
@@ -195,7 +256,7 @@ void main() {
       await pump(tester, AIForecast.fromJson(_fullJson()));
       expect(find.text('26°'), findsNWidgets(2));
       expect(find.text('(26–27°)'), findsOneWidget);
-      expect(find.textContaining('khoảng p10–p90'), findsOneWidget);
+      expect(find.textContaining('Trong ngoặc: khoảng 80%'), findsOneWidget);
       expect(find.textContaining('~77%'), findsOneWidget);
       expect(
         find.textContaining('không phải điểm độ chính xác'),
@@ -217,6 +278,20 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
+    testWidgets('nhan theo interval_level 90%', (tester) async {
+      await pump(tester, AIForecast.fromJson(_newJson()));
+      expect(find.text('(25–27°)'), findsOneWidget);
+      expect(
+        find.textContaining(
+          'Trong ngoặc: khoảng 90%, kiểm chứng thực tế rơi vào khoảng ~88%',
+        ),
+        findsOneWidget,
+      );
+      expect(find.textContaining('80%'), findsNothing);
+      expect(find.textContaining('p10'), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
     testWidgets('an muc tieu khong nam trong enabled_targets', (tester) async {
       await pump(
         tester,
@@ -225,7 +300,7 @@ void main() {
       expect(find.text('26°'), findsNWidgets(2));
       expect(find.text('Ẩm 93%'), findsOneWidget);
       expect(find.text('(26–27°)'), findsNothing);
-      expect(find.textContaining('p10–p90'), findsNothing);
+      expect(find.textContaining('Trong ngoặc'), findsNothing);
       expect(find.textContaining('Gió'), findsNothing);
       expect(find.textContaining('Giật'), findsNothing);
       expect(find.textContaining('Mưa 0'), findsNothing);
@@ -246,7 +321,7 @@ void main() {
       );
       expect(find.text('26°'), findsOneWidget);
       expect(find.text('30%'), findsOneWidget);
-      expect(find.textContaining('p10–p90'), findsNothing);
+      expect(find.textContaining('Trong ngoặc'), findsNothing);
       expect(tester.takeException(), isNull);
     });
 

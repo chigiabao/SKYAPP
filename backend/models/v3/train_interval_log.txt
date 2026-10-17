@@ -1,0 +1,46 @@
+[23:34:18] rows=3,346,773 cells=67 load=32s qtrain=1,694,958 es_fit=1,399,086 es=284,214 cal=576,870 test=1,051,629 bt_train=1,108,038 bt_cal=575,262 bt_test=576,870
+[23:36:37] [es] q05_1h best_iter=689 (139s)
+[23:37:46] [es] q95_1h best_iter=461 (68s)
+[23:38:54] [es] q05_3h best_iter=441 (69s)
+[23:39:56] [es] q95_3h best_iter=295 (62s)
+[23:41:12] [es] q05_6h best_iter=479 (76s)
+[23:41:57] [es] q95_6h best_iter=231 (44s)
+[23:43:02] [backtest] q05_1h iters=689 (66s)
+[23:43:48] [backtest] q95_1h iters=461 (45s)
+[23:44:32] [backtest] q05_3h iters=441 (44s)
+[23:45:02] [backtest] q95_3h iters=295 (30s)
+[23:45:41] [backtest] q05_6h iters=479 (40s)
+[23:46:02] [backtest] q95_6h iters=231 (20s)
+[23:48:18] backtest choice: coast_month/abs/L=0.93 width=2.400 pass=True
+[23:48:18] backtest holdout choice: const/abs/L=0.91 pass=True
+[23:49:56] [final] q05_1h iters=689 (97s)
+[23:51:11] [final] q95_1h iters=461 (75s)
+[23:52:15] [final] q05_3h iters=441 (63s)
+[23:53:04] [final] q95_3h iters=295 (49s)
+[23:54:07] [final] q05_6h iters=479 (63s)
+[23:54:45] [final] q95_6h iters=231 (38s)
+[23:56:30] TEST served:
+   cov_mean  cov_min   width
+h                           
+1    0.9109   0.8831  1.4827
+3    0.9019   0.8738  2.4966
+6    0.9040   0.8762  3.0344
+[23:57:40] TEST old p10-p90:
+   cov_mean  cov_min   width
+h                           
+1    0.7721   0.7465  0.9337
+3    0.7551   0.7108  1.6324
+6    0.7486   0.7111  1.9737
+[23:58:31] [holdout] q05_1h iters=689 (51s)
+[23:59:07] [holdout] q95_1h iters=461 (35s)
+[23:59:35] [holdout] q05_3h iters=441 (29s)
+[00:00:00] [holdout] q95_3h iters=295 (25s)
+[00:00:33] [holdout] q05_6h iters=479 (32s)
+[00:00:56] [holdout] q95_6h iters=231 (23s)
+[00:01:46] HOLDOUT:
+   cov_mean  cov_min   width
+h                           
+1    0.8876   0.7592  1.4055
+3    0.8768   0.6732  2.4029
+6    0.8756   0.5960  2.9464
+[00:01:48] done in 1682s

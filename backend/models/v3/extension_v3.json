@@ -48,48 +48,311 @@
   }
  },
  "interval": {
-  "nominal": 0.8,
-  "method": "LightGBM quantile p10/p90, interval [min(p10, point) - offset, max(p90, point) + offset]; offset = split-conformal (CQR) on val, applied only if raw val coverage is outside 80% +/- 3%",
-  "conformal": {
-   "1h": {
-    "val_raw_coverage": 0.7496,
-    "offset": 0.04,
-    "applied": true
+  "version": 2,
+  "nominal": 0.9,
+  "quantiles": [
+   0.05,
+   0.95
+  ],
+  "models": "temperature_q05_model_{h}h.pkl / temperature_q95_model_{h}h.pkl",
+  "method": "LightGBM quantile q05/q95 + Mondrian CQR (alpha=0.1); interval [qlo - off*s, qhi + off*s] then widened to contain the point forecast; s = 1 (abs) or max(qhi-qlo, MIN) (norm)",
+  "grouping": "coast_month",
+  "scale": "abs",
+  "calibration_level": 0.93,
+  "offsets": {
+   "1": 0.1306,
+   "3": 0.2336,
+   "6": 0.3177,
+   "1|coastal|m1": 0.0542,
+   "1|coastal|m10": 0.1774,
+   "1|coastal|m11": 0.1126,
+   "1|coastal|m12": 0.1105,
+   "1|coastal|m2": 0.0644,
+   "1|coastal|m3": 0.0509,
+   "1|coastal|m4": 0.0627,
+   "1|coastal|m5": 0.2994,
+   "1|coastal|m6": 0.2159,
+   "1|coastal|m7": 0.1306,
+   "1|coastal|m8": 0.1576,
+   "1|coastal|m9": 0.1212,
+   "1|inland|m1": 0.0482,
+   "1|inland|m10": 0.1279,
+   "1|inland|m11": 0.0928,
+   "1|inland|m12": 0.1205,
+   "1|inland|m2": 0.0989,
+   "1|inland|m3": 0.1022,
+   "1|inland|m4": 0.2216,
+   "1|inland|m5": 0.3028,
+   "1|inland|m6": 0.1499,
+   "1|inland|m7": 0.1127,
+   "1|inland|m8": 0.1232,
+   "1|inland|m9": 0.1332,
+   "1|island|m1": 0.0183,
+   "1|island|m10": 0.1836,
+   "1|island|m11": 0.0369,
+   "1|island|m12": 0.0327,
+   "1|island|m2": 0.0277,
+   "1|island|m3": 0.0188,
+   "1|island|m4": 0.0355,
+   "1|island|m5": 0.2307,
+   "1|island|m6": 0.2132,
+   "1|island|m7": 0.1999,
+   "1|island|m8": 0.1846,
+   "1|island|m9": 0.131,
+   "3|coastal|m1": 0.0703,
+   "3|coastal|m10": 0.2331,
+   "3|coastal|m11": 0.1395,
+   "3|coastal|m12": 0.16,
+   "3|coastal|m2": 0.1468,
+   "3|coastal|m3": 0.0816,
+   "3|coastal|m4": 0.1766,
+   "3|coastal|m5": 0.6056,
+   "3|coastal|m6": 0.4356,
+   "3|coastal|m7": 0.1485,
+   "3|coastal|m8": 0.2669,
+   "3|coastal|m9": 0.1694,
+   "3|inland|m1": 0.0154,
+   "3|inland|m10": 0.1861,
+   "3|inland|m11": 0.1933,
+   "3|inland|m12": 0.2755,
+   "3|inland|m2": 0.1399,
+   "3|inland|m3": 0.1621,
+   "3|inland|m4": 0.54,
+   "3|inland|m5": 0.6087,
+   "3|inland|m6": 0.2731,
+   "3|inland|m7": 0.0958,
+   "3|inland|m8": 0.1874,
+   "3|inland|m9": 0.1782,
+   "3|island|m1": 0.0635,
+   "3|island|m10": 0.2162,
+   "3|island|m11": -0.0438,
+   "3|island|m12": 0.0176,
+   "3|island|m2": 0.0371,
+   "3|island|m3": -0.0196,
+   "3|island|m4": -0.0012,
+   "3|island|m5": 0.4521,
+   "3|island|m6": 0.4517,
+   "3|island|m7": 0.1573,
+   "3|island|m8": 0.1882,
+   "3|island|m9": 0.0864,
+   "6|coastal|m1": 0.1419,
+   "6|coastal|m10": 0.3153,
+   "6|coastal|m11": 0.1571,
+   "6|coastal|m12": 0.2879,
+   "6|coastal|m2": 0.2537,
+   "6|coastal|m3": 0.1214,
+   "6|coastal|m4": 0.2501,
+   "6|coastal|m5": 0.7038,
+   "6|coastal|m6": 0.587,
+   "6|coastal|m7": 0.1914,
+   "6|coastal|m8": 0.3131,
+   "6|coastal|m9": 0.2265,
+   "6|inland|m1": 0.0455,
+   "6|inland|m10": 0.256,
+   "6|inland|m11": 0.2757,
+   "6|inland|m12": 0.4097,
+   "6|inland|m2": 0.2303,
+   "6|inland|m3": 0.2065,
+   "6|inland|m4": 0.6243,
+   "6|inland|m5": 0.754,
+   "6|inland|m6": 0.3785,
+   "6|inland|m7": 0.1181,
+   "6|inland|m8": 0.2128,
+   "6|inland|m9": 0.2077,
+   "6|island|m1": 0.0559,
+   "6|island|m10": 0.2637,
+   "6|island|m11": -0.0561,
+   "6|island|m12": -0.0016,
+   "6|island|m2": -0.066,
+   "6|island|m3": -0.0582,
+   "6|island|m4": 0.0731,
+   "6|island|m5": 0.5637,
+   "6|island|m6": 0.5585,
+   "6|island|m7": 0.1278,
+   "6|island|m8": 0.2218,
+   "6|island|m9": 0.1006
+  },
+  "min_group": 300,
+  "split": {
+   "qtrain": [
+    null,
+    "2023-12-24 23:00:00"
+   ],
+   "es_fit": [
+    null,
+    "2023-06-23 23:00:00"
+   ],
+   "es": [
+    "2023-07-01 00:00:00",
+    "2023-12-24 23:00:00"
+   ],
+   "cal": [
+    "2024-01-01 00:00:00",
+    "2024-12-24 23:00:00"
+   ],
+   "test": [
+    "2025-01-01 00:00:00",
+    null
+   ],
+   "bt_train": [
+    null,
+    "2022-12-24 23:00:00"
+   ],
+   "bt_cal": [
+    "2023-01-01 00:00:00",
+    "2023-12-24 23:00:00"
+   ],
+   "bt_test": [
+    "2024-01-01 00:00:00",
+    "2024-12-24 23:00:00"
+   ]
+  },
+  "data_start": "2021-01-01 00:00:00",
+  "best_iterations": {
+   "q05_1h": 689,
+   "q95_1h": 461,
+   "q05_3h": 441,
+   "q95_3h": 295,
+   "q05_6h": 479,
+   "q95_6h": 231
+  },
+  "params": {
+   "q05": {
+    "objective": "quantile",
+    "metric": "quantile",
+    "learning_rate": 0.05,
+    "num_leaves": 63,
+    "feature_fraction": 0.8,
+    "bagging_fraction": 0.8,
+    "bagging_freq": 5,
+    "min_data_in_leaf": 100,
+    "seed": 42,
+    "deterministic": true,
+    "verbose": -1,
+    "num_threads": 12,
+    "alpha": 0.05
    },
-   "3h": {
-    "val_raw_coverage": 0.7418,
-    "offset": 0.0825,
-    "applied": true
-   },
-   "6h": {
-    "val_raw_coverage": 0.743,
-    "offset": 0.0986,
-    "applied": true
+   "q95": {
+    "objective": "quantile",
+    "metric": "quantile",
+    "learning_rate": 0.05,
+    "num_leaves": 63,
+    "feature_fraction": 0.8,
+    "bagging_fraction": 0.8,
+    "bagging_freq": 5,
+    "min_data_in_leaf": 100,
+    "seed": 42,
+    "deterministic": true,
+    "verbose": -1,
+    "num_threads": 12,
+    "alpha": 0.95
    }
   },
-  "test_mean_coverage": {
-   "1h": 0.7721,
-   "3h": 0.7551,
-   "6h": 0.7486
+  "selection": "narrowest (grouping, scale, level) with mean cell coverage >= 0.90 and every cell >= 0.85 at 1/3/6 h in a backtest one year earlier (train <= 2022, calibrate 2023, check 2024, no point model); the test window was not used for any choice",
+  "backtest_choice": {
+   "variant": "coast_month",
+   "scale": "abs",
+   "level": 0.93,
+   "pass": true,
+   "width": 2.400024009125124,
+   "cov_mean_1h": 0.9196,
+   "cov_mean_3h": 0.9167,
+   "cov_mean_6h": 0.9059,
+   "cov_min_1h": 0.9,
+   "cov_min_3h": 0.8945,
+   "cov_min_6h": 0.86,
+   "width_1h": 1.525,
+   "width_3h": 2.576,
+   "width_6h": 3.099
   },
-  "test_mean_coverage_raw": {
-   "1h": 0.7205,
-   "3h": 0.695,
-   "6h": 0.6896
+  "backtest_holdout_choice": {
+   "variant": "const",
+   "scale": "abs",
+   "level": 0.91,
+   "pass": true,
+   "width": 2.2223314826426694,
+   "cov_mean_1h": 0.9092,
+   "cov_mean_3h": 0.9083,
+   "cov_mean_6h": 0.903,
+   "cov_min_1h": 0.8798,
+   "cov_min_3h": 0.8812,
+   "cov_min_6h": 0.8571,
+   "width_1h": 1.384,
+   "width_3h": 2.375,
+   "width_6h": 2.908
   },
-  "test_cell_coverage_min_max": {
-   "1h": [
-    0.7465,
-    0.8301
-   ],
-   "3h": [
-    0.7108,
-    0.8496
-   ],
-   "6h": [
-    0.7111,
-    0.8459
-   ]
+  "test_period": "2025-01-01..2026-10-16",
+  "test": {
+   "1h": {
+    "cov_mean": 0.9109,
+    "cov_min_cell": 0.8831,
+    "width": 1.483
+   },
+   "3h": {
+    "cov_mean": 0.9019,
+    "cov_min_cell": 0.8738,
+    "width": 2.497
+   },
+   "6h": {
+    "cov_mean": 0.904,
+    "cov_min_cell": 0.8762,
+    "width": 3.034
+   }
+  },
+  "test_without_point": {
+   "1h": {
+    "cov_mean": 0.9109,
+    "cov_min_cell": 0.8831,
+    "width": 1.483
+   },
+   "3h": {
+    "cov_mean": 0.9019,
+    "cov_min_cell": 0.8738,
+    "width": 2.496
+   },
+   "6h": {
+    "cov_mean": 0.904,
+    "cov_min_cell": 0.8761,
+    "width": 3.034
+   }
+  },
+  "test_previous_p10_p90": {
+   "1h": {
+    "cov_mean": 0.7721,
+    "cov_min_cell": 0.7465,
+    "width": 0.934
+   },
+   "3h": {
+    "cov_mean": 0.7551,
+    "cov_min_cell": 0.7108,
+    "width": 1.632
+   },
+   "6h": {
+    "cov_mean": 0.7486,
+    "cov_min_cell": 0.7111,
+    "width": 1.974
+   }
+  },
+  "holdout": {
+   "grouping": "const",
+   "scale": "abs",
+   "calibration_level": 0.91,
+   "cells": 31,
+   "1h": {
+    "cov_mean": 0.8876,
+    "cov_min_cell": 0.7592,
+    "width": 1.405
+   },
+   "3h": {
+    "cov_mean": 0.8768,
+    "cov_min_cell": 0.6732,
+    "width": 2.403
+   },
+   "6h": {
+    "cov_mean": 0.8756,
+    "cov_min_cell": 0.596,
+    "width": 2.946
+   }
   }
  },
  "rain_calibration": {
@@ -894,5 +1157,50 @@
     "6h": 0.1981858395631727
    }
   }
- ]
+ ],
+ "interval_previous_p10_p90": {
+  "nominal": 0.8,
+  "method": "LightGBM quantile p10/p90, interval [min(p10, point) - offset, max(p90, point) + offset]; offset = split-conformal (CQR) on val, applied only if raw val coverage is outside 80% +/- 3%",
+  "conformal": {
+   "1h": {
+    "val_raw_coverage": 0.7496,
+    "offset": 0.04,
+    "applied": true
+   },
+   "3h": {
+    "val_raw_coverage": 0.7418,
+    "offset": 0.0825,
+    "applied": true
+   },
+   "6h": {
+    "val_raw_coverage": 0.743,
+    "offset": 0.0986,
+    "applied": true
+   }
+  },
+  "test_mean_coverage": {
+   "1h": 0.7721,
+   "3h": 0.7551,
+   "6h": 0.7486
+  },
+  "test_mean_coverage_raw": {
+   "1h": 0.7205,
+   "3h": 0.695,
+   "6h": 0.6896
+  },
+  "test_cell_coverage_min_max": {
+   "1h": [
+    0.7465,
+    0.8301
+   ],
+   "3h": [
+    0.7108,
+    0.8496
+   ],
+   "6h": [
+    0.7111,
+    0.8459
+   ]
+  }
+ }
 }

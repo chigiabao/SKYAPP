@@ -217,7 +217,7 @@ class _EvaluationCard extends StatelessWidget {
     }
   }
 
-  /// Dong MAE cac muc tieu moi + do phu khoang p10-p90 (neu co).
+  /// Dong MAE cac muc tieu moi + do phu khoang nhiet do (neu co).
   List<Widget> _extraLines(BuildContext context, AIEvaluation e) {
     final theme = Theme.of(context);
     final units = PreferencesProvider.unitsOf(context);
@@ -243,8 +243,9 @@ class _EvaluationCard extends StatelessWidget {
       final goal = nominal == null
           ? ''
           : ' (mục tiêu ${(nominal * 100).round()}%)';
+      final name = nominal == null ? 'dự báo' : '${(nominal * 100).round()}%';
       lines.add(
-        'Khoảng nhiệt độ p10–p90 phủ ${parts.join(' · ')} trên tập kiểm '
+        'Khoảng nhiệt độ $name phủ ${parts.join(' · ')} trên tập kiểm '
         'tra$goal. Đây là mức bất định, không phải điểm độ chính xác.',
       );
     }

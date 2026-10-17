@@ -43,6 +43,8 @@ TRAIN_SCRIPT = BACKEND / "scripts" / "train_global_v3.py"
 # Run right after TRAIN_SCRIPT on the same --out dir: adds the extended keys to evaluation_v3.json
 # (intervals, calibration, new targets) + extension_v3.json; without it a promoted model loses them.
 TRAIN_EXT_SCRIPT = BACKEND / "scripts" / "train_global_v3_ext.py"
+# Last step: refits the 90% temperature interval (CQR) on top of the ext keys; must run after TRAIN_EXT_SCRIPT.
+TRAIN_INTERVAL_SCRIPT = BACKEND / "scripts" / "train_global_v3_interval.py"
 FEEDBACK_RETENTION_DAYS = 365
 FORECAST_LOG_RETENTION_DAYS = 90
 RAIN_MM = 0.1               # observed rainy hour (same as ai_model.RAIN_THRESHOLD_MM)
@@ -434,8 +436,9 @@ def _job_view(job: dict) -> dict:
 
 @router.post("/retrain", status_code=202)
 def post_retrain(quick: bool = Query(default=False, description="pass --quick to the training script")):
-    """Run scripts/train_global_v3.py then scripts/train_global_v3_ext.py (both --out models/v3_candidate)
-    one after the other in a background subprocess; the candidate is scored only if both succeed."""
+    """Run scripts/train_global_v3.py, train_global_v3_ext.py, then train_global_v3_interval.py (all --out
+    models/v3_candidate) one after the other in a background subprocess; the candidate is scored only if all
+    three succeed."""
     with _jobs_lock:
         if any(j["status"] == "running" for j in _jobs.values()):
             raise HTTPException(status_code=409, detail="Đang có một lần huấn luyện chạy")
@@ -448,6 +451,7 @@ def post_retrain(quick: bool = Query(default=False, description="pass --quick to
         log_file = open(log_path, "w", encoding="utf-8")
         cmd = [sys.executable, str(TRAIN_SCRIPT), "--out", str(cand)] + (["--quick"] if quick else [])
         ext_cmd = [sys.executable, str(TRAIN_EXT_SCRIPT), "--out", str(cand)]
+        interval_cmd = [sys.executable, str(TRAIN_INTERVAL_SCRIPT), "--out", str(cand)]
         try:
             proc = subprocess.Popen(cmd, cwd=str(BACKEND), stdout=log_file, stderr=subprocess.STDOUT)
         except OSError as e:
@@ -455,7 +459,7 @@ def post_retrain(quick: bool = Query(default=False, description="pass --quick to
             raise HTTPException(status_code=500, detail=f"Không khởi chạy được script huấn luyện: {e}")
         job = {"job_id": job_id, "status": "running", "quick": quick, "out": str(cand), "log": str(log_path),
                "started_at": _naive_now().isoformat(timespec="seconds"), "finished_at": None, "returncode": None,
-               "step": TRAIN_SCRIPT.name, "_next": [ext_cmd]}
+               "step": TRAIN_SCRIPT.name, "_next": [ext_cmd, interval_cmd]}
         _jobs[job_id] = job
         job["_thread"] = threading.Thread(target=_watch, args=(job, proc, log_file), daemon=True,
                                           name=f"retrain-{job_id}")

@@ -95,7 +95,7 @@ Nguồn đường bờ biển tự động không có sẵn lúc huấn luyện,
 
 **20. Đề bài có 11 nhóm chức năng, nhóm đã làm được bao nhiêu?**
 
-Đối chiếu 42 mục con của đề bài với code (17/10/2026): 38 đã xong, 4 một phần, không còn mục chưa làm. Bốn mục một phần: mục tiêu AI mở rộng và khoảng bất định đã có ở backend nhưng app chưa hiển thị; radar/vệ tinh (Open-Meteo không có radar, thay bằng khung dự báo theo giờ); widget chỉ có trên Android, chưa có đồng hồ thông minh.
+Đối chiếu 42 mục con của đề bài với code (18/10/2026): 40 đã xong, 2 một phần, không còn mục chưa làm. Hai mục một phần: radar/vệ tinh (Open-Meteo không có radar, thay bằng khung dự báo theo giờ); widget chỉ có trên Android, chưa có đồng hồ thông minh.
 
 **21. Cảnh báo trên bản đồ có đáng tin không?**
 
@@ -103,7 +103,7 @@ Nguồn đường bờ biển tự động không có sẵn lúc huấn luyện,
 
 **22. Ứng dụng đã chạy trên điện thoại thật chưa? Có dùng được cho an toàn không?**
 
-Android và web chạy được. iOS mới được kiểm chứng bằng build CI (IPA build thành công trên GitHub Actions), chưa có nhật ký chạy trên iPhone thật; chế độ chuyến đi chưa được thử trên đường thật. Kiểm thử tự động chạy ngày 17/10/2026: backend 195 passed, Flutter 439 passed và 4 skipped. Dự báo AI là thử nghiệm, không dùng cho mục đích an toàn.
+Android và web chạy được. iOS mới được kiểm chứng bằng build CI (IPA build thành công trên GitHub Actions), chưa có nhật ký chạy trên iPhone thật; chế độ chuyến đi chưa được thử trên đường thật. Kiểm thử tự động chạy ngày 18/10/2026: backend 196 passed, Flutter 457 passed và 4 skipped. Dự báo AI là thử nghiệm, không dùng cho mục đích an toàn.
 
 ## E. Cảnh báo, thói quen và bản đồ
 
@@ -148,14 +148,27 @@ Hạn chế: máy chủ OSRM công cộng không cam kết hoạt động liên 
 
 Mỗi tài khoản có một tài liệu JSON kèm số `version`. Khi lưu, app gửi `base_version` là phiên bản nó đã sửa từ đó. Nếu thiết bị khác đã lưu trước, máy chủ trả **409** kèm bản hiện tại. App gộp hai bản: địa điểm và lịch hoạt động gộp theo id (lấy hợp hai bên, bản sửa mới hơn thắng), cài đặt lấy bản có `updated_at` mới hơn, rồi gửi lại một lần. Khi xoá một địa điểm, app ghi một **tombstone** (id + thời điểm, giữ 30 ngày), để bản gộp hoặc thiết bị khác không làm địa điểm đó xuất hiện lại. Mất mạng thì app giữ thay đổi và gửi lại sau.
 
-**31. Khoảng p10–p90 lẽ ra chứa 80% giá trị thực, sao chỉ phủ khoảng 76%?**
+**31. Khoảng nhiệt độ trong app có nghĩa gì, và nó có phủ đúng 90% không?**
 
-Trên test, độ phủ là 77,2 / 75,5 / 74,9% ở tầm 1 / 3 / 6 giờ. Mô hình phân vị thô chỉ phủ 75,0 / 74,2 / 74,3% trên validation, nên nhóm nới khoảng theo conformal (CQR) cho đủ 80% trên validation. Nhưng trên test (từ 2025), mô hình thô còn phủ thấp hơn nữa (72,1 / 69,5 / 69,0%), nên phần nới đã chọn không đủ. Nguyên nhân có thể là dữ liệu năm 2025–2026 khác nửa cuối 2024, và train của hầu hết ô chỉ khoảng 18 tháng. Nhóm không chỉnh lại theo test vì như vậy là dùng test để huấn luyện. Báo cáo và câu `uncertainty_note` của API đều ghi đúng độ phủ thực tế. Có thể cải thiện bằng cách chọn độ nới trên dữ liệu gần hơn hoặc cập nhật nó liên tục khi có dữ liệu mới.
+Đó là khoảng mức tin cậy 90%: nhiệt độ thực (theo dữ liệu Open-Meteo) được kỳ vọng rơi vào khoảng này trong khoảng 90% số lần. Trên test (từ 01/01/2025), độ phủ trung bình theo ô là **91,1 / 90,2 / 90,4%** ở tầm 1 / 3 / 6 giờ, ô thấp nhất 88,3 / 87,4 / 87,6%. Khoảng cũ p10–p90 (mục tiêu 80%) chỉ phủ 77,2 / 75,5 / 74,9%, vì độ nới conformal được chọn trên validation chỉ có nửa mùa mưa.
 
-**32. Quy tắc "chỉ bật mục tiêu AI khi thắng mô hình cơ sở" cụ thể là gì?**
+Cách làm mới: hai mô hình LightGBM phân vị q05/q95, rồi hiệu chỉnh bằng conformal (CQR, α = 0,1) với độ nới riêng cho từng nhóm tầm × vùng (đất liền / ven biển / đảo) × tháng, tính trên **cả năm 2024** (đủ mùa khô và mùa mưa). Mô hình dự báo điểm v3 không đổi.
 
-Đề bài yêu cầu chỉ mở rộng dự báo lượng mưa, độ ẩm, gió **sau khi kiểm chứng chất lượng**. Với mỗi mục tiêu mới, một ô được tính là thắng khi mô hình tốt hơn **cả persistence lẫn climatology ở cả 3 tầm** 1 / 3 / 6 giờ trên test (độ ẩm, gió, gió giật dùng MAE; lượng mưa dùng RMSE). Mục tiêu chỉ được API trả về khi thắng ở **≥ 80% số ô**. Kết quả: độ ẩm 66/67, tốc độ gió 66/67 (ô thua là Côn Đảo), gió giật 67/67, lượng mưa 67/67, nên cả bốn được bật. Mục tiêu không qua cổng vẫn được đánh giá và ghi lại nhưng không trả về. Hạn chế: chưa có spatial holdout cho các mục tiêu này, và app chưa hiển thị chúng.
+Đánh đổi là khoảng rộng hơn: trung bình 1,48 / 2,50 / 3,03 °C, so với 0,93 / 1,63 / 1,97 °C của khoảng cũ. Vẫn còn chỗ yếu: tháng 7–8 và tháng 1 ở tầm 3 và 6 giờ chỉ 84–87%, ngày có mưa 88,8–90%. Với ô chưa thấy lúc huấn luyện (spatial holdout 31 ô), độ phủ trung bình 88,8 / 87,7 / 87,6%; riêng Côn Đảo khi bị giữ lại chỉ 75,9 / 67,3 / 59,6%, bỏ Côn Đảo thì ô thấp nhất vẫn ≥ 85,7%. 90% là bảo đảm trung bình, không phải cho từng giờ; app ghi "khoảng 90%" kèm độ phủ kiểm chứng của ô, và câu ghi chú của API nói rõ "Đây là mức bất định, không phải điểm độ chính xác".
 
-**33. Nhóm không có máy Mac, làm sao cài app lên iPhone?**
+**32. Làm sao đảm bảo 90% mà không gian lận trên tập test?**
+
+- **Ba khoảng thời gian tách rời, đệm 7 ngày:** mô hình phân vị học trên dữ liệu đến 24/12/2023; độ nới tính trên năm 2024; test từ 01/01/2025. Mỗi mẫu dùng 6 giờ tới làm nhãn, đệm 7 ngày đảm bảo nhãn của phần trước không chồng lên phần sau.
+- **Chọn cấu hình không nhìn test:** cách nhóm, kiểu độ nới và mức hiệu chỉnh được chọn bằng backtest lùi đúng một năm (train ≤ 2022, calibration 2023, kiểm tra 2024). Tiêu chí đặt trước: hẹp nhất trong các cấu hình có độ phủ trung bình ≥ 90% và mọi ô ≥ 85% ở cả 3 tầm. Kết quả là nhóm vùng × tháng với mức hiệu chỉnh 0,93 (ở backtest, mọi cấu hình mức 0,90–0,92 đều có ô dưới 85%). Test chỉ dùng để báo cáo kết quả, không quay lại chỉnh.
+- **Không dùng dự báo điểm khi hiệu chỉnh:** mô hình điểm v3 đã học trên nửa đầu 2024, nên độ nới không dựa vào nó; dự báo điểm chỉ dùng để nới khoảng cho chứa chính nó. Bỏ bước này thì độ phủ trên test gần như không đổi.
+- **Kiểm tra thêm trên vùng chưa thấy:** spatial holdout 31 ô (số liệu ở câu 31), báo cả kết quả xấu ở Côn Đảo.
+
+Toàn bộ nằm trong `backend/scripts/train_global_v3_interval.py`; kết quả backtest ở `backend/models/v3/interval_backtest_grid.csv`, kết quả test ở khoá `interval` của `extension_v3.json`.
+
+**33. Quy tắc "chỉ bật mục tiêu AI khi thắng mô hình cơ sở" cụ thể là gì?**
+
+Đề bài yêu cầu chỉ mở rộng dự báo lượng mưa, độ ẩm, gió **sau khi kiểm chứng chất lượng**. Với mỗi mục tiêu mới, một ô được tính là thắng khi mô hình tốt hơn **cả persistence lẫn climatology ở cả 3 tầm** 1 / 3 / 6 giờ trên test (độ ẩm, gió, gió giật dùng MAE; lượng mưa dùng RMSE). Mục tiêu chỉ được API trả về khi thắng ở **≥ 80% số ô**. Kết quả: độ ẩm 66/67, tốc độ gió 66/67 (ô thua là Côn Đảo), gió giật 67/67, lượng mưa 67/67, nên cả bốn được bật. Mục tiêu không qua cổng vẫn được đánh giá và ghi lại nhưng không trả về. Hạn chế: chưa có spatial holdout cho các mục tiêu này. App hiển thị các mục tiêu đã bật trên thẻ AI ở trang chủ.
+
+**34. Nhóm không có máy Mac, làm sao cài app lên iPhone?**
 
 GitHub Actions có runner macOS. Workflow `.github/workflows/ios-ipa.yml` chạy `flutter build ios --release --no-codesign`, đóng gói file IPA chưa ký và đưa lên làm artifact. Người dùng tải IPA, ký bằng Apple ID trong 3uTools rồi cài, sau đó tin cậy nhà phát triển trong Cài đặt của iPhone (iOS 16 trở lên phải bật Chế độ nhà phát triển). Lần build gần nhất (17/10/2026) thành công. Với Apple ID miễn phí, app hết hạn sau 7 ngày, không có push từ server, không có widget iOS. Địa chỉ máy chủ đổi được trong app (Cài đặt → Máy chủ dữ liệu). Bản iOS mới được kiểm chứng bằng build CI, chưa có nhật ký chạy trên iPhone thật.

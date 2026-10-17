@@ -441,9 +441,16 @@ class AIPrediction {
   /// thieu thi tinh = issued_at + so gio cua moc. null neu khong suy ra duoc.
   final DateTime? targetTime;
 
-  /// Khoang p10-p90 nhiet do (do C); null neu backend cu khong gui.
+  /// Khoang p10-p90 nhiet do (do C) - deprecated, dung [intervalLow] /
+  /// [intervalHigh]; null neu backend khong gui.
   final double? temperatureP10;
   final double? temperatureP90;
+
+  /// Khoang nhiet do (do C) theo muc [intervalLevel] (vd 0,9); null neu
+  /// backend cu khong gui.
+  final double? temperatureLow;
+  final double? temperatureHigh;
+  final double? intervalLevel;
 
   /// Muc tieu phu (null = khong co): do am %, gio / gio giat km/h, mua mm.
   final double? humidity;
@@ -461,6 +468,9 @@ class AIPrediction {
     this.targetTime,
     this.temperatureP10,
     this.temperatureP90,
+    this.temperatureLow,
+    this.temperatureHigh,
+    this.intervalLevel,
     this.humidity,
     this.windSpeed,
     this.windGusts,
@@ -468,11 +478,22 @@ class AIPrediction {
     this.uncertaintyNote,
   });
 
-  /// Co khoang hop le (p10 <= p90).
+  bool get _hasLowHigh => temperatureLow != null && temperatureHigh != null;
+
+  /// Can duoi / tren khoang: uu tien low/high, thieu thi lui ve p10/p90.
+  double? get intervalLow => _hasLowHigh ? temperatureLow : temperatureP10;
+  double? get intervalHigh => _hasLowHigh ? temperatureHigh : temperatureP90;
+
+  /// Muc tin cay cua khoang (0-1): interval_level; khoang p10/p90 = 0,8.
+  double? get effectiveIntervalLevel => _hasLowHigh
+      ? intervalLevel
+      : (temperatureP10 != null && temperatureP90 != null ? 0.8 : null);
+
+  /// Co khoang hop le (low <= high).
   bool get hasInterval =>
-      temperatureP10 != null &&
-      temperatureP90 != null &&
-      temperatureP10! <= temperatureP90!;
+      intervalLow != null &&
+      intervalHigh != null &&
+      intervalLow! <= intervalHigh!;
 
   /// "1h" -> 1, "6h" -> 6; null neu khong dung dinh dang.
   static int? horizonHours(String label) =>
@@ -540,6 +561,9 @@ class AIForecast {
               (hours == null ? null : issuedAt.add(Duration(hours: hours))),
           temperatureP10: _toDouble(p['temperature_p10']),
           temperatureP90: _toDouble(p['temperature_p90']),
+          temperatureLow: _toDouble(p['temperature_low']),
+          temperatureHigh: _toDouble(p['temperature_high']),
+          intervalLevel: _toDouble(p['interval_level']),
           humidity: _toDouble(p['humidity']),
           windSpeed: _toDouble(p['wind_speed']),
           windGusts: _toDouble(p['wind_gusts']),
@@ -578,6 +602,7 @@ class AIEvaluation {
     this.targetMae = const {},
     this.intervalCoverage = const {},
     this.intervalNominalCoverage,
+    this.intervalWidth = const {},
     this.enabledTargets,
   });
 
@@ -600,11 +625,15 @@ class AIEvaluation {
   /// MAE muc tieu phu: target -> (moc -> MAE, don vi goc %, km/h, mm).
   final Map<String, Map<String, double>> targetMae;
 
-  /// Ty le thuc te roi vao khoang p10-p90 tren tap kiem tra (0-1) theo moc.
+  /// Ty le thuc te roi vao khoang nhiet do tren tap kiem tra (0-1) theo moc.
   final Map<String, double> intervalCoverage;
 
-  /// Do phu danh nghia cua khoang (vd 0,8); null neu khong co.
+  /// Do phu danh nghia cua khoang (`interval_level`, cu:
+  /// `interval_nominal_coverage`, vd 0,9); null neu khong co.
   final double? intervalNominalCoverage;
+
+  /// Do rong trung binh cua khoang (do C) theo moc; rong neu khong co.
+  final Map<String, double> intervalWidth;
 
   /// MAE nhiet do (do C) theo moc "1h" / "3h" / "6h".
   final Map<String, double> temperatureMae;
@@ -660,15 +689,21 @@ class AIEvaluation {
       if (m.isNotEmpty) targetMae[t] = m;
     }
     final cov = <String, double>{};
+    final width = <String, double>{};
     for (final h in AIForecast.horizons) {
       final v = _toDouble(json['temperature_interval_coverage_$h']);
       if (v != null) cov[h] = v;
+      final w = _toDouble(json['temperature_interval_width_$h']);
+      if (w != null) width[h] = w;
     }
     final beats = json['beats_baselines'];
     return AIEvaluation(
       targetMae: targetMae,
       intervalCoverage: cov,
-      intervalNominalCoverage: _toDouble(json['interval_nominal_coverage']),
+      intervalNominalCoverage:
+          _toDouble(json['interval_level']) ??
+          _toDouble(json['interval_nominal_coverage']),
+      intervalWidth: width,
       enabledTargets: AIForecast._stringList(json['enabled_targets']),
       cellId: json['cell_id']?.toString(),
       temperatureMae: mae,

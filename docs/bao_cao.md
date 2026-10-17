@@ -18,7 +18,7 @@ Mọi dữ liệu thời tiết trong đồ án là **đầu ra mô hình thời
 |---|---|---|---|
 | 1 | Địa điểm | Đã làm phần chính | 168 phường/xã/đặc khu; chọn bằng GPS, tìm kiếm có/không dấu, lưu địa điểm có nhãn (nhà, nơi làm, trường, yêu thích, tên riêng), sắp xếp, vuốt xoá; so sánh 2–3 nơi. |
 | 2 | Thời tiết và dự báo | Đã làm | Thời tiết hiện tại theo từng địa điểm; theo giờ/ngày gồm giờ đã có dữ liệu, dự báo Open-Meteo và (khi thiếu) trung bình nhiều năm, có ghi nguồn; UV, AQI khi Open-Meteo có; nhãn "Dữ liệu cũ"; mặt trời mọc/lặn tính tại máy. |
-| 3 | AI dự báo | Làm phần chính | Nhiệt độ và xác suất mưa sau 1/3/6 giờ cho mọi ô lưới (v3), kết quả kiểm chứng tại từng ô. Backend trả thêm khoảng p10–p90 cho nhiệt độ và 4 mục tiêu mới (độ ẩm, gió, gió giật, lượng mưa mm), mỗi mục tiêu chỉ được phục vụ khi qua cổng kiểm chứng (mục 5.11). Độ phủ của khoảng trên test là 77,2 / 75,5 / 74,9%, **thấp hơn mục tiêu 80%**. **App chưa hiển thị** khoảng và 4 mục tiêu mới; chúng mới có trong `/weather/ai-forecast`. |
+| 3 | AI dự báo | Đã làm | Nhiệt độ và xác suất mưa sau 1/3/6 giờ cho mọi ô lưới (v3), kết quả kiểm chứng tại từng ô. Thêm khoảng nhiệt độ mức tin cậy 90% và 4 mục tiêu mới (độ ẩm, gió, gió giật, lượng mưa mm), mỗi mục tiêu chỉ được phục vụ khi qua cổng kiểm chứng (mục 5.11). Độ phủ của khoảng trên test là 91,1 / 90,2 / 90,4% (1/3/6 giờ). Thẻ AI trên trang chủ hiển thị khoảng (ghi "khoảng 90%" kèm độ phủ kiểm chứng của ô) và các mục tiêu mới đã qua cổng. |
 | 4 | Hoạt động và thói quen | Đã làm | 7 hoạt động, chấm điểm từng giờ, gợi ý tối đa 3 khung giờ trong 48 giờ, mức nhạy cảm, lịch lặp lại, nhắc trước 15/30/60/120 phút; học thói quen khi người dùng đồng ý (mục 7.2). |
 | 5 | Thông báo linh hoạt | Đã làm | 7 loại cảnh báo chạy trên máy, chỉnh ngưỡng, chống trùng, giờ yên lặng, lịch sử, thông báo hệ thống, kiểm tra nền khoảng mỗi giờ (mục 7.1). |
 | 6 | Cảnh báo khi di chuyển | Đã làm (theo code) | Hai chế độ: có tuyến (OSRM qua backend, thời tiết dọc tuyến theo giờ đến dự kiến, so sánh đi sớm/muộn ±30/60 phút) và không có tuyến (kiểm tra ô lưới mới khi di chuyển). Chạy nền trên Android và iOS, màn hình lái xe tối giản, lịch sử chuyến đi không lưu GPS (mục 7.5). Chưa kiểm thử trên đường thật. |
@@ -28,7 +28,7 @@ Mọi dữ liệu thời tiết trong đồ án là **đầu ra mô hình thời
 | 10 | Độ tin cậy và phản hồi | Đã làm | Cache offline, xử lý lỗi GPS/API/ngoài vùng; báo lỗi, góp ý, báo dự báo sai, chia sẻ; phản hồi lưu riêng với `verified = false` (mục 7.8). |
 | 11 | Hệ thống AI và quản trị | Đã làm | Ingest hằng giờ, backfill có ngân sách API, đánh giá theo thời gian và không gian; `/admin/monitor` (chất lượng AI, cảnh báo nhầm/bỏ sót, lỗi ingest, số lần gọi API, phản hồi), `/admin/retrain` chỉ thay mô hình khi tốt hơn, `/admin/rollback` (mục 7.9). Huấn luyện lại chạy khi quản trị gọi, chưa có lịch tự động. |
 
-Đối chiếu từng mục con (42 mục) của đề bài với code ngày 17/10/2026: **38 đã xong, 4 một phần** (AI mở rộng chưa hiện trong app; khoảng bất định chưa hiện trong app; radar/vệ tinh; widget iOS và đồng hồ), 0 chưa làm. Radar là phần không khả thi với nguồn dữ liệu hiện có.
+Đối chiếu từng mục con (42 mục) của đề bài với code ngày 18/10/2026: **40 đã xong, 2 một phần** (radar/vệ tinh; widget iOS và đồng hồ), 0 chưa làm. Radar là phần không khả thi với nguồn dữ liệu hiện có.
 
 ## 3. Dữ liệu
 
@@ -115,8 +115,8 @@ Flutter app  <--HTTP/JSON-->  FastAPI backend  -->  SQLite weather.db (68 chuỗ
 |---|---|---|
 | Ứng dụng | Flutter, `provider`, `http`, `fl_chart`, `shared_preferences`, `geolocator`, `flutter_map`, `flutter_local_notifications`, `workmanager`, `home_widget`, `flutter_secure_storage`, `share_plus` | Gọi API, hiển thị, GPS, bản đồ, thông báo, chạy nền, widget, lưu cài đặt, cache và token |
 | Backend | FastAPI, pandas, SQLite, httpx, bcrypt | Dữ liệu, địa điểm, kết quả AI, tuyến đường, tài khoản, phản hồi, giám sát; lịch ingest hằng giờ |
-| AI | LightGBM, joblib | v3: 3 mô hình nhiệt độ + 3 mô hình mưa; phần mở rộng: 6 mô hình phân vị p10/p90 + 12 mô hình cho độ ẩm, gió, gió giật, lượng mưa |
-| Huấn luyện | `scripts/train_global_v3.py`, `scripts/train_global_v3_ext.py`, Jupyter | Huấn luyện, đánh giá theo ô, spatial holdout, kiểm tra rò rỉ, khoảng bất định, cổng phục vụ |
+| AI | LightGBM, joblib | v3: 3 mô hình nhiệt độ + 3 mô hình mưa; phần mở rộng: 6 mô hình phân vị q05/q95 cho khoảng 90% + 12 mô hình cho độ ẩm, gió, gió giật, lượng mưa |
+| Huấn luyện | `scripts/train_global_v3.py`, `scripts/train_global_v3_ext.py`, `scripts/train_global_v3_interval.py`, Jupyter | Huấn luyện, đánh giá theo ô, spatial holdout, kiểm tra rò rỉ, khoảng bất định, cổng phục vụ |
 
 ### 4.1 Endpoint
 
@@ -134,7 +134,7 @@ Mọi `/weather/*` (trừ `/weather/map` và `/weather/map/meta`) nhận `locati
 | `GET /weather/hourly` | 1–168 giờ: giờ đã có dữ liệu → dự báo Open-Meteo mới nhất → trung bình nhiều năm; trường `source` = `observed` / `forecast` / `climatology` |
 | `GET /weather/daily` | 1–14 ngày, tổng hợp từ chuỗi theo giờ như trên |
 | `GET /weather/history` | Dữ liệu theo giờ trong khoảng ngày, tối đa 365 ngày |
-| `GET /weather/ai-forecast` | Nhiệt độ và xác suất mưa sau 1/3/6 giờ từ 48 giờ dữ liệu cuối; `model_version`, `cell_id`, `evaluation`, `enabled_targets`; khi có phần mở rộng: `temperature_p10`, `temperature_p90`, `uncertainty_note`, `humidity`, `wind_speed`, `wind_gusts`, `precipitation_mm` (mục 5.11) |
+| `GET /weather/ai-forecast` | Nhiệt độ và xác suất mưa sau 1/3/6 giờ từ 48 giờ dữ liệu cuối; `model_version`, `cell_id`, `evaluation`, `enabled_targets`; khi có phần mở rộng: `temperature_low`, `temperature_high`, `interval_level` (0,9), `uncertainty_note` (`temperature_p10`/`temperature_p90` chỉ giữ cho client cũ, bằng đúng `temperature_low`/`temperature_high`), `humidity`, `wind_speed`, `wind_gusts`, `precipitation_mm` (mục 5.11) |
 | `GET /weather/ai-verify` | Dự báo AI phát hành tại `at` (mặc định 6 giờ trước) đặt cạnh giá trị thực tế của chuỗi |
 | `GET /weather/map` | Mỗi ô tại khung *t* = hiện tại + `offset_hours` (0–72): nhiệt độ, mã thời tiết, gió (`wind_speed`, `wind_direction`, `wind_gusts`), lượng mưa, tổng mưa và xác suất mưa 3 giờ sau *t*, `alert` (mã dông hoặc ≥ 10 mm trong 3 giờ; theo mô hình, không chính thức), `source`, `valid_time`, `outlook_source` (mục 7.3) |
 | `GET /weather/map/meta` | `now`, `max_offset_hours` (tối đa 72; bằng 0 ở chế độ xem lại), `issued_at` của lần dự báo NWP mới nhất |
@@ -304,21 +304,44 @@ Mỗi kết quả AI trả `model_version`; app hiển thị nó. `metadata_v3.j
 
 ### 5.11 Phần mở rộng: khoảng bất định, hiệu chuẩn mưa, mục tiêu mới
 
-Phiên bản `lgbm-hcmc-global-v3-20261017+ext`, huấn luyện lúc 2026-10-17 16:51. Code: `backend/scripts/train_global_v3_ext.py` (chạy ngay sau `train_global_v3.py`, cùng snapshot dữ liệu và cùng cách chia train/validation/test); kết quả: `backend/models/v3/extension_v3.json`, `per_cell_metrics_ext.csv`. Backend đọc file này trong `ai_model.py`; nếu file thiếu hoặc lệch phiên bản, v3 gốc vẫn chạy bình thường.
+Phiên bản `lgbm-hcmc-global-v3-20261017+ext`, huấn luyện lúc 2026-10-17 16:51. Code: `backend/scripts/train_global_v3_ext.py` (chạy ngay sau `train_global_v3.py`, cùng snapshot dữ liệu và cùng cách chia train/validation/test); kết quả: `backend/models/v3/extension_v3.json`, `per_cell_metrics_ext.csv`. Riêng khoảng nhiệt độ được huấn luyện lại sau bằng `train_global_v3_interval.py` (xem dưới); script này ghi đè khoá `interval` của `extension_v3.json` và các cột khoảng trong `evaluation_v3.json`. Backend đọc file này trong `ai_model.py`; nếu file thiếu hoặc lệch phiên bản, v3 gốc vẫn chạy bình thường.
 
-**Khoảng p10–p90 cho nhiệt độ.** Hai mô hình LightGBM phân vị (α = 0,1 và 0,9) cho mỗi tầm. Khoảng phục vụ = [min(p10, dự báo điểm) − d, max(p90, dự báo điểm) + d], với d là độ nới chọn theo conformal (CQR) trên validation. d chỉ được áp dụng khi độ phủ thô trên validation lệch khỏi 80% quá 3 điểm %. Cả 3 tầm đều phải nới.
+**Khoảng nhiệt độ mức tin cậy 90%.** Khoảng p10–p90 (80%) ban đầu chỉ phủ 77,2 / 75,5 / 74,9% trên test vì độ nới conformal được chọn trên validation chỉ có nửa mùa mưa. Khoảng này được thay bằng khoảng 90%, code `backend/scripts/train_global_v3_interval.py` (chạy 17/10/2026 23:34 – 18/10/2026 00:01, log `backend/models/v3/train_interval_log.txt`). **Chỉ mô hình khoảng được huấn luyện lại**; mô hình dự báo điểm v3 và các mô hình mở rộng khác giữ nguyên.
 
-| Tầm | Độ phủ thô trên val | d (°C) | Độ phủ trên test (thô → sau nới) | Độ rộng TB (°C) | Độ phủ theo ô trên test |
-|---|---|---|---|---|---|
-| 1 giờ | 75,0% | 0,040 | 72,1% → **77,2%** | 0,93 | 74,7–83,0% |
-| 3 giờ | 74,2% | 0,083 | 69,5% → **75,5%** | 1,63 | 71,1–85,0% |
-| 6 giờ | 74,3% | 0,099 | 69,0% → **74,9%** | 1,97 | 71,1–84,6% |
+- **Mô hình:** hai mô hình LightGBM phân vị q05 và q95 cho mỗi tầm, dùng cùng đặc trưng v3.
+- **Hiệu chỉnh:** conformalized quantile regression (CQR, α = 0,1). Độ nới được tính riêng theo nhóm **tầm × vùng (đất liền / ven biển ≤ 10 km / đảo) × tháng của giờ đích**, tổng 111 nhóm. Khoảng phục vụ = [q05 − độ nới, q95 + độ nới], rồi nới thêm nếu cần để chứa dự báo điểm. Bước này gần như không đổi kết quả (độ phủ khi bỏ dự báo điểm giống hệt đến 0,1 điểm %).
+- **Chia thời gian** (đệm 7 ngày giữa các phần):
 
-**Độ phủ trên test vẫn thấp hơn mục tiêu 80%** khoảng 3–5 điểm %. Nguyên nhân: d được chọn trên validation (nửa cuối 2024), nhưng trên test (từ 2025) chính mô hình phân vị đã phủ thấp hơn validation khoảng 3–5 điểm %, nên phần nới không đủ. Báo cáo ghi đúng số này; câu `uncertainty_note` mà API trả về cũng nêu độ phủ thực tế của từng ô và nói rõ "Đây là mức bất định, không phải điểm độ chính xác".
+| Phần | Khoảng thời gian | Dùng để |
+|---|---|---|
+| Train | 2021-01-01 → 2023-12-24 (giờ đích) | Huấn luyện q05/q95; dừng sớm trên 07–12/2023 rồi huấn luyện lại trên cả khoảng |
+| Calibration | 2024-01-01 → 2024-12-24 (cả năm, đủ mùa khô và mùa mưa) | Tính độ nới CQR |
+| Test | từ 2025-01-01 (đến 16/10/2026) | Chỉ để báo cáo kết quả |
 
-![Độ phủ khoảng p10–p90 theo ô](../notebooks/figures/v3_interval_coverage.png)
+- **Chọn cấu hình mà không dùng test:** cách nhóm, kiểu độ nới và mức hiệu chỉnh được chọn bằng một **backtest lùi một năm** (train ≤ 2022, calibration 2023, kiểm tra 2024). Tiêu chí: hẹp nhất trong các cấu hình có độ phủ trung bình theo ô ≥ 90% và mọi ô ≥ 85% ở cả 1/3/6 giờ. Kết quả: nhóm vùng × tháng, độ nới tuyệt đối, mức hiệu chỉnh 0,93 (ở backtest, mọi cấu hình với mức 0,90–0,92 đều có ô dưới 85%). Backtest này cho độ phủ trung bình 92,0 / 91,7 / 90,6% trên năm 2024. Test không được dùng cho bất kỳ lựa chọn nào.
 
-*Hình 8. Trái: phân bố độ phủ trên test theo ô (đường đứt = 80%). Phải: độ phủ so với độ rộng khoảng, mỗi chấm là một ô.*
+Kết quả trên test (trung bình theo ô, mỗi ô trọng số như nhau; nguồn `extension_v3.json` khoá `interval`):
+
+| Tầm | Khoảng cũ p10–p90 (mục tiêu 80%): độ phủ / độ rộng | Khoảng mới 90%: độ phủ / độ rộng | Ô thấp nhất (mới) | Côn Đảo (mới) |
+|---|---|---|---|---|
+| 1 giờ | 77,2% / 0,93 °C | **91,1%** / 1,48 °C | 88,3% | 93,2% |
+| 3 giờ | 75,5% / 1,63 °C | **90,2%** / 2,50 °C | 87,4% | 92,8% |
+| 6 giờ | 74,9% / 1,97 °C | **90,4%** / 3,03 °C | 87,6% | 92,4% |
+
+**Đánh đổi:** khoảng mới rộng hơn khoảng cũ khoảng 1,5–1,6 lần (thêm 0,55 / 0,87 / 1,06 °C). Ở tầm 6 giờ, khoảng trung bình rộng khoảng 3 °C, nên ít giúp phân biệt giờ nóng và giờ mát hơn.
+
+Độ phủ chưa đều theo tháng và theo thời tiết (`interval_test_diagnostics.csv`):
+
+- tháng 7–8 và tháng 1 ở tầm 3 và 6 giờ: 84,1–86,6% (thấp nhất: tháng 7, tầm 6 giờ); cùng tầm, tháng 4–5: 94,4–97,3%;
+- ngày có mưa (≥ 1 mm trong ngày đích): 90,0 / 88,8 / 89,3%; ngày khô: 92,7 / 92,3 / 92,2%.
+
+**Spatial holdout cho khoảng.** Huấn luyện q05/q95 và tính độ nới mà không có 31 ô holdout (vì vậy không dùng được nhóm "đảo"; backtest chọn độ nới chung cho mỗi tầm, mức 0,91), rồi đánh giá trên test của 31 ô đó: độ phủ trung bình 88,8 / 87,7 / 87,6%, ô thấp nhất 75,9 / 67,3 / 59,6%, đều là Côn Đảo. Bỏ Côn Đảo thì ô thấp nhất là 87,5 / 86,1 / 85,7%. Nghĩa là khoảng tổng quát khá tốt sang vùng đất liền chưa thấy, nhưng không dùng được cho một đảo chưa có trong dữ liệu.
+
+API trả `temperature_low`, `temperature_high`, `interval_level` = 0,9 và câu `uncertainty_note` nêu độ phủ thực tế của ô trên test, kết thúc bằng "Đây là mức bất định, không phải điểm độ chính xác". Thẻ AI trên trang chủ hiển thị khoảng cạnh dự báo điểm, ghi "khoảng 90%" và độ phủ kiểm chứng của ô.
+
+![Độ phủ khoảng 90% trên test](../notebooks/figures/v3_interval90_coverage.png)
+
+*Hình 8. Trên trái: độ phủ theo tầm, khoảng cũ (xám) và mới (xanh), chấm cam là ô thấp nhất. Trên phải: độ phủ theo tháng của giờ đích. Dưới trái: phân bố độ phủ theo ô (67 ô). Dưới phải: độ rộng trung bình. Đường đứt = 90%.*
 
 **Hiệu chuẩn xác suất mưa.** Thử isotonic regression: khớp trên validation đến 30/09/2024, kiểm tra trên phần còn lại; chỉ áp dụng nếu Brier giảm ít nhất 1%. Không tầm nào đạt điều kiện này nên app vẫn dùng xác suất gốc của LightGBM. Trên test, xác suất gốc đã khá sát thực tế:
 
@@ -343,7 +366,7 @@ Phiên bản `lgbm-hcmc-global-v3-20261017+ext`, huấn luyện lúc 2026-10-17 
 
 Ô duy nhất không thắng ở độ ẩm và tốc độ gió là Côn Đảo (thua persistence ở tầm 1 giờ). Lượng mưa 6 giờ chỉ hơn climatology rất ít (0,922 so với 0,956).
 
-**Chưa làm với phần mở rộng:** chưa có spatial holdout cho các mục tiêu mới và cho khoảng p10–p90 (chỉ đánh giá trên các ô đã thấy lúc huấn luyện); app Flutter chưa hiển thị khoảng và 4 mục tiêu mới.
+**Chưa làm với phần mở rộng:** chưa có spatial holdout cho 4 mục tiêu mới (chỉ đánh giá trên các ô đã thấy lúc huấn luyện). Khoảng 90% đã có spatial holdout (ở trên).
 
 ## 6. Ứng dụng
 
@@ -575,12 +598,12 @@ Code: `backend/routers/monitor.py`.
 
 Điện thoại thật dùng IP LAN của máy chạy backend (`--host 0.0.0.0`, mở cổng 8000), hoặc tunnel https (ví dụ `cloudflared`). Bản Android release chỉ cho HTTP tới localhost/10.0.2.2; iOS bật `NSAllowsArbitraryLoads` để gọi được HTTP qua LAN, đổi lại dữ liệu không mã hoá trên mạng (chi tiết trong README).
 
-**Kiểm thử tự động** (chạy 2026-10-17):
+**Kiểm thử tự động** (chạy lại 2026-10-18):
 
 | Phần | Lệnh | Kết quả |
 |---|---|---|
-| Backend | `python -m pytest tests -q` (trong `backend/`, 17:43) | 195 passed (59 giây) |
-| Flutter | `flutter test --exclude-tags golden` (thư mục gốc, 17:44) | 439 passed, 4 skipped |
+| Backend | `python -m pytest tests -q` (trong `backend/`, 18/10 00:15) | 196 passed (56 giây) |
+| Flutter | `flutter test --exclude-tags golden` (thư mục gốc, 18/10 00:17) | 457 passed, 4 skipped (lần chạy 00:15 có 1 lỗi thoáng qua ở `account_test.dart`; chạy riêng file đó 3 lần đều đạt) |
 
 ## 9. Hạn chế
 
@@ -590,8 +613,8 @@ Code: `backend/routers/monitor.py`.
 4. **Côn Đảo**: v3 không vượt persistence, và kiểm tra holdout cho thấy mô hình không tổng quát được sang đảo chưa thấy.
 5. **Khoảng cách tới biển ước lượng tay**, sai số vài km; ranh giới phường từ OSM là gần đúng.
 6. Một ngưỡng mưa chung cho mọi ô; không tìm kiếm siêu tham số.
-7. **Khoảng p10–p90 phủ dưới mục tiêu:** trên test chỉ 77,2 / 75,5 / 74,9% (mục tiêu 80%), dù đã nới theo conformal trên validation (mục 5.11).
-8. **Phần mở rộng chưa có spatial holdout:** khoảng p10–p90 và 4 mục tiêu mới (độ ẩm, gió, gió giật, lượng mưa) chỉ được đánh giá trên các ô đã có trong huấn luyện. App chưa hiển thị các kết quả này.
+7. **Khoảng 90% chưa đều và rộng hơn** (mục 5.11): độ phủ trung bình đạt 90%, nhưng là bảo đảm trung bình theo nhóm, không phải cho từng giờ. Còn yếu ở: **tháng 7–8 và tháng 1** ở tầm 3 và 6 giờ (84–87%); **ngày có mưa** (88,8–90%); **ô chưa thấy lúc huấn luyện** (spatial holdout: trung bình 88,8 / 87,7 / 87,6%), đặc biệt **Côn Đảo khi bị giữ lại làm holdout** chỉ phủ 75,9 / 67,3 / 59,6%. Đánh đổi: khoảng rộng hơn khoảng p10–p90 cũ khoảng 1,5–1,6 lần (1,48 / 2,50 / 3,03 °C). Kết quả dựa trên giả định 2025–2026 giống 2024; backtest lùi một năm là kiểm tra duy nhất cho giả định này mà không chạm vào test.
+8. **4 mục tiêu mới chưa có spatial holdout:** độ ẩm, gió, gió giật, lượng mưa chỉ được đánh giá trên các ô đã có trong huấn luyện.
 9. Ô chưa đủ khoảng 2 năm dữ liệu (sau khi ghép lịch sử backfill) vẫn dùng trung bình nhiều năm của `tsn`, có thể lệch với khí hậu thật của ô. Khí hậu riêng của ô chỉ tính trên lịch sử từ 2022 hoặc 2023 (bảng độ phủ mục 3.2), ngắn hơn nhiều so với khoảng 10 năm của `tsn`.
 10. Cảnh báo trong app, trên bản đồ và dọc tuyến là ngưỡng đơn giản trên dữ liệu mô hình, **không phải cảnh báo chính thức**. Cảnh báo chính thức do Đài KTTV khu vực Nam Bộ phát hành. Dự báo AI là **thử nghiệm**, không dùng cho mục đích an toàn.
 11. **iOS mới được kiểm chứng bằng build CI** (IPA build thành công trên GitHub Actions); chưa có nhật ký chạy trên iPhone thật. Chưa ghi nhận kiểm thử chuyến đi trên đường thật ở cả Android và iOS.
@@ -599,7 +622,7 @@ Code: `backend/routers/monitor.py`.
 13. **Không có push từ server:** Apple ID miễn phí không dùng được push notification; cảnh báo dựa trên thông báo cục bộ và tác vụ nền, nên có thể đến muộn (iOS tự quyết định lúc chạy nền). App ký bằng Apple ID miễn phí hết hạn sau 7 ngày.
 14. **Dịch vụ OSRM công cộng bị giới hạn:** máy chủ demo và FOSSGIS chỉ cho khoảng 1 yêu cầu/giây, dành cho dùng nhẹ và không cam kết hoạt động liên tục. Khi chúng lỗi, chế độ có tuyến không dùng được (chế độ không có tuyến vẫn chạy). Tọa độ điểm đi/đến được gửi tới máy chủ bên thứ ba này.
 15. Token đăng nhập trên web nằm trong localStorage, có thể bị đọc nếu trang bị chèn mã độc (XSS).
-16. Huấn luyện lại chỉ chạy khi quản trị gọi `/admin/retrain`, chưa có lịch tự động; giám sát chưa tự gửi cảnh báo khi chất lượng giảm.
+16. Huấn luyện lại chỉ chạy khi quản trị gọi `/admin/retrain`, chưa có lịch tự động; giám sát chưa tự gửi cảnh báo khi chất lượng giảm. `/admin/retrain` chưa chạy `train_global_v3_interval.py`, nên sau khi huấn luyện lại qua API, khoảng nhiệt độ quay về p10–p90 cũ cho đến khi chạy script này.
 
 ## 10. Hướng phát triển
 
@@ -607,8 +630,7 @@ Code: `backend/routers/monitor.py`.
 |---|---|---|
 | Dữ liệu | Hoàn tất backfill 2017–2022 cho mọi ô, huấn luyện lại v3 | Ngân sách API miễn phí của Open-Meteo |
 | Đánh giá với số đo thật | So với số liệu trạm (nếu xin được) | Khả năng tiếp cận dữ liệu trạm |
-| Mô hình | Ngưỡng mưa theo vùng, xử lý riêng ô đảo, tìm siêu tham số; chọn độ nới conformal trên dữ liệu gần hơn để khoảng p10–p90 đạt 80%; spatial holdout cho phần mở rộng | Chỉ mở rộng sau khi kiểm chứng chất lượng |
-| App | Hiển thị khoảng p10–p90 và 4 mục tiêu AI mới đã qua cổng | Backend đã sẵn sàng |
+| Mô hình | Ngưỡng mưa theo vùng, xử lý riêng ô đảo, tìm siêu tham số; cải thiện khoảng 90% cho mùa mưa và ngày mưa (ví dụ đặc trưng mưa trong nhóm hiệu chỉnh), hiệu chỉnh lại khi có dữ liệu mới; spatial holdout cho 4 mục tiêu mới | Chỉ mở rộng sau khi kiểm chứng chất lượng |
 | Đặc trưng tĩnh | Khoảng cách tới biển từ đường bờ biển chuẩn (ví dụ OSM) thay cho bản vẽ tay | Cần thêm bước xử lý dữ liệu địa lý |
 | Nhóm 6 – Khi di chuyển | Kiểm thử trên đường thật; tự chạy máy chủ OSRM riêng | Pin, quyền vị trí, tài nguyên máy chủ |
 | Nhóm 7 – Bản đồ | Radar thật | Open-Meteo không có radar; chưa có nguồn radar công khai phù hợp cho TP.HCM |
@@ -617,4 +639,4 @@ Code: `backend/routers/monitor.py`.
 
 ## 11. Kết luận
 
-Nhóm đã mở rộng từ một điểm gần Tân Sơn Nhất ra toàn bộ TP.HCM mới: 168 phường/xã/đặc khu gộp thành 67 ô lưới, dữ liệu cập nhật hằng giờ, backfill lịch sử có kiểm soát ngân sách API, và một mô hình LightGBM toàn cục. Trên tập test từ 2025, v3 tốt hơn persistence và climatology ở 63/67 ô, và tốt hơn v2 tại `tsn` về nhiệt độ. Kiểm tra spatial holdout cho thấy mô hình tổng quát khá tốt sang vùng đất liền chưa thấy nhưng không tổng quát được sang đảo Côn Đảo; app hiển thị trung thực kết quả của từng ô. Phần mở rộng thêm khoảng bất định (phủ khoảng 75–77%, chưa đạt 80%) và 4 mục tiêu mới, mỗi mục tiêu chỉ được phục vụ khi thắng cả hai mô hình cơ sở. Đối chiếu 42 mục con của đề bài: 38 đã xong, 4 một phần; app chạy trên Android và web, bản iOS mới được kiểm chứng bằng build CI. Hạn chế lớn nhất vẫn là dữ liệu là đầu ra mô hình chứ không phải số đo trạm, nên kết quả là bằng chứng phương pháp khả thi, chưa phải một sản phẩm dự báo dùng được ngoài thực tế.
+Nhóm đã mở rộng từ một điểm gần Tân Sơn Nhất ra toàn bộ TP.HCM mới: 168 phường/xã/đặc khu gộp thành 67 ô lưới, dữ liệu cập nhật hằng giờ, backfill lịch sử có kiểm soát ngân sách API, và một mô hình LightGBM toàn cục. Trên tập test từ 2025, v3 tốt hơn persistence và climatology ở 63/67 ô, và tốt hơn v2 tại `tsn` về nhiệt độ. Kiểm tra spatial holdout cho thấy mô hình tổng quát khá tốt sang vùng đất liền chưa thấy nhưng không tổng quát được sang đảo Côn Đảo; app hiển thị trung thực kết quả của từng ô. Phần mở rộng thêm khoảng nhiệt độ mức tin cậy 90% (độ phủ trên test 91,1 / 90,2 / 90,4%, đổi lại khoảng rộng hơn) và 4 mục tiêu mới, mỗi mục tiêu chỉ được phục vụ khi thắng cả hai mô hình cơ sở; app hiển thị cả hai. Đối chiếu 42 mục con của đề bài: 40 đã xong, 2 một phần; app chạy trên Android và web, bản iOS mới được kiểm chứng bằng build CI. Hạn chế lớn nhất vẫn là dữ liệu là đầu ra mô hình chứ không phải số đo trạm, nên kết quả là bằng chứng phương pháp khả thi, chưa phải một sản phẩm dự báo dùng được ngoài thực tế.

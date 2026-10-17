@@ -169,6 +169,13 @@ class FakePopen:
                 ev["_ext"] = {"wind_speed": {"enabled": True}}
                 ev_path.write_text(json.dumps(ev), encoding="utf-8")
             return FakePopen.ext_returncode
+        if FakePopen.calls and FakePopen.calls[-1][1].endswith("train_global_v3_interval.py"):
+            ev_path = self.out / "evaluation_v3.json"   # interval refit adds its keys to the same file
+            if ev_path.exists():
+                ev = json.loads(ev_path.read_text(encoding="utf-8"))
+                ev["_interval"] = {"level": 0.9}
+                ev_path.write_text(json.dumps(ev), encoding="utf-8")
+            return FakePopen.interval_returncode
         if FakePopen.result is not None:
             _write_model(self.out, *FakePopen.result)
         return FakePopen.returncode
@@ -184,6 +191,7 @@ def models(tmp_path, monkeypatch):
     monkeypatch.setattr(monitor.ai_model, "reset_v3_cache", lambda: reloads.append(1))
     FakePopen.result, FakePopen.returncode, FakePopen.gate, FakePopen.calls = (0.4, 0.6, "cand-1"), 0, None, []
     FakePopen.ext_returncode = 0
+    FakePopen.interval_returncode = 0
     monitor._jobs.clear()
     yield d, reloads
     monitor._jobs.clear()
@@ -209,9 +217,13 @@ def test_retrain_promotes_better_candidate_and_rollback(admin, models):
     assert cmd[1].endswith("train_global_v3.py") and cmd[cmd.index("--out") + 1] == str(d / "v3_candidate")
     assert "--quick" in cmd
     ext = FakePopen.calls[1]   # then the extension script on the SAME candidate dir (no --quick)
-    assert len(FakePopen.calls) == 2 and ext[1].endswith("train_global_v3_ext.py")
+    assert len(FakePopen.calls) == 3 and ext[1].endswith("train_global_v3_ext.py")
     assert ext[ext.index("--out") + 1] == str(d / "v3_candidate") and "--quick" not in ext
-    assert "_ext" in json.loads((d / "v3" / "evaluation_v3.json").read_text())   # extended keys promoted
+    interval = FakePopen.calls[2]   # last: the 90% interval refit on the same candidate dir
+    assert interval[1].endswith("train_global_v3_interval.py")
+    assert interval[interval.index("--out") + 1] == str(d / "v3_candidate") and "--quick" not in interval
+    promoted = json.loads((d / "v3" / "evaluation_v3.json").read_text())
+    assert "_ext" in promoted and "_interval" in promoted   # extended and interval keys both promoted
     assert _version(d / "v3") == "cand-1" and _version(d / "v3_prev") == "current"
     assert not (d / "v3_candidate").exists() and reloads == [1]
     assert job["candidate_score"]["temperature_mae"] == 0.4 and job["current_score"]["temperature_mae"] == 0.5
@@ -239,6 +251,10 @@ def test_retrain_rejects_worse_or_broken_candidate(admin, models):
     job = _run_job(admin)
     assert job["status"] == "failed" and job["step"] == "train_global_v3_ext.py"   # ext failed: no promotion
     assert _version(d / "v3") == "current"
+    FakePopen.ext_returncode, FakePopen.interval_returncode, FakePopen.calls = 0, 1, []
+    job = _run_job(admin)
+    assert job["status"] == "failed" and job["step"] == "train_global_v3_interval.py"   # interval failed
+    assert len(FakePopen.calls) == 3 and _version(d / "v3") == "current"
     assert admin.post("/admin/rollback", headers=ADMIN).status_code == 409   # no v3_prev yet
 
 

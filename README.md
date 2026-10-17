@@ -65,7 +65,8 @@ sky_weather_app/
 │   │   ├── build_locations.py    # tạo danh sách phường/xã, ranh giới, ô lưới từ OSM
 │   │   ├── backfill_history.py   # tải lịch sử theo ô (ngân sách API, chạy tiếp được)
 │   │   ├── train_global_v3.py    # huấn luyện + đánh giá mô hình v3
-│   │   └── train_global_v3_ext.py # khoảng p10–p90, hiệu chuẩn mưa, mục tiêu mới + cổng phục vụ
+│   │   ├── train_global_v3_ext.py # hiệu chuẩn mưa, mục tiêu mới + cổng phục vụ (khoảng p10–p90 cũ)
+│   │   └── train_global_v3_interval.py # khoảng nhiệt độ 90% (q05/q95 + CQR), thay khoảng p10–p90
 │   ├── tests/                    # pytest
 │   ├── data/
 │   │   ├── weather.db
@@ -97,7 +98,7 @@ python -m uvicorn main:app --host 0.0.0.0 --port 8000
 - Kiểm tra: mở `http://localhost:8000/health` hoặc tài liệu API tại `http://localhost:8000/docs`.
 - Khi khởi động, backend chạy ingest một lần rồi lặp lại mỗi giờ vào phút 05.
 - `--host 0.0.0.0` chỉ cần khi chạy app trên điện thoại thật.
-- Test: `cd backend && python -m pytest tests -q` (chạy 2026-10-17 17:43: **195 passed**, 59 giây).
+- Test: `cd backend && python -m pytest tests -q` (chạy 2026-10-18 00:15: **196 passed**, 56 giây).
 
 ### 2. Backfill lịch sử theo ô (tùy chọn, dùng cho huấn luyện v3)
 
@@ -115,7 +116,7 @@ Script ghi vào file riêng `backend/data/history/cells_history.db`, giữ dư�
 # chạy tại thư mục gốc (sky_weather_app)
 D:\flutter\bin\flutter pub get
 D:\flutter\bin\flutter run
-D:\flutter\bin\flutter test --exclude-tags golden   # chạy 2026-10-17 17:44: 439 passed, 4 skipped
+D:\flutter\bin\flutter test --exclude-tags golden   # chạy 2026-10-18 00:17: 457 passed, 4 skipped
 ```
 
 - **Android emulator**: mặc định gọi `http://10.0.2.2:8000` (địa chỉ của máy host nhìn từ emulator), không cần cấu hình.
@@ -195,7 +196,8 @@ Trên iPhone: chế độ chuyến đi chạy nền nhờ `UIBackgroundModes: lo
 ```bash
 pip install numpy pandas lightgbm joblib scikit-learn matplotlib jupyter
 cd backend && python scripts/train_global_v3.py   # v3, ghi vào backend/models/v3/
-python scripts/train_global_v3_ext.py             # chạy ngay sau: khoảng tin cậy, hiệu chỉnh, mục tiêu mới
+python scripts/train_global_v3_ext.py             # chạy ngay sau: hiệu chỉnh mưa, mục tiêu mới
+python scripts/train_global_v3_interval.py        # chạy cuối: khoảng nhiệt độ 90% (khoảng 30 phút)
 cd ../notebooks && jupyter notebook global_model.ipynb
 ```
 
@@ -243,7 +245,9 @@ Mọi `/weather/*` (trừ `/weather/map` và `/weather/map/meta`) nhận `locati
 
 Mọi `/admin/*` (và `/feedback/summary`) chỉ nhận yêu cầu từ localhost, hoặc cần header `X-Admin-Token` nếu đặt biến môi trường `ADMIN_TOKEN`.
 
-`/weather/ai-forecast` trả thêm `temperature_p10`, `temperature_p90`, `uncertainty_note` và các mục tiêu đã qua cổng kiểm chứng (`humidity`, `wind_speed`, `wind_gusts`, `precipitation_mm`; danh sách ở `enabled_targets`) khi có `backend/models/v3/extension_v3.json`. App hiện chưa hiển thị các trường này.
+`/weather/ai-forecast` trả thêm khoảng nhiệt độ `temperature_low`, `temperature_high` với `interval_level` = 0,9 (khoảng 90%), câu `uncertainty_note` và các mục tiêu đã qua cổng kiểm chứng (`humidity`, `wind_speed`, `wind_gusts`, `precipitation_mm`; danh sách ở `enabled_targets`) khi có `backend/models/v3/extension_v3.json`. `temperature_p10`, `temperature_p90` chỉ giữ cho client cũ và bằng đúng `temperature_low`, `temperature_high`. Trên test từ 2025, khoảng 90% phủ 91,1 / 90,2 / 90,4% ở tầm 1 / 3 / 6 giờ (chi tiết: `docs/bao_cao.md`, mục 5.11). Thẻ AI trên trang chủ hiển thị khoảng (ghi "khoảng 90%") và các mục tiêu đã bật.
+
+Lưu ý: `/admin/retrain` hiện chỉ chạy `train_global_v3.py` và `train_global_v3_ext.py`, nên sau khi huấn luyện lại qua API khoảng sẽ về p10–p90 cũ; cần chạy thêm `train_global_v3_interval.py`.
 
 Trung bình nhiều năm (khi cần): ô có khoảng 3 năm dữ liệu trong `weather.db`, hoặc khoảng 2 năm sau khi ghép `data/history/cells_history.db`, dùng khí hậu riêng; ô khác dùng của `tsn`.
 

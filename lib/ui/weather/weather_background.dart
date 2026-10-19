@@ -10,6 +10,10 @@
 /// ```
 library;
 
+import 'dart:math' as math;
+
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
@@ -99,8 +103,11 @@ class CelestialPlacement {
     double opacity = 1.0,
   }) {
     final double r = (width * 0.055).clamp(16.0, 21.0);
+    // Khong de len nut 48 dp o goc phai thanh cong cu (Cai dat / Bo qua...):
+    // dia + quang nam ben trai nut.
+    final double maxX = width - 4 - 48 - 8 - r * 1.4;
     return CelestialPlacement(
-      center: Offset(width * 0.85, top + 3 + r),
+      center: Offset(math.min(width * 0.85, maxX), top + 3 + r),
       radius: r,
       opacity: opacity,
     );
@@ -138,7 +145,10 @@ WeatherScene effectiveScene(WeatherScene resolved, SceneOverride? o) {
 /// * Doi [scene] -> chuyen canh 700 ms (gradient noi suy mau, lop cu mo dan
 ///   va chi bi go khi chuyen xong - khong nhay trang).
 /// * Ton trong `MediaQuery.disableAnimationsOf`: nen tinh, khong hat.
-/// * Dung ticker khi app vao nen (lifecycle) hoac khi bi an (TickerMode).
+/// * Dung ticker khi app vao nen (lifecycle), khi bi an (TickerMode / route
+///   khac che) hoac khi [active] = false (vd. hero da cuon khoi man hinh).
+/// * Hoat canh gioi han ~[maxFps] khung/s (20 khi [lowPower]); vi tri tinh
+///   theo thoi gian nen chuyen dong van deu.
 /// * Moi lop co RepaintBoundary rieng; tu giam so hat khi khung hinh cham
 ///   ([qualityScale] 1.0 -> 0.6 -> 0.35).
 class WeatherBackground extends StatefulWidget {
@@ -157,7 +167,18 @@ class WeatherBackground extends StatefulWidget {
     this.debugFixedTime,
     this.transitionDuration = const Duration(milliseconds: 700),
     this.celestial,
+    this.active = true,
   });
+
+  /// Nen dang hien thi? false -> dung ticker (giu khung cuoi, khong ve lai).
+  /// Vd. Home dat false khi hero da cuon khoi man hinh.
+  final bool active;
+
+  /// Gioi han khung/s cua hoat canh nen (tiet kiem pin).
+  static const double maxFps = 30;
+
+  /// Gioi han khung/s khi [lowPower].
+  static const double lowPowerFps = 20;
 
   /// Canh can ve.
   final WeatherScene scene;
@@ -224,6 +245,12 @@ class WeatherBackground extends StatefulWidget {
   @visibleForTesting
   static int get debugLiveStates => _liveStates;
 
+  static int _paintedFrames = 0;
+
+  /// Tong so khung canh da cap nhat dong ho (= so lan ve lai lop hat).
+  @visibleForTesting
+  static int get debugPaintedFrames => _paintedFrames;
+
   @override
   State<WeatherBackground> createState() => _WeatherBackgroundState();
 }
@@ -241,6 +268,12 @@ class _WeatherBackgroundState extends State<WeatherBackground>
     with TickerProviderStateMixin, WidgetsBindingObserver {
   late final ValueNotifier<double> _clock;
   late final Ticker _ticker;
+  Timer? _wake;
+  bool _running = false;
+  Duration? _stamp0;
+
+  /// Mot backdrop dung chung cho moi the kinh tren nen (BackdropFilter.grouped).
+  final BackdropKey _backdropKey = BackdropKey();
   late final AnimationController _fade;
   late final CurvedAnimation _curve;
   double _base = 0;
@@ -319,6 +352,7 @@ class _WeatherBackgroundState extends State<WeatherBackground>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _wake?.cancel();
     _setTimings(false);
     if (_tickerCounted) {
       _tickerCounted = false;
@@ -375,17 +409,25 @@ class _WeatherBackgroundState extends State<WeatherBackground>
 
   void _syncTicker() {
     final bool shouldRun =
-        !_reduceMotion && widget.debugFixedTime == null && _appVisible;
-    if (shouldRun && !_ticker.isActive) {
+        !_reduceMotion &&
+        widget.debugFixedTime == null &&
+        _appVisible &&
+        widget.active;
+    if (shouldRun && !_running) {
+      _running = true;
+      _stamp0 = null;
       _ticker.start();
       if (!_tickerCounted) {
         _tickerCounted = true;
         WeatherBackground._runningTickers++;
       }
       _setTimings(true);
-    } else if (!shouldRun && _ticker.isActive) {
+    } else if (!shouldRun && _running) {
+      _running = false;
       _base = _clock.value;
-      _ticker.stop();
+      _wake?.cancel();
+      _wake = null;
+      if (_ticker.isActive) _ticker.stop();
       if (_tickerCounted) {
         _tickerCounted = false;
         WeatherBackground._runningTickers--;
@@ -394,8 +436,22 @@ class _WeatherBackgroundState extends State<WeatherBackground>
     }
   }
 
-  void _onTick(Duration elapsed) {
-    _clock.value = _base + elapsed.inMicroseconds / 1e6;
+  /// Moi khung: cap nhat dong ho theo moc thoi gian khung, roi tat ticker
+  /// va hen [Timer] bat lai sau ~1/fps (khong lap lich khung o giua).
+  void _onTick(Duration _) {
+    final Duration stamp = SchedulerBinding.instance.currentFrameTimeStamp;
+    final Duration s0 = _stamp0 ??= stamp;
+    WeatherBackground._paintedFrames++;
+    _clock.value = _base + (stamp - s0).inMicroseconds / 1e6;
+    _ticker.stop();
+    final double fps = widget.lowPower
+        ? WeatherBackground.lowPowerFps
+        : WeatherBackground.maxFps;
+    // Tru ~4 ms de khop vsync ke tiep (60/90/120 Hz -> dung ~33 ms).
+    _wake = Timer(Duration(microseconds: (1e6 / fps).round() - 4000), () {
+      _wake = null;
+      if (_running && mounted) _ticker.start();
+    });
   }
 
   void _setTimings(bool on) {
@@ -504,7 +560,10 @@ class _WeatherBackgroundState extends State<WeatherBackground>
             if (widget.child != null)
               KeyedSubtree(
                 key: const ValueKey<String>('wb-child'),
-                child: widget.child!,
+                child: BackdropGroup(
+                  backdropKey: _backdropKey,
+                  child: widget.child!,
+                ),
               ),
           ],
         );
@@ -693,6 +752,9 @@ class _LayerViewState extends State<_LayerView> {
   @override
   void dispose() {
     if (_listening) widget.clock.removeListener(_onClock);
+    final Object s = _state;
+    if (s is CloudField) s.dispose();
+    if (s is FogField) s.dispose();
     super.dispose();
   }
 

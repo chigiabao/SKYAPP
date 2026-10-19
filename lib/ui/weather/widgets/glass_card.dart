@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 
 import '../design_tokens.dart';
 import '../glass_ink.dart';
+import '../weather_background.dart' show WeatherBackground;
 import '../weather_scene.dart';
 import '../app_scene.dart';
 
@@ -30,6 +31,10 @@ abstract final class GlassSpec {
 
 /// Be mat kinh: blur + [SceneTheme.glassColor] + vien 1 px trang 0.18 +
 /// vet sang 1 px o canh tren (trang 0.25 -> 0).
+///
+/// Hieu nang: blur dung chung mot backdrop voi cac the khac duoi cung
+/// [BackdropGroup] (WeatherBackground cung cap); khi may cham (chat luong nen
+/// o muc thap nhat) thi bo blur, chi giu tint (tuong phan khong doi).
 class GlassSurface extends StatelessWidget {
   const GlassSurface({
     super.key,
@@ -47,6 +52,11 @@ class GlassSurface extends StatelessWidget {
 
   /// Ghi de mau kinh (mac dinh theo canh hien tai).
   final Color? tint;
+
+  static final ImageFilter _blur = ImageFilter.blur(
+    sigmaX: GlassSpec.blurSigma,
+    sigmaY: GlassSpec.blurSigma,
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -95,12 +105,13 @@ class GlassSurface extends StatelessWidget {
       ),
     );
     if (blur) {
-      box = BackdropFilter(
-        filter: ImageFilter.blur(
-          sigmaX: GlassSpec.blurSigma,
-          sigmaY: GlassSpec.blurSigma,
-        ),
-        child: box,
+      final Widget tinted = box;
+      box = ValueListenableBuilder<double>(
+        valueListenable: WeatherBackground.qualityScale,
+        child: tinted,
+        builder: (context, q, child) => q <= WeatherBackground.qualitySteps.last
+            ? child!
+            : BackdropFilter.grouped(filter: _blur, child: child),
       );
     }
     return ClipRRect(borderRadius: br, child: box);

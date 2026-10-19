@@ -4,7 +4,7 @@
 ///     (Open-Meteo reanalysis/analysis), KHONG phai tram do.
 ///   - forecast: du bao cua mo hinh Open-Meteo.
 ///   - climatology: trung binh nhieu nam cho cung ngay/gio.
-enum DataSource { observed, forecast, climatology }
+enum DataSource { observed, forecast, climatology, ai }
 
 /// "observed" | "forecast" | "climatology" -> DataSource; khac/thieu -> null.
 DataSource? parseDataSource(dynamic value) {
@@ -14,6 +14,8 @@ DataSource? parseDataSource(dynamic value) {
       return DataSource.observed;
     case 'forecast':
       return DataSource.forecast;
+    case 'ai':
+      return DataSource.ai;
     case 'climatology':
       return DataSource.climatology;
   }
@@ -24,6 +26,8 @@ extension DataSourceText on DataSource {
   /// Nhan day du (tieu de phu, chip nguon).
   String get label {
     switch (this) {
+      case DataSource.ai:
+        return 'Dự báo AI Sky Weather';
       case DataSource.forecast:
         return 'Dự báo mô hình (Open-Meteo)';
       case DataSource.observed:
@@ -36,6 +40,8 @@ extension DataSourceText on DataSource {
   /// Nhan ngan cho o/hang (danh dau tung muc khi nguon bi tron).
   String get shortLabel {
     switch (this) {
+      case DataSource.ai:
+        return 'AI riêng';
       case DataSource.forecast:
         return 'Dự báo';
       case DataSource.observed:
@@ -48,6 +54,10 @@ extension DataSourceText on DataSource {
   /// Mot cau giai thich trung thuc.
   String get note {
     switch (this) {
+      case DataSource.ai:
+        return 'Model thử nghiệm do Sky Weather huấn luyện từ dữ liệu mô hình lịch sử, '
+            'không phải quan trắc trạm. Chưa vượt mốc thống kê khí hậu ở một số '
+            'chỉ số/ngày thứ 7; không phải cảnh báo khí tượng chính thức.';
       case DataSource.forecast:
         return 'Dự báo của mô hình thời tiết Open-Meteo, có thể sai lệch.';
       case DataSource.observed:
@@ -99,6 +109,6 @@ class SourceSummary {
   bool marks(DataSource? item) {
     final s = item ?? fallback;
     if (s == DataSource.observed) return true;
-    return isMixed && s != DataSource.forecast;
+    return isMixed && s != DataSource.forecast && s != DataSource.ai;
   }
 }

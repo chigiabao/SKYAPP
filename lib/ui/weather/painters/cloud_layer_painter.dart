@@ -4,9 +4,12 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/rendering.dart';
 
 import 'painter_math.dart';
+import 'sprite.dart';
 
 /// Trang thai cac dam may: hinh dang sinh mot lan theo seed (don vi tuong
-/// doi), Path pixel chi dung lai khi kich thuoc man hinh doi.
+/// doi), Path pixel chi dung lai khi kich thuoc man hinh doi. Moi dam may
+/// (than + vet sang, da blur) duoc ve san thanh [Sprite]; moi khung chi dich
+/// chuyen anh.
 class CloudField {
   CloudField({int? seed, this.maxLayers = 4, this.maxPerLayer = 4}) {
     final math.Random r = math.Random(seed);
@@ -51,6 +54,54 @@ class CloudField {
   Size? _size;
   double _dense = -1;
 
+  final List<Sprite?> _sprites = [];
+  Color? _spriteColor;
+  int _spriteLayers = -1;
+
+  /// Xoa sprite (khi doi kich thuoc / mau / so lop).
+  void _clearSprites() {
+    for (final Sprite? s in _sprites) {
+      s?.dispose();
+    }
+    _sprites.clear();
+  }
+
+  /// Giai phong anh sprite.
+  void dispose() => _clearSprites();
+
+  /// Sprite cua may [k] (ve mot lan, cache den khi doi kich thuoc / mau).
+  Sprite spriteOf(int k, Color color, int nLayers, double sigma) {
+    if (_spriteColor != color || _spriteLayers != nLayers) {
+      _clearSprites();
+      _spriteColor = color;
+      _spriteLayers = nLayers;
+    }
+    if (_sprites.isEmpty) {
+      _sprites.addAll(List<Sprite?>.filled(maxLayers * maxPerLayer, null));
+    }
+    return _sprites[k] ??= _record(k, sigma);
+  }
+
+  Sprite _record(int k, double sigma) {
+    final double w = _widths[k];
+    final Path path = _paths[k];
+    final Rect b = path.getBounds();
+    final Rect lb = Rect.fromLTRB(
+      b.left * 0.92,
+      b.top * 0.92 - w * 0.045,
+      b.right * 0.92,
+      b.bottom * 0.92 - w * 0.045,
+    );
+    final Rect bounds = b.expandToInclude(lb).inflate(sigma * 1.4 * 3);
+    return Sprite.record(bounds, (c) {
+      c
+        ..drawPath(path, bodyPaint)
+        ..translate(0, -w * 0.045)
+        ..scale(0.92)
+        ..drawPath(path, lightPaint);
+    });
+  }
+
   /// Chieu rong (px) cua may [k] o kich thuoc hien tai.
   double widthOf(int k) => _widths[k];
 
@@ -64,6 +115,7 @@ class CloudField {
     _dense = denseFactor;
     _paths.clear();
     _widths.clear();
+    _clearSprites();
     for (int l = 0; l < maxLayers; l++) {
       for (int i = 0; i < maxPerLayer; i++) {
         final int k = l * maxPerLayer + i;
@@ -163,14 +215,7 @@ class CloudLayerPainter extends CustomPainter {
         final double x =
             wrapDouble(field.baseX[k] * span + speed * t, span) - w * 0.6;
         final double y = bandTop + field.baseY[k] * bandH - w * 0.12;
-        canvas
-          ..save()
-          ..translate(x, y)
-          ..drawPath(field.pathOf(k), field.bodyPaint)
-          ..translate(0, -w * 0.045)
-          ..scale(0.92)
-          ..drawPath(field.pathOf(k), field.lightPaint)
-          ..restore();
+        field.spriteOf(k, color, nLayers, sigma).paint(canvas, Offset(x, y));
       }
     }
   }

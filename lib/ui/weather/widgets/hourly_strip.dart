@@ -115,6 +115,7 @@ class HourlyStrip extends StatelessWidget {
     }
 
     final anyTag = hours.any((h) => tagFor(h) != null);
+    final anyMm = hours.any((h) => _forecastMm(h) != null);
     final entries = buildHourlyTimeline(hours, nowHcm: now);
 
     final scaler = MediaQuery.textScalerOf(context);
@@ -122,7 +123,12 @@ class HourlyStrip extends StatelessWidget {
     // Chieu cao o: 4 dong chu (gio, nhiet, mua, nguon) + icon + khoang cach.
     final double tileHeight =
         16 +
-        1.3 * (sc(13) + sc(18) + sc(12) + (anyTag ? sc(11) : 0)) +
+        1.3 *
+            (sc(13) +
+                sc(18) +
+                sc(12) +
+                (anyTag ? sc(11) : 0) +
+                (anyMm ? sc(11) : 0)) +
         30 +
         6 * 3 +
         6;
@@ -217,7 +223,8 @@ class _HourTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final provider = context.watch<WeatherProvider>();
+    // Dai cha da watch provider va dung lai o -> chi doc.
+    final provider = context.read<WeatherProvider>();
     final f = entry.forecast;
     final mm = f.precipitationMm;
     final rainText = f.isObserved
@@ -225,6 +232,10 @@ class _HourTile extends StatelessWidget {
               ? PreferencesProvider.unitsOf(context).rainText(mm)
               : null)
         : (f.rainPercent > 0 ? '${f.rainPercent}%' : null);
+    final double? fmm = _forecastMm(f);
+    final String? mmText = fmm == null
+        ? null
+        : PreferencesProvider.unitsOf(context).rainText(fmm);
     final label = entry.isNow
         ? 'Bây giờ'
         : '${f.time.hour.toString().padLeft(2, '0')}:00';
@@ -242,6 +253,7 @@ class _HourTile extends StatelessWidget {
               : f.isObserved
               ? ', mưa $rainText'
               : ', khả năng mưa $rainText'}'
+          '${mmText == null ? '' : ', khoảng $mmText'}'
           '${sourceTag != null ? ', ${sourceTag!.shortLabel}' : ''}',
       excludeSemantics: true,
       child: Container(
@@ -290,6 +302,17 @@ class _HourTile extends StatelessWidget {
                 ),
               ),
             ),
+            if (mmText != null)
+              _fit(
+                Text(
+                  mmText,
+                  style: TypeScale.small.copyWith(
+                    fontSize: 11,
+                    color: ink.secondary,
+                    fontFeatures: kTabular,
+                  ),
+                ),
+              ),
             if (sourceTag != null) _fit(SourceTag(source: sourceTag!)),
           ],
         ),
@@ -349,6 +372,14 @@ class _SunTile extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Luong mua du bao cua gio (>= 0,1 mm) de hien nho duoi %; null neu
+/// khong mua / gio thuc te (da hien mm o dong tren).
+double? _forecastMm(HourlyForecast h) {
+  if (h.isObserved) return null;
+  final mm = h.precipitationMm ?? h.precipitationMedian;
+  return mm != null && mm >= 0.1 ? mm : null;
 }
 
 Widget _fit(Widget child) => FittedBox(fit: BoxFit.scaleDown, child: child);

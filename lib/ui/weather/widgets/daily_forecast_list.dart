@@ -33,6 +33,12 @@ String? dailyRainText(DailyForecast d) {
   return '$p%';
 }
 
+/// Tag Hero cua mot ngay, dung chung voi man chi tiet ngay
+/// (DaySummaryCard.heroTag): "day-yyyy-MM-dd".
+String dayHeroTag(DateTime d) =>
+    'day-${d.year.toString().padLeft(4, '0')}-'
+    '${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
 /// The 7 ngay. [currentTemp] (°C): cham trang tren hang "Hôm nay".
 class DailyForecastCard extends StatelessWidget {
   const DailyForecastCard({
@@ -41,8 +47,11 @@ class DailyForecastCard extends StatelessWidget {
     this.currentTemp,
     this.onDayTap,
     this.nowHcm,
+    this.heroes = false,
   });
 
+  /// Boc moi hang trong Hero [dayHeroTag] (chuyen canh sang chi tiet ngay).
+  final bool heroes;
   final List<DailyForecast> days;
   final double? currentTemp;
   final ValueChanged<DailyForecast>? onDayTap;
@@ -75,19 +84,23 @@ class DailyForecastCard extends StatelessWidget {
         children: [
           for (var i = 0; i < days.length; i++) ...[
             const Divider(height: 1, color: Palette.divider),
-            DailyRow(
-              day: days[i],
-              isToday: HcmTime.startOfDay(days[i].date) == today,
-              scaleMin: lo,
-              scaleMax: hi,
-              currentTemp: HcmTime.startOfDay(days[i].date) == today
-                  ? currentTemp
-                  : null,
-              sourceTag:
-                  minority.contains(days[i].source ?? SourceSummary.fallback)
-                  ? (days[i].source ?? SourceSummary.fallback)
-                  : null,
-              onTap: onDayTap == null ? null : () => onDayTap!(days[i]),
+            _hero(
+              context,
+              days[i],
+              DailyRow(
+                day: days[i],
+                isToday: HcmTime.startOfDay(days[i].date) == today,
+                scaleMin: lo,
+                scaleMax: hi,
+                currentTemp: HcmTime.startOfDay(days[i].date) == today
+                    ? currentTemp
+                    : null,
+                sourceTag:
+                    minority.contains(days[i].source ?? SourceSummary.fallback)
+                    ? (days[i].source ?? SourceSummary.fallback)
+                    : null,
+                onTap: onDayTap == null ? null : () => onDayTap!(days[i]),
+              ),
             ),
           ],
           const Divider(height: 1, color: Palette.divider),
@@ -95,6 +108,19 @@ class DailyForecastCard extends StatelessWidget {
           SourceSubtitle(summary: summary),
         ],
       ),
+    );
+  }
+}
+
+extension on DailyForecastCard {
+  Widget _hero(BuildContext context, DailyForecast d, Widget row) {
+    if (!heroes || (MediaQuery.maybeDisableAnimationsOf(context) ?? false)) {
+      return row;
+    }
+    return Hero(
+      tag: dayHeroTag(d.date),
+      // Bay tren overlay: giu nen trong suot, chu theo kieu rieng.
+      child: Material(type: MaterialType.transparency, child: row),
     );
   }
 }

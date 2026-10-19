@@ -13,6 +13,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:sky_weather_app/models/app_settings.dart';
 import 'package:sky_weather_app/models/data_source.dart';
+import 'package:sky_weather_app/models/hcm_time.dart';
 import 'package:sky_weather_app/models/place.dart';
 import 'package:sky_weather_app/providers/location_provider.dart';
 import 'package:sky_weather_app/providers/weather_provider.dart';
@@ -92,7 +93,7 @@ void main() {
       expect(c.outlookSource, isNull);
       expect(windText(c), 'gió không có dữ liệu');
       expect(mapFrameLabel(c.source, c.validTime), isNull);
-      expect(outlookSourceLabel('ai'), 'Dự báo AI (xem lại)');
+      expect(outlookSourceLabel('ai'), 'Dự báo AI Sky Weather');
       expect(outlookSourceLabel('forecast'), 'Dự báo Open-Meteo');
     });
 
@@ -103,12 +104,169 @@ void main() {
         'Thực tế (dữ liệu phân tích) lúc 15:00',
       );
       expect(mapFrameLabel(DataSource.forecast, t), 'Dự báo lúc 18:00 thứ Bảy');
+      expect(mapFrameLabel(DataSource.ai, t), 'Dự báo AI lúc 18:00 thứ Bảy');
+      expect(mapFrameLabel(DataSource.ai, null), isNull);
       expect(offsetLabel(0), 'Bây giờ');
       expect(offsetLabel(3), '+3 giờ');
     });
   });
 
   group('LocationProvider offset', () {
+    for (final limit in [0, 6]) {
+      test('coverage 72 -> $limit fetches the actual allowed frame', () async {
+        var max = 72;
+        final offsets = <int>[];
+        final lp = LocationProvider(
+          clock: () => DateTime.utc(2026, 10, 17, 8),
+          apiService: ApiService(
+            baseUrl: 'http://test',
+            client: MockClient((req) async {
+              final off = int.parse(
+                req.url.queryParameters['offset_hours'] ?? '0',
+              );
+              offsets.add(off);
+              return http.Response.bytes(
+                utf8.encode(
+                  jsonEncode([
+                    {
+                      ..._cell(off),
+                      'max_offset_hours': max,
+                      'temperature': off > max ? null : (max == 72 ? 30 : 25),
+                      'source': off > max
+                          ? null
+                          : (off == 0 ? 'observed' : 'ai'),
+                      'valid_time': HcmTime.toIso(
+                        DateTime.utc(2026, 10, 17, 15).add(Duration(hours: off)),
+                      ),
+                    },
+                  ]),
+                ),
+                200,
+              );
+            }),
+          ),
+        );
+        addTearDown(lp.dispose);
+        await lp.refreshMap();
+        if (limit != 0) await lp.setMapOffset(limit);
+        await lp.setMapOffset(24);
+        max = limit;
+        await lp.refreshMap();
+        expect(offsets.sublist(offsets.length - 2), [24, limit]);
+        expect(lp.mapOffset, limit);
+        expect(lp.mapMaxOffset, limit);
+        expect(lp.cells.single.temperature, 25);
+        expect(
+          lp.cells.single.source,
+          limit == 0 ? DataSource.observed : DataSource.ai,
+        );
+        expect(
+          lp.cells.single.validTime,
+          DateTime.utc(2026, 10, 17, 15).add(Duration(hours: limit)),
+        );
+        expect(lp.cellsAt, isNull);
+        expect(lp.cellsStale, isFalse);
+        expect(lp.mapError, isNull);
+        expect(lp.mapLoading, isFalse);
+        expect(lp.cachedFrameCount, 1);
+        await lp.setMapOffset(24);
+        expect(lp.mapOffset, limit);
+        expect(offsets.last, limit);
+      });
+    }
+
+    test(
+      'failed current refetch after shrink keeps only stale current cache',
+      () async {
+        var max = 72;
+        final offsets = <int>[];
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(
+          LocationProvider.mapKey,
+          jsonEncode({
+            'saved_at': '2026-10-17T15:00:00+07:00',
+            'cells': [
+              {..._cell(0), 'temperature': 22},
+            ],
+          }),
+        );
+        final lp = LocationProvider(
+          apiService: ApiService(
+            baseUrl: 'http://test',
+            client: MockClient((req) async {
+              final off = int.parse(
+                req.url.queryParameters['offset_hours'] ?? '0',
+              );
+              offsets.add(off);
+              if (max == 0 && off == 0) return http.Response('{}', 503);
+              return http.Response.bytes(
+                utf8.encode(
+                  jsonEncode([
+                    {..._cell(off), 'max_offset_hours': max},
+                  ]),
+                ),
+                200,
+              );
+            }),
+          ),
+        );
+        addTearDown(lp.dispose);
+        await lp.setMapOffset(3);
+        max = 0;
+        await lp.refreshMap();
+        expect(offsets, [3, 3, 0]);
+        expect(lp.mapOffset, 0);
+        expect(lp.mapMaxOffset, 0);
+        expect(lp.cells.single.temperature, 22);
+        expect(lp.cells.single.source, DataSource.observed);
+        expect(lp.cellsStale, isTrue);
+        expect(lp.cellsAt, isNull);
+        expect(lp.mapError, ApiErrorKind.server);
+        expect(lp.mapLoading, isFalse);
+        expect(lp.cachedFrameCount, 0);
+      },
+    );
+
+    test('replay zero coverage never triggers a live refetch', () async {
+      final log = <Uri>[];
+      final lp = LocationProvider(
+        apiService: ApiService(
+          baseUrl: 'http://test',
+          client: MockClient((req) async {
+            log.add(req.url);
+            final replay = req.url.queryParameters.containsKey('at');
+            final off = int.parse(
+              req.url.queryParameters['offset_hours'] ?? '0',
+            );
+            return http.Response.bytes(
+              utf8.encode(
+                jsonEncode([
+                  {..._cell(off), 'max_offset_hours': replay ? 0 : 72},
+                ]),
+              ),
+              200,
+            );
+          }),
+        ),
+      );
+      addTearDown(lp.dispose);
+      await lp.setMapOffset(3);
+      final at = DateTime.utc(2026, 10, 10, 12);
+      await lp.refreshMap(at: at);
+      expect(log, hasLength(2));
+      expect(log.last.queryParameters['at'], '2026-10-10T12:00:00+07:00');
+      expect(lp.mapOffset, 0);
+      expect(lp.mapMaxOffset, 0);
+      expect(lp.cellsAt, at);
+      expect(lp.cachedFrameCount, 0);
+      await lp.refreshMap();
+      expect(log, hasLength(3));
+      expect(log.last.queryParameters, isEmpty);
+      expect(lp.mapMaxOffset, 72);
+      expect(lp.cellsAt, isNull);
+      expect(lp.cachedFrameCount, 1);
+    });
+
     test('doi offset goi dung URL va dung cache', () async {
       final log = <Uri>[];
       final lp = LocationProvider(apiService: _api(log));

@@ -63,25 +63,16 @@ void main() {
                         width: width - 32,
                         viewportHeight: 800,
                       ),
-                      actions: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          GlassIconButton(
-                            tooltip: 'Cảnh báo',
-                            icon: Icons.notifications_none_rounded,
-                            onPressed: () {},
-                          ),
-                          GlassIconButton(
-                            tooltip: 'Làm mới',
-                            icon: Icons.refresh_rounded,
-                            onPressed: () {},
-                          ),
-                          GlassIconButton(
-                            tooltip: 'Cài đặt',
-                            icon: Icons.settings_outlined,
-                            onPressed: () {},
-                          ),
-                        ],
+                      // Lam moi: keo de lam moi (khong co nut).
+                      actions: GlassIconButton(
+                        tooltip: 'Cảnh báo',
+                        icon: Icons.notifications_none_rounded,
+                        onPressed: () {},
+                      ),
+                      trailing: GlassIconButton(
+                        tooltip: 'Cài đặt',
+                        icon: Icons.settings_outlined,
+                        onPressed: () {},
                       ),
                       glassColor: theme.glassColor,
                       ink: GlassInk.forTheme(theme),
@@ -113,7 +104,10 @@ void main() {
         final block = tester.getRect(
           find.byKey(const ValueKey<String>("compact-title")),
         );
-        for (final tip in ['Cảnh báo', 'Làm mới', 'Cài đặt']) {
+        expect(find.byTooltip('Làm mới'), findsNothing);
+        // Tieu de gon can giua man hinh.
+        expect((block.center.dx - width / 2).abs(), lessThan(1));
+        for (final tip in ['Cảnh báo', 'Cài đặt']) {
           final b = tester.getRect(find.byTooltip(tip));
           expect(b.width, greaterThanOrEqualTo(48));
           expect(b.height, greaterThanOrEqualTo(48));

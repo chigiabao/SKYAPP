@@ -13,8 +13,12 @@ import '../providers/planner_provider.dart';
 import '../providers/preferences_provider.dart';
 import '../providers/weather_provider.dart';
 import '../services/app_version.dart';
+import '../services/notification_service.dart';
 import 'account_screen.dart';
+import 'activities_screen.dart';
+import 'alert_settings_screen.dart';
 import 'feedback_screen.dart';
+import 'onboarding_screen.dart';
 import '../ui/weather/app_scene.dart';
 import '../ui/weather/debug/weather_simulator_screen.dart';
 import '../ui/weather/widgets/glass_page.dart';
@@ -60,33 +64,27 @@ class SettingsScreen extends StatelessWidget {
           vertical: AppSizes.paddingM,
         ),
         children: [
-          _SectionHeader(title: 'Giao diện'),
-          const _AppearanceSection(),
+          // Thu tu theo muc dung: thong bao / canh bao truoc, nang cao sau.
+          _SectionHeader(
+            title: 'Thông báo và cảnh báo',
+            icon: Icons.notifications_none_rounded,
+          ),
+          const _NotifySection(),
           const SizedBox(height: AppSizes.paddingL),
 
-          _SectionHeader(title: 'Đơn vị'),
-          const _UnitsSection(),
-          const SizedBox(height: AppSizes.paddingL),
-
-          _SectionHeader(title: 'Chỉ số trên trang chủ'),
-          const _HomeMetricsSection(),
-          const SizedBox(height: AppSizes.paddingL),
-
-          _SectionHeader(title: 'Địa điểm'),
+          _SectionHeader(title: 'Địa điểm', icon: Icons.place_outlined),
           const _PlacesSection(),
           const SizedBox(height: AppSizes.paddingL),
 
-          _SectionHeader(title: 'Trợ năng'),
-          const _AccessibilitySection(),
-          const SizedBox(height: AppSizes.paddingL),
-
-          // Replay / demo section
-          _SectionHeader(title: 'Xem lại'),
-          const ReplaySettingsCard(),
-
+          _SectionHeader(
+            title: 'Hoạt động',
+            icon: Icons.event_available_outlined,
+          ),
+          const _ActivitySection(),
           const SizedBox(height: AppSizes.paddingL),
 
           // Tai khoan tuy chon (nhom 9)
+          _SectionHeader(title: 'Tài khoản', icon: Icons.person_outline),
           Card(
             child: ListTile(
               leading: const Icon(Icons.cloud_sync_outlined),
@@ -98,24 +96,74 @@ class SettingsScreen extends StatelessWidget {
               ).push(MaterialPageRoute(builder: (_) => const AccountScreen())),
             ),
           ),
+          const SizedBox(height: AppSizes.paddingL),
 
-          // Gop y (nhom 10)
+          // Gop y (nhom 10) + xem lai huong dan
+          _SectionHeader(
+            title: 'Góp ý và trợ giúp',
+            icon: Icons.help_outline_rounded,
+          ),
           Card(
-            child: ListTile(
-              leading: const Icon(Icons.feedback_outlined),
-              title: const Text('Góp ý và báo lỗi'),
-              subtitle: const Text('Báo lỗi, góp ý, báo dự báo sai'),
-              trailing: const Icon(Icons.chevron_right_rounded),
-              onTap: () => Navigator.of(
-                context,
-              ).push(MaterialPageRoute(builder: (_) => const FeedbackScreen())),
+            child: Column(
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.feedback_outlined),
+                  title: const Text('Góp ý và báo lỗi'),
+                  subtitle: const Text('Báo lỗi, góp ý, báo dự báo sai'),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const FeedbackScreen()),
+                  ),
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(Icons.school_outlined),
+                  title: const Text('Xem lại hướng dẫn'),
+                  subtitle: const Text('Nhà, nơi làm, giờ đi về, thông báo'),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      fullscreenDialog: true,
+                      builder: (c) => OnboardingScreen(
+                        onDone: () => Navigator.of(c).pop(),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
+          const SizedBox(height: AppSizes.paddingL),
 
+          _SectionHeader(title: 'Giao diện', icon: Icons.palette_outlined),
+          const _AppearanceSection(),
+          const SizedBox(height: AppSizes.paddingL),
+
+          _SectionHeader(
+            title: 'Chỉ số trên trang chủ',
+            icon: Icons.dashboard_customize_outlined,
+          ),
+          const _HomeMetricsSection(),
+          const SizedBox(height: AppSizes.paddingL),
+
+          _SectionHeader(
+            title: 'Trợ năng',
+            icon: Icons.accessibility_new_rounded,
+          ),
+          const _AccessibilitySection(),
+          const SizedBox(height: AppSizes.paddingL),
+
+          _SectionHeader(title: 'Đơn vị', icon: Icons.straighten_rounded),
+          const _UnitsSection(),
+          const SizedBox(height: AppSizes.paddingL),
+
+          // Replay / demo section
+          _SectionHeader(title: 'Xem lại', icon: Icons.history_rounded),
+          const ReplaySettingsCard(),
           const SizedBox(height: AppSizes.paddingL),
 
           // About section
-          _SectionHeader(title: 'Thông tin'),
+          _SectionHeader(title: 'Thông tin', icon: Icons.info_outline_rounded),
           Card(
             child: Column(
               children: [
@@ -143,7 +191,7 @@ class SettingsScreen extends StatelessWidget {
           const SizedBox(height: AppSizes.paddingL),
 
           // Data source info
-          _SectionHeader(title: 'Dữ liệu'),
+          _SectionHeader(title: 'Nguồn dữ liệu', icon: Icons.cloud_outlined),
           Card(
             child: Padding(
               padding: const EdgeInsets.all(AppSizes.paddingM),
@@ -220,7 +268,7 @@ class SettingsScreen extends StatelessWidget {
           ),
 
           const SizedBox(height: AppSizes.paddingL),
-          _SectionHeader(title: 'Nâng cao'),
+          _SectionHeader(title: 'Nâng cao', icon: Icons.dns_outlined),
           const _ServerSection(),
 
           // Cong cu debug: gia lap canh thoi tiet cho toan app.
@@ -284,26 +332,48 @@ IconData _themeIcon(ThemeMode mode) {
   }
 }
 
+/// Tieu de nhom: chu ro, icon, cao toi thieu 48 dp, la "header" cho trinh
+/// doc man hinh (vuot nhanh giua cac nhom).
 class _SectionHeader extends StatelessWidget {
   final String title;
+  final IconData? icon;
 
-  const _SectionHeader({required this.title});
+  const _SectionHeader({required this.title, this.icon});
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-
-    return Padding(
-      padding: const EdgeInsets.only(
-        left: AppSizes.paddingS,
-        bottom: AppSizes.paddingS,
-      ),
-      child: Text(
-        title.toUpperCase(),
-        style: AppTextStyles.caption.copyWith(
-          color: theme.textTheme.bodySmall?.color,
-          fontWeight: FontWeight.w600,
-          letterSpacing: 1.2,
+    final color = theme.textTheme.titleMedium?.color;
+    return Semantics(
+      header: true,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: Touch.min),
+        child: Padding(
+          padding: const EdgeInsets.only(
+            left: AppSizes.paddingS,
+            bottom: AppSizes.paddingXS,
+          ),
+          child: Row(
+            children: [
+              if (icon != null) ...[
+                ExcludeSemantics(
+                  child: Icon(icon, size: IconSizes.sm, color: color),
+                ),
+                const SizedBox(width: AppSizes.paddingS),
+              ],
+              Expanded(
+                child: Text(
+                  title.toUpperCase(),
+                  style: AppTextStyles.caption.copyWith(
+                    color: color,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1.0,
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1214,6 +1284,202 @@ class _ServerSectionState extends State<_ServerSection> {
               ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Thong bao va canh bao, hoat dong (gio di / ve)
+
+String _hm(int h, int m) =>
+    '${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}';
+
+/// Cai dat canh bao (man rieng) + thong bao buoi sang.
+class _NotifySection extends StatelessWidget {
+  const _NotifySection();
+
+  Future<void> _toggleBrief(
+    BuildContext context,
+    PlannerProvider planner,
+    bool on,
+  ) async {
+    final ok = await planner.setMorningBrief(on);
+    if (!ok && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Chưa được cấp quyền thông báo (hoặc thiết bị không hỗ trợ). '
+            'Cảnh báo vẫn hiện trong ứng dụng.',
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<void> _pickTime(BuildContext context, PlannerProvider planner) async {
+    final c = planner.commute;
+    final t = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay(hour: c.briefHour, minute: c.briefMinute),
+      helpText: 'Giờ gửi thông báo buổi sáng',
+    );
+    if (t == null) return;
+    planner.setCommute(c.copyWith(briefHour: t.hour, briefMinute: t.minute));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final planner = maybePlanner(context);
+    final theme = Theme.of(context);
+    final small = AppTextStyles.bodySmall.copyWith(
+      color: theme.textTheme.bodySmall?.color,
+    );
+    final alertTile = ListTile(
+      leading: const Icon(Icons.warning_amber_rounded),
+      title: const Text('Cảnh báo, ngưỡng và giờ yên lặng'),
+      subtitle: const Text('Mưa, dông sét, nắng nóng, gió, UV, không khí'),
+      trailing: const Icon(Icons.chevron_right_rounded),
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => const AlertSettingsScreen()),
+      ),
+    );
+    if (planner == null) return Card(child: alertTile);
+    final c = planner.commute;
+    final on = planner.notifySettings.system && c.briefEnabled;
+    final supported = NotificationService.isSupportedPlatform;
+    final time = _hm(c.briefHour, c.briefMinute);
+    final quiet = planner.settings;
+    final inQuiet = quiet.inQuietHours(
+      DateTime(2000, 1, 1, c.briefHour, c.briefMinute),
+    );
+    return Card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          alertTile,
+          const Divider(height: 1),
+          // Web / may tinh: khong co thong bao -> ghi chu (doc ro), khong
+          // hien cong tac bi lam mo.
+          if (!supported)
+            const ListTile(
+              leading: Icon(Icons.wb_twilight_rounded),
+              title: Text('Thông báo buổi sáng'),
+              subtitle: Text(
+                'Chỉ có trên ứng dụng Android, iPhone. Trên trình duyệt, '
+                'xem tóm tắt ở thẻ Gợi ý hoạt động.',
+              ),
+            )
+          else
+            SwitchListTile(
+              secondary: const Icon(Icons.wb_twilight_rounded),
+              title: const Text('Thông báo buổi sáng'),
+              subtitle: Text(
+                'Lúc $time: tóm tắt mưa trong ngày ở Nhà và Nơi làm',
+              ),
+              value: on,
+              onChanged: (v) => _toggleBrief(context, planner, v),
+            ),
+          if (on) ...[
+            ListTile(
+              leading: const Icon(Icons.schedule_rounded),
+              title: const Text('Giờ gửi'),
+              subtitle: Text(time),
+              trailing: const Icon(Icons.chevron_right_rounded),
+              onTap: () => _pickTime(context, planner),
+            ),
+            SwitchListTile(
+              secondary: const Icon(Icons.bedtime_outlined),
+              title: const Text('Gửi cả trong giờ yên lặng'),
+              subtitle: Text(
+                quiet.quietEnabled
+                    ? 'Giờ yên lặng ${quiet.quietStart}h–${quiet.quietEnd}h'
+                          '${inQuiet ? ' (giờ gửi nằm trong khoảng này)' : ''}'
+                    : 'Giờ yên lặng đang tắt',
+              ),
+              value: c.briefInQuiet,
+              onChanged: (v) =>
+                  planner.setCommute(c.copyWith(briefInQuiet: v)),
+            ),
+            if (planner.morningBriefAt == null && !c.briefInQuiet && inQuiet)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppSizes.paddingM,
+                  0,
+                  AppSizes.paddingM,
+                  AppSizes.paddingM,
+                ),
+                child: Text(
+                  'Sẽ không gửi: giờ gửi nằm trong giờ yên lặng.',
+                  style: small,
+                ),
+              ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// Man Hoat dong + gio di / ve.
+class _ActivitySection extends StatelessWidget {
+  const _ActivitySection();
+
+  Future<void> _pick(
+    BuildContext context,
+    PlannerProvider planner,
+    bool leave,
+  ) async {
+    final c = planner.commute;
+    final t = await showTimePicker(
+      context: context,
+      initialTime: leave
+          ? TimeOfDay(hour: c.leaveHour, minute: c.leaveMinute)
+          : TimeOfDay(hour: c.returnHour, minute: c.returnMinute),
+      helpText: leave ? 'Giờ đi làm / đi học' : 'Giờ về',
+    );
+    if (t == null) return;
+    planner.setCommute(
+      leave
+          ? c.copyWith(leaveHour: t.hour, leaveMinute: t.minute)
+          : c.copyWith(returnHour: t.hour, returnMinute: t.minute),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final planner = maybePlanner(context);
+    final open = ListTile(
+      leading: const Icon(Icons.directions_run_rounded),
+      title: const Text('Hoạt động yêu thích và lịch'),
+      subtitle: const Text('Gợi ý giờ đẹp trời, nhắc trước giờ hoạt động'),
+      trailing: const Icon(Icons.chevron_right_rounded),
+      onTap: () => Navigator.of(
+        context,
+      ).push(MaterialPageRoute(builder: (_) => const ActivitiesScreen())),
+    );
+    if (planner == null) return Card(child: open);
+    final c = planner.commute;
+    return Card(
+      child: Column(
+        children: [
+          open,
+          const Divider(height: 1),
+          ListTile(
+            leading: const Icon(Icons.two_wheeler_rounded),
+            title: const Text('Giờ đi làm / đi học'),
+            subtitle: Text(_hm(c.leaveHour, c.leaveMinute)),
+            trailing: const Icon(Icons.chevron_right_rounded),
+            onTap: () => _pick(context, planner, true),
+          ),
+          ListTile(
+            leading: const Icon(Icons.home_outlined),
+            title: const Text('Giờ về'),
+            subtitle: Text(_hm(c.returnHour, c.returnMinute)),
+            trailing: const Icon(Icons.chevron_right_rounded),
+            onTap: () => _pick(context, planner, false),
+          ),
+        ],
       ),
     );
   }

@@ -25,8 +25,12 @@ import '../ui/weather/widgets/collapsing_header.dart';
 import '../ui/weather/widgets/daily_forecast_list.dart';
 import '../ui/weather/widgets/glass_card.dart';
 import '../ui/weather/widgets/glass_page.dart';
+import '../ui/weather/widgets/home_motion.dart';
+import '../ui/weather/widgets/home_overview.dart';
+import '../ui/weather/widgets/home_skeleton.dart';
 import '../ui/weather/widgets/hourly_strip.dart';
 import '../ui/weather/widgets/metric_tile.dart';
+import '../ui/weather/widgets/rain_timeline_card.dart';
 import '../ui/weather/widgets/uv_card.dart';
 import '../utils/formatters.dart';
 import '../widgets/ai_forecast_card.dart';
@@ -39,8 +43,7 @@ import 'locations_screen.dart';
 import 'settings_screen.dart';
 import 'trip_screen.dart';
 
-/// Man hinh chinh: nen canh thoi tiet dong + the kinh kieu iOS.
-/// Moi dia diem (vi tri hien tai + dia diem da luu) la mot trang PageView.
+/// Adaptive weather workspace with location paging and explicit navigation.
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key, this.locations});
 
@@ -50,9 +53,13 @@ class HomeScreen extends StatefulWidget {
   /// Chieu rong toi da cua cot noi dung (dien thoai / may tinh bang).
   static const double maxContentWidth = Space.contentMaxWidth;
 
-  /// Tu chieu rong nay: hai cot (dau trang + AI + theo gio | 7 ngay + chi
-  /// tiet).
+  /// Tu chieu rong nay: hai cot (dau trang + theo gio + 7 ngay | chi tiet).
   static const double twoColumnWidth = 900;
+
+  /// Nen dong con chay? Dung ticker khi dau trang (hero) da cuon han khoi
+  /// man hinh (> 70 % chieu cao khung nhin) de tiet kiem pin.
+  static bool backgroundActiveAt(double pixels, double viewport) =>
+      pixels < viewport * 0.7;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -60,16 +67,21 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final SplashRegistry _splash = SplashRegistry();
+  final BackdropKey _bottomBarBackdropKey = BackdropKey();
   late final LocationProvider _lp = widget.locations ?? LocationProvider();
   late final PageController _pages = PageController(
     initialPage: _lp.selectedIndex,
   );
   bool _splashOn = false;
+  int _homeRevision = 0;
+
+  /// Nen dong dang chay (false khi hero da cuon khoi man hinh).
+  bool _bgActive = true;
   bool _splashScheduled = false;
 
-  /// The xuat hien co hieu ung chi o lan dau co du lieu.
-  bool _entranceDone = false;
-  bool _animateEntrance = false;
+  /// Thoi diem lan dau co du lieu: the hien so le chi trong khoang ngan sau
+  /// moc nay (khong chay lai khi rebuild / cuon).
+  DateTime? _entranceAt;
 
   /// Canh bao nguoi dung da dong (hien lai neu canh bao moi khac).
   WeatherAlert? _dismissedAlert;
@@ -107,6 +119,8 @@ class _HomeScreenState extends State<HomeScreen> {
   void _onWeather() {
     final wp = _wp;
     if (!mounted || wp == null) return;
+    // Defer cache side effects until revalidation settles, including offline.
+    if (wp.isFromCache && wp.isRefreshing) return;
     final planner = maybePlanner(context, listen: false);
     final data = wp.weatherData;
     if (planner == null || data == null || identical(data, _recorded)) return;
@@ -142,6 +156,9 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _onPageChanged(int i) {
+    HapticFeedback.selectionClick();
+    // Trang moi bat dau o dau trang.
+    if (!_bgActive) setState(() => _bgActive = true);
     _lp.select(i);
     final id = _lp.selectedLocationId;
     final wp = context.read<WeatherProvider>();
@@ -151,7 +168,11 @@ class _HomeScreenState extends State<HomeScreen> {
   void _goTo(int i) {
     _lp.select(i);
     if (_pages.hasClients) {
-      _pages.animateToPage(i, duration: Motion.medium, curve: Motion.enter);
+      if (MediaQuery.maybeDisableAnimationsOf(context) ?? false) {
+        _pages.jumpToPage(i);
+      } else {
+        _pages.animateToPage(i, duration: Motion.medium, curve: Motion.enter);
+      }
     }
   }
 
@@ -213,13 +234,20 @@ class _HomeScreenState extends State<HomeScreen> {
     final st = scene.theme;
     final appTheme = Theme.of(context);
     final reduceMotion = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
-    final provider = context.watch<WeatherProvider>();
+    final hasData = context.select<WeatherProvider, bool>(
+      (p) => p.currentWeather != null,
+    );
+    // Mini "mưa 2 giờ tới" tren nut Ra ngoai.
+    final rain2h = context.select<WeatherProvider, int?>(
+      (p) => maxRainPercent(p.hourlyForecast, nowHcm: p.nowHcm),
+    );
     final pages = _lp.pages;
+    final desktop = MediaQuery.sizeOf(context).width >= 1100;
+    final railWidth = MediaQuery.textScalerOf(context).scale(13) > 19
+        ? 180.0
+        : 120.0;
 
-    if (!_entranceDone && provider.currentWeather != null) {
-      _entranceDone = true;
-      _animateEntrance = !reduceMotion;
-    }
+    if (_entranceAt == null && hasData) _entranceAt = DateTime.now();
 
     _splashOn = sceneHasSplashes(scene.scene) && !reduceMotion;
     if (_splashOn) {
@@ -241,7 +269,8 @@ class _HomeScreenState extends State<HomeScreen> {
             windSpeedKmh: scene.windSpeedKmh,
             intensity: scene.intensity,
             transitionDuration: Motion.scene,
-            // Than sang o goc tren phai, tren dong ten thanh pho.
+            active: _bgActive,
+            // Than sang goc tren phai, ben trai nut Cai dat.
             celestial: CelestialPlacement.topRight(
               MediaQuery.sizeOf(context).width,
               top: MediaQuery.paddingOf(context).top,
@@ -258,55 +287,105 @@ class _HomeScreenState extends State<HomeScreen> {
                         n is SizeChangedLayoutNotification) {
                       _scheduleSplashUpdate();
                     }
+                    if (n is ScrollUpdateNotification &&
+                        n.metrics.axis == Axis.vertical) {
+                      final on = HomeScreen.backgroundActiveAt(
+                        n.metrics.pixels,
+                        n.metrics.viewportDimension,
+                      );
+                      if (on != _bgActive) setState(() => _bgActive = on);
+                    }
                     return false;
                   },
                   child: Stack(
                     children: [
-                      PageView.builder(
-                        controller: _pages,
-                        itemCount: pages.length,
-                        onPageChanged: _onPageChanged,
-                        itemBuilder: (context, i) => _LocationPage(
-                          location: _lp.placeById(pages[i].locationId),
-                          label: _lp.labelFor(pages[i]),
-                          scene: scene,
-                          animateEntrance: _animateEntrance,
-                          dismissedAlert: _dismissedAlert,
-                          onDismissAlert: (a) =>
-                              setState(() => _dismissedAlert = a),
-                          dismissedAlertKey: _dismissedAlertKey,
-                          onDismissAlertKey: (k) =>
-                              setState(() => _dismissedAlertKey = k),
-                          onOpenAlerts: _openAlerts,
-                          onCityLongPress:
-                              kDebugMode && maybeSceneOverride(context) != null
-                              ? () => _openSimulator(scene)
-                              : null,
+                      Padding(
+                        padding: EdgeInsets.only(
+                          left: desktop ? railWidth + Space.l : 0,
+                        ),
+                        child: PageView.builder(
+                          controller: _pages,
+                          itemCount: pages.length,
+                          onPageChanged: _onPageChanged,
+                          itemBuilder: (context, i) => _LocationPage(
+                            key: ValueKey(
+                              '${pages[i].locationId}-$_homeRevision',
+                            ),
+                            location: _lp.placeById(pages[i].locationId),
+                            label: _lp.labelFor(pages[i]),
+                            scene: scene,
+                            entranceAt: _entranceAt,
+                            dismissedAlert: _dismissedAlert,
+                            onDismissAlert: (a) =>
+                                setState(() => _dismissedAlert = a),
+                            dismissedAlertKey: _dismissedAlertKey,
+                            onDismissAlertKey: (k) =>
+                                setState(() => _dismissedAlertKey = k),
+                            onOpenAlerts: _openAlerts,
+                            onLocations: _openLocations,
+                            onTrip: () => openTripScreen(
+                              context,
+                              locations: _lp,
+                              quickStart: true,
+                            ),
+                            onPrevious: i > 0 ? () => _goTo(i - 1) : null,
+                            onNext: i + 1 < pages.length
+                                ? () => _goTo(i + 1)
+                                : null,
+                            onCityLongPress:
+                                kDebugMode &&
+                                    maybeSceneOverride(context) != null
+                                ? () => _openSimulator(scene)
+                                : null,
+                          ),
                         ),
                       ),
                       Positioned(
-                        left: 0,
-                        right: 0,
+                        left: desktop ? Space.s : 0,
+                        right: desktop ? null : 0,
+                        top: desktop ? 0 : null,
                         bottom: 0,
+                        width: desktop ? railWidth : null,
                         child: SafeArea(
-                          top: false,
+                          top: desktop,
                           minimum: const EdgeInsets.only(bottom: Space.s),
-                          child: Center(
-                            child: ConstrainedBox(
-                              constraints: const BoxConstraints(maxWidth: 420),
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: Space.l,
+                          child: SingleChildScrollView(
+                            child: Align(
+                              alignment: desktop
+                                  ? Alignment.topCenter
+                                  : Alignment.bottomCenter,
+                              child: ConstrainedBox(
+                                constraints: BoxConstraints(
+                                  maxWidth: desktop ? railWidth : 640,
                                 ),
-                                child: BottomPillBar(
-                                  pageCount: pages.length,
-                                  currentPage: _lp.selectedIndex,
-                                  firstIsCurrentLocation:
-                                      pages.first.isCurrentLocation,
-                                  onMap: _openMap,
-                                  onTrip: () =>
-                                      openTripScreen(context, locations: _lp),
-                                  onLocations: _openLocations,
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: Space.l,
+                                  ),
+                                  // This overlay can overlap the scrolling glass.
+                                  child: BackdropGroup(
+                                    backdropKey: _bottomBarBackdropKey,
+                                    child: BottomPillBar(
+                                      vertical: desktop,
+                                      onHome: () => setState(() {
+                                        _homeRevision++;
+                                        _bgActive = true;
+                                      }),
+                                      pageCount: pages.length,
+                                      currentPage: _lp.selectedIndex,
+                                      currentLocationIndex: pages.indexWhere(
+                                        (p) => p.isCurrentLocation,
+                                      ),
+                                      onMap: _openMap,
+                                      onTrip: () => openTripScreen(
+                                        context,
+                                        locations: _lp,
+                                        quickStart: true,
+                                      ),
+                                      tripRainPercent: rain2h,
+                                      onLocations: _openLocations,
+                                    ),
+                                  ),
                                 ),
                               ),
                             ),
@@ -326,18 +405,23 @@ class _HomeScreenState extends State<HomeScreen> {
 }
 
 /// Mot trang dia diem.
-class _LocationPage extends StatelessWidget {
+class _LocationPage extends StatefulWidget {
   const _LocationPage({
+    super.key,
     required this.location,
     this.label,
     required this.scene,
-    required this.animateEntrance,
+    required this.entranceAt,
     required this.dismissedAlert,
     required this.onDismissAlert,
     this.dismissedAlertKey,
     this.onDismissAlertKey,
     this.onOpenAlerts,
     this.onCityLongPress,
+    required this.onLocations,
+    required this.onTrip,
+    this.onPrevious,
+    this.onNext,
   });
 
   final Place location;
@@ -345,34 +429,57 @@ class _LocationPage extends StatelessWidget {
   /// Nhan dia diem da luu (vd. "Nhà"), hien canh ten phuong.
   final String? label;
   final AppSceneData scene;
-  final bool animateEntrance;
+  final DateTime? entranceAt;
   final WeatherAlert? dismissedAlert;
   final ValueChanged<WeatherAlert> onDismissAlert;
   final String? dismissedAlertKey;
   final ValueChanged<String>? onDismissAlertKey;
   final VoidCallback? onOpenAlerts;
   final VoidCallback? onCityLongPress;
+  final VoidCallback onLocations;
+  final VoidCallback onTrip;
+  final VoidCallback? onPrevious;
+  final VoidCallback? onNext;
+
+  @override
+  State<_LocationPage> createState() => _LocationPageState();
+}
+
+class _LocationPageState extends State<_LocationPage> {
+  bool _showDetails = false;
+  Place get location => widget.location;
+  String? get label => widget.label;
+  AppSceneData get scene => widget.scene;
+  DateTime? get entranceAt => widget.entranceAt;
+  WeatherAlert? get dismissedAlert => widget.dismissedAlert;
+  String? get dismissedAlertKey => widget.dismissedAlertKey;
+  VoidCallback? get onOpenAlerts => widget.onOpenAlerts;
+  ValueChanged<WeatherAlert> get onDismissAlert => widget.onDismissAlert;
+  ValueChanged<String>? get onDismissAlertKey => widget.onDismissAlertKey;
 
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<WeatherProvider>();
     final mq = MediaQuery.of(context);
-    final width = mq.size.width;
-    // Trang dang luot toi (chua phai dia diem dang tai): khong hien du lieu
-    // cua dia diem khac.
+    final desktop = mq.size.width >= 1100;
+    final rail = mq.textScaler.scale(13) > 19 ? 196.0 : 136.0;
+    final width = mq.size.width - (desktop ? rail : 0);
     final active = provider.locationId == location.id;
     final current = active ? provider.currentWeather : null;
     final info = _headerInfo(provider, current);
-    final loading = provider.isLoading && provider.weatherData != null;
+    final experimentalForecast =
+        active &&
+        (provider.hourlyForecast.any((hour) => hour.source == DataSource.ai) ||
+            provider.dailyForecast.any((day) => day.source == DataSource.ai));
     final planner = maybePlanner(context);
-    final actions = _HeaderActions(
-      provider: provider,
-      unread: planner?.unreadCount ?? 0,
-      onAlerts: planner == null ? null : onOpenAlerts,
-    );
-    final bottomSpace =
-        BottomPillBar.height + Space.l + Space.s + mq.padding.bottom;
-    // Co PlannerProvider (app that): bo luat day du; khong co: banner mua cu.
+    final bottomSpace = desktop
+        ? Space.xl
+        : BottomPillBar.heightFor(
+                (width > 640 ? 640 : width) - 2 * Space.l,
+                mq.textScaler,
+              ) +
+              Space.xl +
+              mq.padding.bottom;
     final events = active && planner != null
         ? planner.alertsFor(
             location.id,
@@ -383,210 +490,431 @@ class _LocationPage extends StatelessWidget {
     final alert = active && planner == null
         ? weatherAlert(provider.hourlyForecast, nowHcm: provider.nowHcm)
         : null;
-
-    // Thu tu doc = thu tu hien thi.
-    final cards = <Widget>[
-      if (active) ..._banners(provider),
-      if (alert != null && alert != dismissedAlert)
-        _AlertBanner(alert: alert, onDismiss: () => onDismissAlert(alert)),
-      if (events.isNotEmpty && events.first.key != dismissedAlertKey)
-        AlertsSummaryBanner(
-          events: events,
-          onOpen: onOpenAlerts ?? () {},
-          onDismiss: () => onDismissAlertKey?.call(events.first.key),
+    final rain = current == null
+        ? null
+        : _rainCard(context, provider, events, alert);
+    final forecast = <Widget>[
+      if (provider.hourlyForecast.isNotEmpty)
+        HourlyStrip(hours: provider.hourlyForecast),
+      if (current != null && provider.dailyForecast.isNotEmpty)
+        _daily(context, provider, current),
+      if (provider.hourlyForecast.isEmpty &&
+          provider.dailyForecast.isEmpty &&
+          provider.weatherData?.forecastError == null)
+        _GlassBanner(
+          icon: Icons.event_busy_outlined,
+          message: 'Chưa có dữ liệu dự báo cho địa điểm này.',
+          actionLabel: 'Làm mới',
+          onAction: provider.isLoading ? null : provider.refreshWeatherData,
         ),
-      if (current == null) _StateCard(provider: provider, pending: !active),
     ];
-    final left = <Widget>[
-      if (current != null) ...[
-        if (provider.hourlyForecast.isNotEmpty)
-          HourlyStrip(hours: provider.hourlyForecast),
+    final planning = <Widget>[
+      if (current != null &&
+          planner != null &&
+          provider.hourlyForecast.isNotEmpty)
+        ActivitySuggestionCard(
+          activities: planner.favorites,
+          hours: provider.hourlyForecast,
+          nowHcm: provider.nowHcm,
+          sensitivity: planner.sensitivity,
+          onOpen: () => Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => ActivitiesScreen(placeName: location.name),
+            ),
+          ),
+        ),
+      if (provider.aiForecast != null &&
+          provider.weatherData?.forecastError == null)
         AIForecastCard(forecast: provider.aiForecast),
-        if (planner != null && provider.hourlyForecast.isNotEmpty)
-          ActivitySuggestionCard(
-            activities: planner.favorites,
-            hours: provider.hourlyForecast,
-            nowHcm: provider.nowHcm,
-            sensitivity: planner.sensitivity,
-            onOpen: () => Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => ActivitiesScreen(placeName: location.name),
+    ];
+    final gutter = Space.gutter(width);
+    final maxWidth = width >= HomeScreen.twoColumnWidth
+        ? 1240.0
+        : HomeScreen.maxContentWidth;
+    final hPad = width > maxWidth + 2 * gutter
+        ? (width - maxWidth) / 2
+        : gutter;
+    final content = <Widget>[
+      if (active) ..._banners(provider),
+      HomeWeatherOverview(info: info, onTrip: widget.onTrip),
+      if (widget.onPrevious != null || widget.onNext != null)
+        Row(
+          children: [
+            const Expanded(
+              child: Text(
+                'Địa điểm đã lưu',
+                style: TextStyle(color: Palette.white, fontSize: 14),
               ),
             ),
-          ),
-      ],
-    ];
-    final right = <Widget>[
-      if (current != null) ...[
-        if (provider.dailyForecast.isNotEmpty)
-          _daily(context, provider, current),
-        _DetailsGrid(current: current),
-      ],
-    ];
-
-    Widget scroll;
-    if (current != null && width >= HomeScreen.twoColumnWidth) {
-      scroll = _wideLayout(
-        context,
-        info,
-        actions,
-        loading,
-        bottomSpace,
-        cards,
-        left,
-        right,
-      );
-    } else {
-      final metrics = HeaderMetrics(
-        mq.textScaler,
-        topPadding: mq.padding.top,
-        info: info,
-        width: width - 2 * Space.l,
-        viewportHeight: mq.size.height,
-      );
-      final gutter = Space.gutter(
-        width,
-        landscape: mq.orientation == Orientation.landscape,
-      );
-      final hPad = width > Space.contentMaxWidth + 2 * gutter
-          ? (width - Space.contentMaxWidth) / 2
-          : gutter;
-      final all = [...cards, ...left, ...right];
-      scroll = CustomScrollView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        slivers: [
-          SliverPersistentHeader(
-            pinned: true,
-            delegate: CollapsingHeaderDelegate(
-              info: info,
-              metrics: metrics,
-              actions: actions,
-              glassColor: scene.theme.glassColor,
-              ink: GlassInk.forTheme(scene.theme),
-              loading: loading,
-              onCityLongPress: onCityLongPress,
+            IconButton(
+              tooltip: 'Địa điểm trước',
+              onPressed: widget.onPrevious,
+              icon: const Icon(Icons.chevron_left_rounded),
             ),
-          ),
-          SliverPadding(
-            padding: EdgeInsets.fromLTRB(hPad, Space.s, hPad, bottomSpace),
-            sliver: SliverList(
-              delegate: SliverChildListDelegate([
-                for (var i = 0; i < all.length; i++)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: Space.cardGap),
-                    child: EntranceFade(
-                      index: i,
-                      animate: animateEntrance,
-                      child: all[i],
-                    ),
+            IconButton(
+              tooltip: 'Địa điểm tiếp theo',
+              onPressed: widget.onNext,
+              icon: const Icon(Icons.chevron_right_rounded),
+            ),
+          ],
+        ),
+      ?rain,
+      if (current == null)
+        !active || provider.isLoading
+            ? const HomeSkeleton()
+            : _StateCard(provider: provider)
+      else ...[
+        if (!_showDetails && experimentalForecast)
+          Semantics(
+            container: true,
+            child: const Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'AI thử nghiệm',
+                  style: TextStyle(
+                    fontSize: 14,
+                    height: 1.5,
+                    fontWeight: FontWeight.w700,
+                    color: Palette.white,
                   ),
-              ]),
+                ),
+                Text(
+                  'Dự báo xa còn sai số; không phải cảnh báo chính thức.',
+                  style: TextStyle(
+                    fontSize: 14,
+                    height: 1.5,
+                    color: Palette.white,
+                  ),
+                ),
+              ],
             ),
           ),
+        Row(
+          children: [
+            Expanded(
+              child: SegmentedButton<bool>(
+                showSelectedIcon: false,
+                segments: const [
+                  ButtonSegment(
+                    value: false,
+                    label: Text('Dự báo', textAlign: TextAlign.center),
+                  ),
+                  ButtonSegment(
+                    value: true,
+                    label: Text('Điều kiện', textAlign: TextAlign.center),
+                  ),
+                ],
+                selected: {_showDetails},
+                onSelectionChanged: (value) =>
+                    setState(() => _showDetails = value.first),
+                style: SegmentedButton.styleFrom(
+                  selectedBackgroundColor: Palette.white,
+                  selectedForegroundColor: Palette.onAlert,
+                  foregroundColor: Palette.white,
+                  minimumSize: const Size(48, 48),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 12,
+                  ),
+                  textStyle: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: Space.s),
+            IconButton(
+              tooltip: provider.isRefreshing
+                  ? 'Đang cập nhật'
+                  : 'Làm mới thời tiết',
+              onPressed: provider.isLoading || provider.isRefreshing
+                  ? null
+                  : provider.refreshWeatherData,
+              icon: const Icon(Icons.refresh_rounded),
+            ),
+          ],
+        ),
+        if (_showDetails)
+          _DetailsGrid(current: current)
+        else if (width >= HomeScreen.twoColumnWidth)
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(flex: 7, child: _sectionColumn(forecast)),
+              const SizedBox(width: Space.xl),
+              Expanded(
+                flex: 4,
+                child: _sectionColumn([
+                  _currentSnapshot(context, provider, current),
+                  if (planning.isNotEmpty)
+                    Semantics(
+                      header: true,
+                      child: const Text(
+                        'Kế hoạch hôm nay',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w600,
+                          color: Palette.white,
+                        ),
+                      ),
+                    ),
+                  ...planning,
+                ]),
+              ),
+            ],
+          )
+        else ...[
+          ...forecast,
+          ...planning,
         ],
-      );
-    }
-
-    return RefreshIndicator(
-      onRefresh: provider.refreshWeatherData,
-      color: Palette.white,
-      backgroundColor: scene.theme.gradient.first,
-      edgeOffset: mq.padding.top,
-      child: scroll,
-    );
-  }
-
-  Widget _wideLayout(
-    BuildContext context,
-    WeatherHeaderInfo info,
-    Widget actions,
-    bool loading,
-    double bottomSpace,
-    List<Widget> banners,
-    List<Widget> left,
-    List<Widget> right,
-  ) {
-    final mq = MediaQuery.of(context);
-    final gutter = Space.gutter(
-      mq.size.width,
-      landscape: mq.orientation == Orientation.landscape,
-    );
-    Widget column(List<Widget> children, int offset) => Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        for (var i = 0; i < children.length; i++)
-          Padding(
-            padding: const EdgeInsets.only(bottom: Space.cardGap),
-            child: EntranceFade(
-              index: i + offset,
-              animate: animateEntrance,
-              child: children[i],
-            ),
-          ),
       ],
-    );
-    final ink = GlassInk.forTheme(scene.theme);
-    return CustomScrollView(
+    ];
+    final scroll = CustomScrollView(
+      key: PageStorageKey('home-${widget.key}'),
       physics: const AlwaysScrollableScrollPhysics(),
       slivers: [
-        SliverToBoxAdapter(
-          child: Padding(
-            padding: EdgeInsets.only(top: mq.padding.top),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: SizedBox(
-                height: HeaderMetrics.actionsHeight,
-                child: actions,
-              ),
-            ),
-          ),
-        ),
-        SliverToBoxAdapter(
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 1240),
-              child: Padding(
-                padding: EdgeInsets.fromLTRB(gutter, 0, gutter, bottomSpace),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: column([
-                        DecoratedBox(
-                          decoration: BoxDecoration(
-                            color: Colors.black.withValues(
-                              alpha: ink.headerScrim,
-                            ),
-                            borderRadius: BorderRadius.circular(Radii.card),
-                          ),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                              vertical: Space.s,
-                            ),
-                            child: WeatherHeaderBlock(
-                              info: info,
-                              metrics: HeaderMetrics(
-                                mq.textScaler,
-                                topPadding: 0,
-                              ),
-                              loading: loading,
-                              onCityLongPress: onCityLongPress,
-                            ),
+        SliverAppBar(
+          pinned: true,
+          automaticallyImplyLeading: false,
+          backgroundColor: const Color(0xF21C252C),
+          surfaceTintColor: Colors.transparent,
+          toolbarHeight: mq.textScaler.scale(18) > 26 ? 88 : 64,
+          titleSpacing: Space.l,
+          title: Tooltip(
+            message: info.city,
+            child: Semantics(
+              button: true,
+              label: 'Chọn địa điểm: ${info.city}',
+              excludeSemantics: true,
+              onTap: widget.onLocations,
+              child: InkWell(
+                onTap: widget.onLocations,
+                onLongPress: widget.onCityLongPress,
+                borderRadius: BorderRadius.circular(8),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(minHeight: Touch.min),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          info.city,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w600,
+                            color: Palette.white,
                           ),
                         ),
-                        ...banners,
-                        ...left,
-                      ], 0),
-                    ),
-                    const SizedBox(width: Space.l),
-                    Expanded(child: column(right, 1)),
-                  ],
+                      ),
+                      const Icon(
+                        Icons.expand_more_rounded,
+                        color: Palette.white,
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
           ),
+          actions: [
+            _HeaderActions(
+              unread: planner?.unreadCount ?? 0,
+              onAlerts: planner == null ? null : onOpenAlerts,
+            ),
+            const _SettingsButton(),
+            const SizedBox(width: Space.s),
+          ],
+        ),
+        SliverPadding(
+          padding: EdgeInsets.fromLTRB(hPad, 0, hPad, bottomSpace),
+          sliver: SliverList(
+            delegate: SliverChildListDelegate([
+              for (var i = 0; i < content.length; i++)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: Space.l),
+                  child: StaggerIn(
+                    index: i,
+                    startedAt: entranceAt,
+                    child: content[i],
+                  ),
+                ),
+            ]),
+          ),
         ),
       ],
+    );
+    return RainRefresh(
+      onRefresh: provider.refreshWeatherData,
+      backgroundColor: scene.theme.gradient.first,
+      edgeOffset: mq.padding.top,
+      child: ColoredBox(
+        // Isolate white text from bright weather scenes without another card.
+        color: Colors.black.withValues(alpha: 0.56),
+        child: scroll,
+      ),
+    );
+  }
+
+  Widget _sectionColumn(List<Widget> children) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      for (final child in children)
+        Padding(
+          padding: const EdgeInsets.only(bottom: Space.l),
+          child: child,
+        ),
+    ],
+  );
+
+  Widget _currentSnapshot(
+    BuildContext context,
+    WeatherProvider provider,
+    CurrentWeather current,
+  ) {
+    final units = PreferencesProvider.unitsOf(context);
+    final visible =
+        PreferencesProvider.maybeOf(context)?.visibleMetrics ??
+        HomeMetric.values;
+    final rows = [
+      (
+        HomeMetric.feelsLike,
+        Icons.thermostat_outlined,
+        'Cảm giác như',
+        current.feelsLike == null
+            ? kNoData
+            : provider.formatTemperature(current.feelsLike!),
+      ),
+      (
+        HomeMetric.wind,
+        Icons.air_rounded,
+        'Gió',
+        units.windText(current.windSpeed),
+      ),
+      (
+        HomeMetric.humidity,
+        Icons.water_drop_outlined,
+        'Độ ẩm',
+        current.humidity == null
+            ? kNoData
+            : WeatherFormat.percent(current.humidity),
+      ),
+    ].where((row) => visible.contains(row.$1));
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Semantics(
+          header: true,
+          child: const Text(
+            'Điều kiện hiện tại',
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.w600,
+              color: Palette.white,
+            ),
+          ),
+        ),
+        const SizedBox(height: Space.m),
+        for (final row in rows) ...[
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: Space.m),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    ExcludeSemantics(
+                      child: Icon(row.$2, size: 20, color: Palette.white),
+                    ),
+                    const SizedBox(width: Space.s),
+                    Expanded(
+                      child: Text(
+                        row.$3,
+                        style: const TextStyle(
+                          fontSize: 15,
+                          color: Palette.white,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: Space.s),
+                Text(
+                  row.$4,
+                  style: const TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w600,
+                    fontFeatures: TypeScale.tabular,
+                    color: Palette.white,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Divider(color: Palette.divider, height: 1),
+        ],
+        const SizedBox(height: Space.s),
+        TextButton.icon(
+          onPressed: () => setState(() => _showDetails = true),
+          icon: const Icon(Icons.arrow_forward_rounded),
+          label: const Text('Tất cả chỉ số'),
+          style: TextButton.styleFrom(
+            foregroundColor: Palette.white,
+            minimumSize: const Size(48, 48),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// The "dòng thời gian mưa" (thay banner canh bao): hien khi co canh bao
+  /// chua dong hoac co gio mua >= 30 % trong 24 gio toi. Cham -> man Canh bao.
+  Widget? _rainCard(
+    BuildContext context,
+    WeatherProvider provider,
+    List<AlertEvent> events,
+    WeatherAlert? alert,
+  ) {
+    final slots = rainTimeline(
+      provider.hourlyForecast,
+      nowHcm: provider.nowHcm,
+    );
+    if (slots.isEmpty) return null;
+    final hasRain = slots.any((s) => s.p >= 0.3 || s.thunder);
+    final top = events.isNotEmpty && events.first.key != dismissedAlertKey
+        ? events.first
+        : null;
+    final legacy = alert != null && alert != dismissedAlert ? alert : null;
+    // Nguoi dung da dong canh bao nay -> an ca the (khong hien lai the mua).
+    final dismissed =
+        (events.isNotEmpty && top == null) || (alert != null && legacy == null);
+    if (dismissed || (top == null && legacy == null && !hasRain)) return null;
+    final more = events.length > 1 ? ' · +${events.length - 1} khác' : '';
+    return RainTimelineCard(
+      slots: slots,
+      title: top != null
+          ? '${top.level.label} · ${top.title}$more'
+          : legacy != null
+          ? legacy.title
+          : 'Mưa ${slots.length} giờ tới',
+      icon: top == null ? null : alertIcon(top.type),
+      thunder:
+          top?.type == AlertType.thunderstorm ||
+          (legacy?.thunder ?? false) ||
+          (top == null && legacy == null && slots.any((s) => s.thunder)),
+      accent: top != null
+          ? levelColor(context, top.level)
+          : legacy != null
+          ? GlassInk.of(context).alert
+          : null,
+      onOpen: onOpenAlerts,
+      onDismiss: top != null
+          ? () => onDismissAlertKey?.call(top.key)
+          : legacy != null
+          ? () => onDismissAlert(legacy)
+          : null,
     );
   }
 
@@ -598,20 +926,43 @@ class _LocationPage extends StatelessWidget {
     return DailyForecastCard(
       days: provider.dailyForecast,
       currentTemp: current.temperature,
-      onDayTap: (d) => Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => ForecastScreen(
-            selectedDay: d,
-            allDays: provider.dailyForecast,
-            hourlyData: provider.hourlyForecast,
+      heroes: true,
+      onDayTap: (d) {
+        final reduce = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
+        // Hero 'day-yyyy-MM-dd' bay sang the ngay o man chi tiet.
+        final duration = reduce
+            ? Duration.zero
+            : const Duration(milliseconds: 350);
+        Navigator.push(
+          context,
+          PageRouteBuilder<void>(
+            transitionDuration: duration,
+            reverseTransitionDuration: duration,
+            pageBuilder: (_, _, _) => ForecastScreen(
+              selectedDay: d,
+              allDays: provider.dailyForecast,
+              hourlyData: provider.hourlyForecast,
+            ),
+            transitionsBuilder: (_, a, _, child) => FadeTransition(
+              opacity: CurvedAnimation(parent: a, curve: Curves.fastOutSlowIn),
+              child: child,
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
   List<Widget> _banners(WeatherProvider provider) => [
+    if (provider.weatherData?.forecastError case final String error)
+      _GlassBanner(
+        icon: Icons.warning_amber_rounded,
+        message: 'Dự báo mô hình không sẵn sàng. $error',
+        actionLabel: 'Làm mới',
+        onAction: provider.isLoading || provider.isRefreshing
+            ? null
+            : provider.refreshWeatherData,
+      ),
     if (provider.notice != null)
       _GlassBanner(
         icon: Icons.info_outline_rounded,
@@ -630,7 +981,8 @@ class _LocationPage extends StatelessWidget {
 
   String get _detail {
     final l = label;
-    return l == null ? location.detail : '$l · ${location.detail}';
+    final d = friendlyRegion(location.detail);
+    return l == null ? d : '$l · $d';
   }
 
   WeatherHeaderInfo _headerInfo(WeatherProvider provider, CurrentWeather? c) {
@@ -639,6 +991,14 @@ class _LocationPage extends StatelessWidget {
     }
     String t(double v) => '${provider.formatTempValue(v)}°';
     final today = provider.todayForecast;
+    final summary = heroRainSummary(
+      provider.hourlyForecast,
+      nowHcm: provider.nowHcm,
+    );
+    final hiLo = [
+      if (today != null) 'Cao ${t(today.tempMax)} · Thấp ${t(today.tempMin)}',
+      if (c.feelsLike != null) 'Cảm giác ${t(c.feelsLike!)}',
+    ];
     final updatedAt = c.lastUpdated;
     final sameDay = ForecastFormat.sameDay(updatedAt, provider.nowHcm);
     final cachedAt = provider.cachedAt;
@@ -647,13 +1007,19 @@ class _LocationPage extends StatelessWidget {
       detail: _detail,
       temperature: t(c.temperature),
       condition: c.condition.description,
-      highLow: today == null
-          ? null
-          : 'Cao ${t(today.tempMax)} · Thấp ${t(today.tempMin)}',
-      feelsLike: c.feelsLike == null ? null : 'Cảm giác như ${t(c.feelsLike!)}',
-      updated:
-          'Cập nhật ${DateFormat(sameDay ? 'HH:mm' : 'dd/MM HH:mm').format(updatedAt)}',
+      // Mot dong: Cao · Thap · Cam giac.
+      highLow: hiLo.isEmpty ? null : hiLo.join(' · '),
+      today: summary,
+      todayRain:
+          summary != null &&
+          !summary.contains('không mưa') &&
+          !summary.startsWith('Không mưa'),
+      refreshing: provider.isRefreshing && provider.isFromCache,
+      updated: provider.isRefreshing && provider.isFromCache && cachedAt != null
+          ? 'Cập nhật lúc ${DateFormat('HH:mm').format(cachedAt)}'
+          : 'Cập nhật ${DateFormat(sameDay ? 'HH:mm' : 'dd/MM HH:mm').format(updatedAt)}',
       isStale: provider.isStale,
+      sourceLabel: c.source == null ? null : 'Nguồn: ${c.source!.label}',
       cachedNote: provider.isFromCache && cachedAt != null
           ? 'Đã lưu ${DateFormat('dd/MM HH:mm').format(cachedAt)}'
           : null,
@@ -663,15 +1029,16 @@ class _LocationPage extends StatelessWidget {
   }
 }
 
-/// Nut Lam moi + Cai dat.
-class _HeaderActions extends StatelessWidget {
-  const _HeaderActions({
-    required this.provider,
-    this.unread = 0,
-    this.onAlerts,
-  });
+/// Vung truoc sap nhap ("TP.HCM cũ") -> "Khu vực TP.HCM" de nguoi dung de
+/// hieu; chuoi khac giu nguyen.
+String friendlyRegion(String region) {
+  final m = RegExp(r'^(.+?)\s+cũ$').firstMatch(region.trim());
+  return m == null ? region : 'Khu vực ${m.group(1)}';
+}
 
-  final WeatherProvider provider;
+/// Nut Canh bao (trai thanh tren). Lam moi: keo de lam moi.
+class _HeaderActions extends StatelessWidget {
+  const _HeaderActions({this.unread = 0, this.onAlerts});
 
   /// So thong bao chua doc (man Canh bao).
   final int unread;
@@ -679,133 +1046,35 @@ class _HeaderActions extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (onAlerts != null)
-          GlassIconButton(
-            tooltip: unread > 0
-                ? 'Cảnh báo, $unread thông báo mới'
-                : 'Cảnh báo',
-            icon: unread > 0
-                ? Icons.notifications_active_outlined
-                : Icons.notifications_none_rounded,
-            onPressed: onAlerts,
-          ),
-        GlassIconButton(
-          tooltip: 'Làm mới',
-          icon: Icons.refresh_rounded,
-          onPressed: provider.isLoading ? null : provider.refreshWeatherData,
-        ),
-        GlassIconButton(
-          tooltip: 'Cài đặt',
-          icon: Icons.settings_outlined,
-          onPressed: () => Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const SettingsScreen()),
-          ),
-        ),
-      ],
+    if (onAlerts == null) return const SizedBox(width: Touch.min);
+    return GlassIconButton(
+      tooltip: unread > 0 ? 'Cảnh báo, $unread thông báo mới' : 'Cảnh báo',
+      icon: unread > 0
+          ? Icons.notifications_active_outlined
+          : Icons.notifications_none_rounded,
+      onPressed: onAlerts,
     );
   }
 }
 
-/// Canh bao mua / dong tinh tu du bao: the kinh, vach amber 3 px ben trai,
-/// icon amber, tieu de mot dong, mot dong phu (cat bot), nut dong 48 dp.
-class _AlertBanner extends StatelessWidget {
-  const _AlertBanner({required this.alert, required this.onDismiss});
-
-  final WeatherAlert alert;
-  final VoidCallback onDismiss;
+/// Nut Cai dat (phai thanh tren).
+class _SettingsButton extends StatelessWidget {
+  const _SettingsButton();
 
   @override
   Widget build(BuildContext context) {
-    final ink = GlassInk.of(context);
-    return Semantics(
-      liveRegion: true,
-      container: true,
-      child: GlassSurface(
-        child: IntrinsicHeight(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              SizedBox(width: 3, child: ColoredBox(color: ink.alert)),
-              const SizedBox(width: Space.m),
-              Center(
-                child: ExcludeSemantics(
-                  child: Icon(
-                    alert.thunder
-                        ? Icons.thunderstorm_outlined
-                        : Icons.umbrella_outlined,
-                    color: ink.alert,
-                    size: IconSizes.md,
-                  ),
-                ),
-              ),
-              const SizedBox(width: Space.m),
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: Space.m),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      // Mot dong; thu nho thay vi cat de luon thay du gio.
-                      FittedBox(
-                        fit: BoxFit.scaleDown,
-                        alignment: Alignment.centerLeft,
-                        child: Text(
-                          alert.title,
-                          maxLines: 1,
-                          style: TypeScale.label.copyWith(
-                            fontWeight: FontWeight.w600,
-                            color: Palette.white,
-                            fontFeatures: kTabular,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        alert.detail,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TypeScale.small.copyWith(
-                          fontSize: 13,
-                          color: ink.secondary,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              Center(
-                child: Tooltip(
-                  message: 'Đóng cảnh báo',
-                  excludeFromSemantics: true,
-                  child: Pressable(
-                    onTap: onDismiss,
-                    semanticsLabel: 'Đóng cảnh báo',
-                    child: const SizedBox.square(
-                      dimension: Touch.min,
-                      child: Icon(
-                        Icons.close_rounded,
-                        color: Palette.white,
-                        size: IconSizes.md,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: Space.xs),
-            ],
-          ),
-        ),
+    return GlassIconButton(
+      tooltip: 'Cài đặt',
+      icon: Icons.settings_outlined,
+      onPressed: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const SettingsScreen()),
       ),
     );
   }
 }
 
-/// Thong bao / loi (kem nut) dang the kinh.
+/// Actionable status band, separate from the weather summary.
 class _GlassBanner extends StatelessWidget {
   const _GlassBanner({
     required this.icon,
@@ -821,29 +1090,46 @@ class _GlassBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GlassCard(
-      padding: const EdgeInsets.fromLTRB(Space.l, Space.s, Space.s, Space.s),
-      child: Row(
-        children: [
-          ExcludeSemantics(child: Icon(icon, color: Palette.white)),
-          const SizedBox(width: Space.m),
-          Expanded(
-            child: Semantics(
-              liveRegion: true,
-              child: Text(
-                message,
-                style: TypeScale.body.copyWith(color: Palette.white),
+    return Material(
+      color: const Color(0xF2262C30),
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.all(Space.l),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                ExcludeSemantics(child: Icon(icon, color: Palette.stale)),
+                const SizedBox(width: Space.m),
+                Expanded(
+                  child: Semantics(
+                    liveRegion: true,
+                    child: Text(
+                      message,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        height: 1.5,
+                        color: Palette.white,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                onPressed: onAction,
+                style: TextButton.styleFrom(
+                  minimumSize: const Size(Touch.min, Touch.min),
+                  foregroundColor: Palette.white,
+                ),
+                child: Text(actionLabel),
               ),
             ),
-          ),
-          TextButton(
-            onPressed: onAction,
-            style: TextButton.styleFrom(
-              minimumSize: const Size(Touch.min, Touch.min),
-            ),
-            child: Text(actionLabel),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -851,33 +1137,13 @@ class _GlassBanner extends StatelessWidget {
 
 /// Chua co du lieu: dang tai / loi / trong.
 class _StateCard extends StatelessWidget {
-  const _StateCard({required this.provider, this.pending = false});
+  const _StateCard({required this.provider});
 
   final WeatherProvider provider;
 
-  /// Trang chua duoc chon: chi hien dang tai.
-  final bool pending;
-
   @override
   Widget build(BuildContext context) {
-    if (pending || provider.isLoading) {
-      return GlassCard(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: Space.m),
-          child: Column(
-            children: [
-              const CircularProgressIndicator(color: Palette.white),
-              const SizedBox(height: Space.l),
-              Text(
-                'Đang tải dữ liệu thời tiết...',
-                textAlign: TextAlign.center,
-                style: TypeScale.body.copyWith(color: Palette.white),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
+    if (provider.isLoading) return const HomeSkeleton();
     final error = provider.error;
     return GlassCard(
       child: Column(
@@ -1077,7 +1343,9 @@ class _DetailsGrid extends StatelessWidget {
                 Expanded(
                   child: ConstrainedBox(
                     // O gan vuong; co chu lon thi tu cao them.
-                    constraints: BoxConstraints(minHeight: tileW * 0.9),
+                    constraints: BoxConstraints(
+                      minHeight: (tileW * 0.9).clamp(0.0, 240.0).toDouble(),
+                    ),
                     child: a,
                   ),
                 ),

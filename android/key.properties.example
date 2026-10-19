@@ -1,0 +1,8 @@
+# Copy to ignored android/key.properties and supply the EXISTING app signing
+# or Play upload key. Never commit passwords or keystores. Do not create a new
+# signing identity for an existing app: updates must retain signing continuity.
+# storeFile is relative to android/, or an absolute path. On Windows use /.
+storeFile=
+storePassword=
+keyAlias=
+keyPassword=

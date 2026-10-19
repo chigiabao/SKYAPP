@@ -1,7 +1,8 @@
 """
 Weather API endpoints.
 """
-from fastapi import APIRouter, Query, HTTPException
+from fastapi import APIRouter, Query, HTTPException, Response
+from fastapi.encoders import jsonable_encoder
 from datetime import date, datetime, timedelta
 from contextlib import closing
 from functools import lru_cache
@@ -17,6 +18,7 @@ from database import (execute_query, execute_one, DATABASE_PATH, HISTORY_DB_PATH
                       now_local, to_local)
 from models import WeatherData, DailySummary
 import ai_model
+import long_range_model
 
 router = APIRouter(prefix="/weather", tags=["weather"])
 
@@ -275,6 +277,7 @@ def invalidate_climatology():
     _climatology_of.cache_clear()
     _history_span.cache_clear()
     _replay_ai_rain.cache_clear()
+    _own_issue.cache_clear()
 
 
 def _code(value):
@@ -408,24 +411,71 @@ def _aq_fields(row) -> dict:
 
 def _series(times: List[datetime], obs_until: Optional[datetime], use_forecast: bool,
             sid: str = DEFAULT_LOCATION_ID) -> List[Optional[WeatherData]]:
-    """One item per naive local hour in `times` (ascending): the observed row if t <= obs_until, else the latest
-    NWP issue (live mode only), else climatology; None where none of them has data."""
+    """Live uses our trained model only. Replay is a historical reference, not an AI backtest."""
     lo, hi = times[0], times[-1]
+    if use_forecast:
+        now = _naive(_floor_hour(to_local(now_local())))
+        obs_until = min(obs_until, now) if obs_until is not None else None
+        obs = _observed_rows(lo, min(hi, obs_until), sid) if obs_until is not None and lo <= obs_until else {}
+        missing = [t for t in times if t not in obs]
+        fc = _own_forecast_rows(sid, now) if missing else {}
+        aq = _aq_rows(lo, min(hi, now), sid) if lo <= now else {}
+        items = [_observed_item(obs[t], aq.get(t)) if t in obs else fc.get(t) for t in times]
+        if any(i is None for i in items):
+            raise HTTPException(status_code=503, detail='Dự báo AI chưa phủ đủ khoảng thời gian yêu cầu; '
+                                'cần dữ liệu đầu vào mới và model đã huấn luyện đúng phạm vi.')
+        return items
     obs = _observed_rows(lo, min(hi, obs_until), sid) if obs_until is not None and lo <= obs_until else {}
-    fc = _forecast_rows(lo, hi, sid) if use_forecast else {}
     aq = _aq_rows(lo, hi, sid)
     hourly = None
     out = []
     for t in times:
         if t in obs:
             out.append(_observed_item(obs[t], aq.get(t)))
-        elif t in fc:
-            out.append(_forecast_item(fc[t], aq.get(t)))
         else:
             if hourly is None:
                 hourly, _ = _climatology(_clim_series(sid))
             out.append(_climatology_item(hourly, t))
     return out
+
+
+@lru_cache(maxsize=128)
+def _own_issue(db_path: str, sid: str, cell_id: str, issued_at: str,
+               revision: tuple) -> Dict[datetime, WeatherData]:
+    history = ai_model.load_history_from_db(db_path=db_path, until=datetime.fromisoformat(issued_at),
+                                          location_id=sid)
+    result = long_range_model.predict(history, cell_id)
+    issue_time = _naive(to_local(result['issued_at']))
+    out = {}
+    for horizon, p in result['predictions'].items():
+        t = issue_time + timedelta(hours=int(horizon.rstrip('h')))
+        prob, amount, cloud = p.get('rain_probability'), p.get('precipitation_mm'), p.get('cloud_cover')
+        out[t] = WeatherData(timestamp=to_local(t), temperature=p['temperature'],
+                             humidity=p.get('humidity'), precipitation=amount, rain=amount,
+                             wind_speed=p.get('wind_speed'), cloud_cover=cloud,
+                             rain_probability=prob,
+                             precipitation_probability=None if prob is None else round(prob * 100, 2),
+                             weather_code=_derive_code(prob, None, amount, cloud, 2.5, 7.5), source='ai')
+    return out
+
+
+def _own_forecast_rows(sid: str, now: datetime) -> Dict[datetime, WeatherData]:
+    row = execute_one('SELECT MAX(timestamp) FROM hourly_weather WHERE location_id = ? AND timestamp <= ?',
+                      (sid, now.strftime(TS_FMT)))
+    issued = datetime.fromisoformat(row[0]) if row and row[0] else None
+    if issued is None or now - issued > timedelta(hours=3):
+        raise HTTPException(status_code=503, detail='Chưa có dữ liệu đầu vào trong 3 giờ gần nhất để chạy AI riêng.')
+    try:
+        cell = execute_one('SELECT cell_id FROM cells WHERE series_id = ? ORDER BY cell_id = series_id DESC LIMIT 1',
+                           (sid,))
+        cid = ai_model.canonical_cell_id(cell[0] if cell else sid)
+        # Another ingest process may revise existing hours without advancing the issue time.
+        inputs = [Path(DATABASE_PATH), Path(str(DATABASE_PATH) + '-wal')]
+        stamp = (*long_range_model.artifact_revision(),
+                 *(path.stat().st_mtime_ns if path.exists() else 0 for path in inputs))
+        return _own_issue(str(DATABASE_PATH), sid, cid, issued.isoformat(), stamp)
+    except (ValueError, OSError) as e:
+        raise HTTPException(status_code=503, detail=f'Dự báo AI riêng chưa sẵn sàng: {e}')
 
 
 # WMO codes from least to most severe (showers rank with rain of the same intensity).
@@ -473,6 +523,8 @@ def _daily_summary(day: date, items: List[Optional[WeatherData]], clim_daily: pd
 
     def agg(field, fn, digits):
         v = [getattr(i, field) for i in present if getattr(i, field) is not None]
+        if 'ai' in kinds and len(v) != 24:
+            return None  # Partial known hours are not a forecast of the full-day statistic.
         return _num(fn(v), digits) if v else None
 
     if kinds <= {"climatology"}:
@@ -492,13 +544,14 @@ def _daily_summary(day: date, items: List[Optional[WeatherData]], clim_daily: pd
     # Codes of the real (observed/forecast) hours only; climatology hours break drizzle adjacency.
     codes = [i.weather_code if i is not None and i.source != "climatology" else None for i in items]
 
-    if "forecast" in kinds:
-        source = "forecast"
-        probs = [i.rain_probability for i in present if i.source == "forecast" and i.rain_probability is not None]
+    if "forecast" in kinds or "ai" in kinds:
+        source = "ai" if "ai" in kinds else "forecast"
+        probs = [i.rain_probability for i in present if i.source in {"forecast", "ai"} and i.rain_probability is not None]
         if obs_rain_day is not None:
             probs.append(obs_rain_day)
-        rain_day_prob = max(probs) if probs else clim_prob
-        code, median = _severe_code(codes), total
+        # Hourly probabilities do not estimate the distinct daily-total >=1mm event.
+        rain_day_prob = None if source == 'ai' else max(probs) if probs else clim_prob
+        code, median = _severe_code(codes), None if source == "ai" else total
     elif kinds == {"observed"} and len(present) == 24:
         source = "observed"
         rain_day_prob = obs_rain_day
@@ -541,8 +594,8 @@ def get_current_weather(at: Optional[str] = Query(default=None, description=AT_D
     sid = loc.series_id
     eff = _resolve_at(at, sid)
     if eff is None:
-        row = execute_one("SELECT * FROM hourly_weather WHERE location_id = ? ORDER BY timestamp DESC LIMIT 1",
-                          (sid,))
+        row = execute_one('SELECT * FROM hourly_weather WHERE location_id = ? AND timestamp <= ? '
+                          'ORDER BY timestamp DESC LIMIT 1', (sid, _naive(now_local()).strftime(TS_FMT)))
     else:
         row = execute_one("SELECT * FROM hourly_weather WHERE location_id = ? AND timestamp <= ? "
                           "ORDER BY timestamp DESC LIMIT 1", (sid, _naive(eff).strftime(TS_FMT)))
@@ -592,7 +645,9 @@ def _evaluation(loc: Series) -> Optional[dict]:
 
 def _ai_issue(until: Optional[datetime], loc: Series) -> dict:
     """AI forecast issued at the series' last stored hour <= until (naive local; None = latest)."""
-    history = ai_model.load_history_from_db(db_path=str(DATABASE_PATH), until=until, location_id=loc.series_id)
+    history = ai_model.load_history_from_db(db_path=str(DATABASE_PATH),
+                                          until=until if until is not None else _naive(now_local()),
+                                          location_id=loc.series_id)
     if len(history) < ai_model.MIN_HISTORY_HOURS:
         raise HTTPException(status_code=503, detail="Không đủ dữ liệu lịch sử để dự báo")
     try:
@@ -657,8 +712,8 @@ def get_hourly_forecast(
     at: Optional[str] = Query(default=None, description=AT_DESC),
     location_id: Optional[str] = Query(default=None, description=LOCATION_DESC),
 ):
-    """N hours from the effective now. Live: the latest observed hour, then the latest NWP issue.
-    Replay: what was observed (up to the latest stored hour). Anything else falls back to climatology."""
+    """N hours from now: current analysis then our own AI, without external forecast fallback.
+    Replay is historical analysis/climatology, not an AI backtest."""
     sid = _resolve_location(location_id).series_id
     eff = _resolve_at(at, sid)
     start = _naive(eff if eff is not None else _floor_hour(to_local(now_local())))
@@ -669,23 +724,45 @@ def get_hourly_forecast(
     return items
 
 
+@router.get('/forecast-status')
+def get_forecast_status():
+    """Artifact capabilities and held-out evaluation; availability is not a skill claim."""
+    info = long_range_model.status()
+    info['experimental'] = True
+    if info['status'] == 'available':
+        info['evaluation'] = _own_evaluation(long_range_model.artifact_revision())
+    return info
+
+
+@lru_cache(maxsize=2)
+def _own_evaluation(revision: tuple) -> Optional[dict]:
+    try:
+        path = Path(revision[0])
+        report = json.loads((path / 'evaluation.json').read_text(encoding='utf-8'))
+        meta = json.loads((path / 'metadata.json').read_text(encoding='utf-8'))
+        return {'test_period': meta['split']['test'], 'targets': {
+            name: {'metric': result['test']['primary_metric'], 'overall': result['test']['overall'],
+                   'by_day': result['test']['by_day']} for name, result in report.items()}}
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
 @router.get("/daily", response_model=List[DailySummary])
 def get_daily_forecast(
     days: int = Query(default=7, ge=1, le=14, description="Number of days to forecast (1-14)"),
     at: Optional[str] = Query(default=None, description=AT_DESC),
     location_id: Optional[str] = Query(default=None, description=LOCATION_DESC),
 ):
-    """One summary per local day from the effective now's date, aggregated from a full-day hourly series built
-    like /hourly: observed hours (<= latest stored hour; in replay that is what actually happened), then the
-    latest NWP issue (live only), then climatology. Pure-climatology days keep the per-year-then-averaged
-    climatology. source: "forecast" if any NWP hour is used, "observed" only if all 24 h are observed."""
+    """Daily aggregation of our hourly AI plus already known hours today.
+    rain_day_probability is null for AI until a daily-event model is trained and evaluated.
+    Replay is a separately labelled historical reference."""
     sid = _resolve_location(location_id).series_id
     eff = _resolve_at(at, sid)
     now = _naive(eff if eff is not None else _floor_hour(to_local(now_local())))
     first = datetime(now.year, now.month, now.day)
     times = [first + timedelta(hours=i) for i in range(days * 24)]
     items = _series(times, _latest_observed(sid), use_forecast=eff is None, sid=sid)
-    _, clim_daily = _climatology(_clim_series(sid))
+    clim_daily = _climatology(_clim_series(sid))[1] if eff is not None else pd.DataFrame()
     forecasts = []
     for d in range(days):
         summary = _daily_summary((first + timedelta(days=d)).date(), items[d * 24:(d + 1) * 24], clim_daily)
@@ -694,6 +771,53 @@ def get_daily_forecast(
     if not forecasts:
         raise HTTPException(status_code=404, detail="No forecast data available")
     return forecasts
+
+
+@router.get("/bundle")
+def get_weather_bundle(
+    response: Response,
+    hours: int = Query(default=48, ge=1, le=168, description="Number of hours (1-168)"),
+    days: int = Query(default=7, ge=1, le=14, description="Number of days (1-14)"),
+    at: Optional[str] = Query(default=None, description=AT_DESC),
+    location_id: Optional[str] = Query(default=None, description=LOCATION_DESC),
+):
+    """/current + /hourly + /daily + /ai-forecast in one call (same handlers, same output).
+    An AI 503 does not fail the bundle: ai_forecast = null and ai_error = its detail."""
+    loc = _resolve_location(location_id)
+    eff = _resolve_at(at, loc.series_id)   # validate `at` once, before any work
+    try:
+        ai, ai_error = get_ai_forecast(at=at, location_id=location_id), None
+    except HTTPException as e:
+        if e.status_code != 503:
+            raise
+        ai, ai_error = None, e.detail
+    if eff is None:
+        response.headers["Cache-Control"] = "max-age=60"
+    forecast_error = None
+    try:
+        hourly = get_hourly_forecast(hours=hours, at=at, location_id=location_id)
+    except HTTPException as e:
+        if e.status_code != 503:
+            raise
+        hourly, forecast_error = [], e.detail
+    try:
+        daily = get_daily_forecast(days=days, at=at, location_id=location_id)
+    except HTTPException as e:
+        if e.status_code != 503:
+            raise
+        daily, forecast_error = [], forecast_error or e.detail
+    return {
+        "location_id": loc.location_id,
+        "cell_id": loc.cell_id,
+        "generated_at": to_local(now_local()).isoformat(),
+        "current": jsonable_encoder(get_current_weather(at=at, location_id=location_id)),
+        "hourly": jsonable_encoder(hourly),
+        "daily": jsonable_encoder(daily),
+        "forecast_provider": "historical_reference" if eff is not None else "sky_weather_ai",
+        "forecast_error": forecast_error,
+        "ai_forecast": ai,
+        "ai_error": ai_error,
+    }
 
 
 @router.get("/history")
@@ -724,7 +848,7 @@ MAP_ALERT_RAIN_MM = 10.0   # >= 10 mm in the next 3 h counts as heavy rain on th
 
 
 @lru_cache(maxsize=32)
-def _replay_ai_rain(now: datetime, series: tuple) -> Dict[str, float]:
+def _replay_ai_rain(now: datetime, series: tuple, revision: tuple) -> Dict[str, float]:
     """Max AI rain probability over +1h/+3h for each (series_id, cell_id), issued exactly at `now` (naive)."""
     out = {}
     for sid, cell_id in series:
@@ -732,17 +856,17 @@ def _replay_ai_rain(now: datetime, series: tuple) -> Dict[str, float]:
         if len(hist) < ai_model.MIN_HISTORY_HOURS:
             continue
         try:
-            res = ai_model.predict_for_location(hist, cell_id) if hasattr(ai_model, "predict_for_location")                 else ai_model.predict_from_history(hist)
-        except ValueError:
+            res = long_range_model.predict(hist, ai_model.canonical_cell_id(cell_id))
+        except (ValueError, OSError):
             continue
         if datetime.fromisoformat(str(res["issued_at"])[:19]) == now:
-            out[sid] = max(res["predictions"][h]["rain_probability"] for h in ("1h", "3h"))
+            probs = [res['predictions'][h].get('rain_probability') for h in ('1h', '2h', '3h')]
+            if all(p is not None for p in probs):
+                out[sid] = max(probs)
     return out
 
 
-MAP_MAX_OFFSET_HOURS = 72  # time slider range: hourly NWP frames now .. now + 72 h
-_NWP_LATEST_SQL = ("FROM nwp_forecast f JOIN (SELECT location_id, MAX(issued_at) iss FROM nwp_forecast "
-                   "GROUP BY location_id) m ON f.location_id = m.location_id AND f.issued_at = m.iss ")
+MAP_MAX_OFFSET_HOURS = 72  # map frames from our hourly AI; leave 3h for the outlook
 
 
 def _map_now(eff: Optional[datetime]) -> datetime:
@@ -750,25 +874,40 @@ def _map_now(eff: Optional[datetime]) -> datetime:
 
 
 def _map_meta(now: datetime, replay: bool) -> dict:
-    """Newest NWP issue and how far (hours after `now`, 0..72) the map slider can go. Replay: always 0."""
+    """Only advertise future frames covered by a trained model and fresh input."""
+    info = long_range_model.status()
+    issues = []
     try:
-        row = execute_one("SELECT issued_at, MAX(timestamp) FROM nwp_forecast "
-                          "WHERE issued_at = (SELECT MAX(issued_at) FROM nwp_forecast)")
+        rows = execute_query('SELECT DISTINCT c.series_id, '
+                             '(SELECT MAX(timestamp) FROM hourly_weather h '
+                             'WHERE h.location_id = c.series_id AND h.timestamp <= ?) '
+                             'FROM cells c',
+                             (now.strftime(TS_FMT),)) if info['status'] == 'available' and not replay else []
     except sqlite3.OperationalError:
-        row = None
-    issued, last = (row[0], row[1]) if row and row[0] else (None, None)
-    max_off = 0
-    if last and not replay:
-        hours = int((datetime.fromisoformat(last) - now).total_seconds() // 3600)
-        max_off = max(0, min(MAP_MAX_OFFSET_HOURS, hours))
+        rows = []
+    for cid, timestamp in rows:
+        if timestamp and ai_model.canonical_cell_id(cid) in info.get('cell_ids', []):
+            issue = datetime.fromisoformat(timestamp)
+            if timedelta(0) <= now - issue <= timedelta(hours=3) and to_local(issue) > to_local(info['trained_through']):
+                try:
+                    forecast = _own_forecast_rows(cid, now)
+                except HTTPException as exc:
+                    if exc.status_code != 503:
+                        raise
+                    continue
+                if any(any(getattr(item, field) is not None for field in
+                           ('temperature', 'precipitation', 'rain_probability', 'wind_speed', 'cloud_cover'))
+                       for item in forecast.values()):
+                    issues.append(issue)
+    issued = min(issues) if issues else None
+    max_off = min(MAP_MAX_OFFSET_HOURS, long_range_model.MAX_HORIZON - int((now-issued).total_seconds()/3600) - 3) if issued else 0
     return {"now": to_local(now).isoformat(), "max_offset_hours": max_off,
-            "issued_at": to_local(issued).isoformat() if issued else None}
+            "issued_at": to_local(issued).isoformat() if issued else None, 'forecast_source': 'ai'}
 
 
 @router.get("/map/meta")
 def get_weather_map_meta(at: Optional[str] = Query(default=None, description=AT_DESC)):
-    """{now, max_offset_hours, issued_at} for the map time slider. max_offset_hours = hours from now to the last
-    hour of the newest NWP issue, capped at 72 (0 in replay mode, where only offset_hours=0 is allowed)."""
+    """Map slider coverage of our trained AI, capped at 72h. Replay supports only offset 0."""
     eff = _resolve_at(at)
     return _map_meta(_map_now(eff), eff is not None)
 
@@ -777,13 +916,8 @@ def get_weather_map_meta(at: Optional[str] = Query(default=None, description=AT_
 def get_weather_map(at: Optional[str] = Query(default=None, description=AT_DESC),
                     offset_hours: int = Query(default=0, ge=0, le=MAP_MAX_OFFSET_HOURS,
                                               description="Map frame t = now + offset (hours, 0..72)")):
-    """One item per Open-Meteo grid cell of new HCMC at frame t = now + offset_hours.
-    offset 0: temperature/weather code/wind/precipitation of the latest observed hour <= now (source "observed") and the
-    next 3 h rain outlook. Live: latest NWP issue. Replay: the AI forecast issued at `at` (only data <= at is
-    used, so the map never shows what happened afterwards).
-    offset > 0 (live only): every field comes from hour t of the latest NWP issue (source "forecast"); the
-    rain outlook covers t+1..t+3 from the same issue. There is no radar (Open-Meteo has none): the time slider
-    steps through these hourly NWP frames.
+    """One item per grid cell. Live outlook and future frames use only our trained AI.
+    Unsupported cells have null forecasts, never an external forecast fallback.
     Replay + offset > 0 is rejected with 400: a future frame would need data issued after `at`.
     source/numeric fields are null for a cell with no data at t. max_offset_hours (same on every item, also
     /weather/map/meta) = how far the slider can go.
@@ -808,34 +942,33 @@ def get_weather_map(at: Optional[str] = Query(default=None, description=AT_DESC)
             "h.precipitation, h.timestamp")
     if offset_hours == 0:
         cur = {r["location_id"]: r for r in execute_query(
-            f"SELECT {cols} FROM hourly_weather h "
-            "JOIN (SELECT location_id, MAX(timestamp) ts FROM hourly_weather WHERE timestamp <= ? GROUP BY location_id) m "
-            "ON h.location_id = m.location_id AND h.timestamp = m.ts", (now.strftime(TS_FMT),))}
+            f'SELECT {cols} FROM cells c JOIN hourly_weather h ON h.location_id = c.series_id '
+            'AND h.timestamp = (SELECT MAX(timestamp) FROM hourly_weather latest '
+            'WHERE latest.location_id = c.series_id AND latest.timestamp <= ?)', (now.strftime(TS_FMT),))}
     else:
-        try:
-            cur = {r["location_id"]: r for r in execute_query(
-                f"SELECT {cols.replace('h.', 'f.')} " + _NWP_LATEST_SQL + "WHERE f.timestamp = ?",
-                (t.strftime(TS_FMT),))}
-        except sqlite3.OperationalError:
-            cur = {}
+        cur = {}
     nxt: Dict[str, list] = {}
-    if eff is None:
-        try:
-            rows = execute_query(
-                "SELECT f.location_id, f.precipitation, f.precipitation_probability, f.weather_code "
-                + _NWP_LATEST_SQL + "WHERE f.timestamp >= ? AND f.timestamp <= ?", (lo, hi))
-        except sqlite3.OperationalError:
-            rows = []
-        for r in rows:
-            p = r["precipitation_probability"]
-            nxt.setdefault(r["location_id"], []).append(
-                (r["precipitation"], None if p is None else p / 100, r["weather_code"]))
     merged: Dict[str, dict] = {}
     for c in cells:   # non-alias cells sort first and keep their cell_id
         m = merged.setdefault(c["series_id"], {**dict(c), "location_ids": []})
         m["location_ids"] += [i for i in json.loads(c["location_ids"] or "[]") if i not in m["location_ids"]]
-    ai_probs = _replay_ai_rain(now, tuple((sid, c["cell_id"]) for sid, c in merged.items())) if eff else {}
-    source = "observed" if offset_hours == 0 else "forecast"
+    if eff is None and long_range_model.status()['status'] == 'available':
+        for sid in merged:
+            try:
+                forecast = _own_forecast_rows(sid, now)
+            except HTTPException as exc:
+                if exc.status_code != 503:
+                    raise
+                continue
+            if offset_hours > 0 and t in forecast:
+                cur[sid] = forecast[t].model_dump()
+            nxt[sid] = [(forecast[v].precipitation, forecast[v].rain_probability, forecast[v].weather_code)
+                        for v in (t + timedelta(hours=h) for h in (1, 2, 3)) if v in forecast]
+    inputs = [Path(DATABASE_PATH), Path(str(DATABASE_PATH) + '-wal')]
+    revision = (str(DATABASE_PATH), *long_range_model.artifact_revision(),
+                *(path.stat().st_mtime_ns if path.exists() else 0 for path in inputs))
+    ai_probs = _replay_ai_rain(now, tuple((sid, c['cell_id']) for sid, c in merged.items()), revision) if eff else {}
+    source = "observed" if offset_hours == 0 else "ai"
     valid_time = to_local(t).isoformat()
     out = []
     for c in sorted(merged.values(), key=lambda m: m["cell_id"]):
@@ -859,7 +992,7 @@ def get_weather_map(at: Optional[str] = Query(default=None, description=AT_DESC)
             "weather_code": _code(now_row["weather_code"]) if now_row is not None else None,
             "rain_probability_next_3h": round(max(probs), 2) if probs else (
                 round(ai_probs[sid], 2) if sid in ai_probs else None),
-            "outlook_source": "forecast" if probs else ("ai" if sid in ai_probs else None),
+            "outlook_source": "ai" if probs or sid in ai_probs else None,
             "precipitation_next_3h": total,
             "alert": any(95 <= k <= 99 for k in codes) or (total is not None and total >= MAP_ALERT_RAIN_MM),
             "wind_speed": field("wind_speed", 1),

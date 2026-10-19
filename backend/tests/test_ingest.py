@@ -55,6 +55,16 @@ class FakeAPI:
 
 
 @pytest.fixture
+def external_forecast_enabled(monkeypatch):
+    monkeypatch.setenv("EXTERNAL_FORECAST_ENABLED", "1")
+
+
+@pytest.fixture(autouse=True)
+def default_external_forecast_disabled(monkeypatch):
+    monkeypatch.delenv("EXTERNAL_FORECAST_ENABLED", raising=False)
+
+
+@pytest.fixture
 def api(monkeypatch):
     fake = FakeAPI()
     monkeypatch.setattr(ingest, "_get_json", fake)
@@ -143,11 +153,10 @@ def test_gap_fill_within_overlap_and_gap_report(db, api):
     assert "2023-06-12 02:00:00 -> 2023-06-12 04:00:00 (1 h missing)" in row["message"]
 
 
-@pytest.mark.parametrize("down", ["historical", "forecast"])
-def test_failure_leaves_data_unchanged(db, api, down):
+def test_failure_leaves_data_unchanged(db, api, external_forecast_enabled):
     ingest.run_ingest(db_path=db, now=NOW)
     before = _snapshot(db)
-    api.fail = {down}
+    api.fail = {"historical"}
     api.bump = 1.0
     later = NOW + timedelta(hours=3)
     api.now = later
@@ -157,7 +166,79 @@ def test_failure_leaves_data_unchanged(db, api, down):
     assert _snapshot(db) == before
 
 
-def test_forecast_issue_has_168_future_hours_and_prune_keeps_5(db, api):
+def test_forecast_failure_still_writes_observed(db, api, external_forecast_enabled):
+    ingest.run_ingest(db_path=db, now=NOW)
+    previous_forecasts = _snapshot(db)[1]
+    api.fail = {"forecast"}
+    api.bump = 1.0
+    later = NOW + timedelta(hours=3)
+    api.now = later
+    row = ingest.run_ingest(db_path=db, now=later)
+    assert row["status"] == "ok"
+    assert "WARNING external forecast skipped" in row["message"] and "API down" in row["message"]
+    assert row["rows_inserted"] == 3 and row["rows_updated"] > 0
+    assert _q(db, "SELECT MAX(timestamp) FROM hourly_weather")[0][0] == "2023-06-25 13:00:00"
+    assert _snapshot(db)[1] == previous_forecasts
+    assert _q(db, "SELECT MAX(us_aqi) FROM air_quality")[0][0] == _value("us_aqi", later.replace(hour=4), 1.0)
+
+
+@pytest.mark.parametrize("enabled", [None, "0", "true"])
+def test_default_ingest_stores_historical_without_external_forecast(db, api, monkeypatch, enabled):
+    if enabled is not None:
+        monkeypatch.setenv("EXTERNAL_FORECAST_ENABLED", enabled)
+    row = ingest.run_ingest(db_path=db, now=NOW)
+    assert row["status"] == "ok" and row["rows_inserted"] == 11
+    assert row["source"] == "open-meteo:historical-forecast"
+    assert "external forecasts disabled" in row["message"]
+    assert "forecast issue" not in row["message"]
+    assert [kind for kind, _ in api.calls] == ["historical", "air_quality"]
+    assert _q(db, "SELECT MAX(timestamp) FROM hourly_weather")[0][0] == NOW_HOUR
+    assert _q(db, "SELECT COUNT(*) FROM nwp_forecast")[0][0] == 0
+    assert _q(db, "SELECT COUNT(*) FROM air_quality")[0][0] == 336
+
+
+def test_disabling_external_forecasts_preserves_existing_issues(db, api, external_forecast_enabled, monkeypatch):
+    ingest.run_ingest(db_path=db, now=NOW)
+    before = _snapshot(db)[1]
+    assert before
+    api.calls.clear()
+    monkeypatch.setenv("EXTERNAL_FORECAST_ENABLED", "0")
+    row = ingest.run_ingest(db_path=db, now=NOW + timedelta(hours=1))
+    assert row["status"] == "ok" and row["rows_inserted"] == 1
+    assert [kind for kind, _ in api.calls] == ["historical", "air_quality"]
+    assert _snapshot(db)[1] == before
+
+
+def test_cli_help_documents_external_forecast_opt_in(capsys):
+    with pytest.raises(SystemExit) as exc:
+        ingest.main(["--help"])
+    assert exc.value.code == 0
+    help_text = capsys.readouterr().out
+    assert "--forecast-only" in help_text and "EXTERNAL_FORECAST_ENABLED=1" in help_text
+    assert "default: 0" in help_text
+
+
+def test_forecast_only_disabled_raises_before_network_or_database(db, api, monkeypatch):
+    def unexpected_connect(*args, **kwargs):
+        pytest.fail("disabled forecast-only must not open the database")
+
+    monkeypatch.setattr(ingest, "connect", unexpected_connect)
+    with pytest.raises(ValueError, match="forecast_only requires EXTERNAL_FORECAST_ENABLED=1"):
+        ingest.run_ingest(db_path=db, now=NOW, forecast_only=True)
+    assert api.calls == []
+    assert not ingest._lock.locked()
+
+
+def test_forecast_only_failure_leaves_data_unchanged(db, api, external_forecast_enabled):
+    ingest.run_ingest(db_path=db, now=NOW, forecast_only=True)
+    before = _snapshot(db)
+    api.fail = {"forecast"}
+    row = ingest.run_ingest(db_path=db, now=NOW + timedelta(hours=1), forecast_only=True)
+    assert row["status"] == "error" and "API down" in row["message"]
+    assert _snapshot(db) == before
+
+
+def test_forecast_issue_has_168_future_hours_and_prune_keeps_5(db, api, external_forecast_enabled):
     for h in range(7):
         now = NOW + timedelta(hours=h)
         api.now = now
@@ -245,7 +326,7 @@ def test_migration_adds_uv_index_and_air_quality(db):
     assert _q(db, "SELECT COUNT(*) FROM hourly_weather WHERE uv_index IS NOT NULL")[0][0] == 0
 
 
-def test_ingest_stores_uv_index_and_air_quality(db, api):
+def test_ingest_stores_uv_index_and_air_quality(db, api, external_forecast_enabled):
     row = ingest.run_ingest(db_path=db, now=NOW)
     assert row["status"] == "ok" and "air quality: 336 hours" in row["message"]
     assert _q(db, "SELECT uv_index FROM hourly_weather WHERE timestamp = ?", (NOW_HOUR,))[0][0] ==         _value("uv_index", datetime(2023, 6, 25, 10), 0)
@@ -260,7 +341,7 @@ def test_ingest_stores_uv_index_and_air_quality(db, api):
     assert _q(db, "SELECT COUNT(*), MAX(us_aqi) FROM air_quality")[0] == (336, _value("us_aqi", datetime(2023, 6, 25, 4), 2.0))   # hour % 5 == 4 is the max
 
 
-def test_air_quality_failure_still_writes_weather(db, api):
+def test_air_quality_failure_still_writes_weather(db, api, external_forecast_enabled):
     api.fail = {"air_quality"}
     row = ingest.run_ingest(db_path=db, now=NOW)
     assert row["status"] == "ok"

@@ -256,6 +256,53 @@ class TripProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ---- Mua 2 gio toi tai cho (che do "Tôi sắp ra ngoài") ----
+
+  Place? _nowPlace;
+  List<HourlyForecast> _nowHours = const [];
+  bool _nowLoading = false;
+  String? _nowError;
+
+  /// Phuong gan vi tri GPS nhat (null = chua co).
+  Place? get nowcastPlace => _nowPlace;
+
+  /// Cac moc gio trong 2 gio toi (gio hien tai + 2 gio sau).
+  List<HourlyForecast> get nowcastHours => _nowHours;
+  bool get nowcastLoading => _nowLoading;
+  String? get nowcastError => _nowError;
+
+  /// Lay du bao mua 2 gio toi tai [lat], [lon] (khong luu toa do).
+  Future<void> loadNowcast(double lat, double lon) async {
+    _nowLoading = true;
+    _nowError = null;
+    notifyListeners();
+    try {
+      final place = await _api.nearestLocation(lat, lon);
+      final raw = await _api.fetchHourlyRaw(hours: 3, locationId: place.id);
+      final from = nowHcm.subtract(const Duration(minutes: 59));
+      _nowPlace = place;
+      _nowHours = [
+        for (final h in raw)
+          if (h is Map<String, dynamic>) HourlyForecast.fromJson(h),
+      ].where((h) => h.time.isAfter(from)).take(3).toList();
+    } on OutsideAreaException {
+      _nowError = 'Bạn đang ở ngoài TP.HCM, chưa có dự báo cho chỗ này.';
+    } on ApiException catch (e) {
+      _nowError = e.message;
+    } on FormatException {
+      _nowError = ApiException.messageFor(ApiErrorKind.invalidData);
+    }
+    _nowLoading = false;
+    notifyListeners();
+  }
+
+  /// Ghi loi vi tri (GPS tat / chua cap quyen) cho the "mưa 2 giờ tới".
+  void setNowcastError(String message) {
+    _nowError = message;
+    _nowLoading = false;
+    notifyListeners();
+  }
+
   // ---- Chuyen di ----
 
   TripPhase _phase = TripPhase.idle;

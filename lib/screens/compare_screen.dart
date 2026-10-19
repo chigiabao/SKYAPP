@@ -75,6 +75,80 @@ int? rainNext3h(List<HourlyForecast> hours, DateTime nowHcm) {
   return best;
 }
 
+/// Gio dau tien (trong 12 gio toi) co kha nang mua >= 50%; null = khong co.
+DateTime? rainOnset(List<HourlyForecast> hours, DateTime nowHcm) {
+  final start = HcmTime.startOfHour(nowHcm);
+  final end = start.add(const Duration(hours: 12));
+  for (final h in hours) {
+    if (h.time.isBefore(start) || !h.time.isBefore(end)) continue;
+    if ((h.rainProbability ?? 0) >= 0.5) return h.time;
+  }
+  return null;
+}
+
+/// Noi noi bat: mua nhieu nhat (3 gio toi) va nong nhat (hien tai).
+typedef CompareHighlights = ({String? rainiestId, String? hottestId});
+
+CompareHighlights compareHighlights(List<CompareSeries> s, DateTime now) {
+  final ok = [
+    for (final x in s)
+      if (x.data != null) x,
+  ];
+  if (ok.length < 2) return (rainiestId: null, hottestId: null);
+  // Chi noi bat khi hon han noi thu hai (tranh "nóng nhất" khi bang nhau).
+  String? leader(num Function(CompareSeries) v, num margin, num floor) {
+    final sorted = [...ok]..sort((a, b) => v(b).compareTo(v(a)));
+    final a = v(sorted[0]), b = v(sorted[1]);
+    return a >= floor && a - b >= margin ? sorted[0].place.id : null;
+  }
+
+  return (
+    rainiestId: leader(
+      (x) => rainNext3h(x.data!.hourlyForecast, now) ?? 0,
+      10,
+      20,
+    ),
+    hottestId: leader((x) => x.data!.current.temperature, 1, -100),
+  );
+}
+
+/// Mot cau ket luan, vd. "Thủ Đức mưa sớm hơn Bến Thành khoảng 1 giờ."
+String? compareVerdict(
+  List<CompareSeries> series,
+  DateTime now,
+  String Function(double c) temp,
+) {
+  final ok = [
+    for (final x in series)
+      if (x.data != null) x,
+  ];
+  if (ok.length < 2) return null;
+  final onset = {for (final x in ok) x: rainOnset(x.data!.hourlyForecast, now)};
+  final wet = ok.where((x) => onset[x] != null).toList()
+    ..sort((a, b) => onset[a]!.compareTo(onset[b]!));
+  String hh(DateTime t) => '${t.hour.toString().padLeft(2, '0')}:00';
+  if (wet.length >= 2) {
+    final a = wet.first, b = wet.last;
+    final dh = onset[b]!.difference(onset[a]!).inHours;
+    if (dh >= 1) {
+      return '${a.place.name} mưa sớm hơn ${b.place.name} khoảng $dh giờ '
+          '(từ ${hh(onset[a]!)}).';
+    }
+    return 'Các nơi cùng có thể mưa từ khoảng ${hh(onset[a]!)}.';
+  }
+  if (wet.length == 1) {
+    final a = wet.first;
+    return '${a.place.name} có thể mưa từ ${hh(onset[a]!)}; '
+        'nơi còn lại ít khả năng mưa trong 12 giờ tới.';
+  }
+  final hot = ok.reduce(
+    (a, b) =>
+        a.data!.current.temperature >= b.data!.current.temperature ? a : b,
+  );
+  return 'Ít khả năng mưa ở cả ${ok.length} nơi trong 12 giờ tới; '
+      '${hot.place.name} nóng nhất (${temp(hot.data!.current.temperature)}°).';
+}
+
 class CompareScreen extends StatefulWidget {
   const CompareScreen({
     super.key,
@@ -148,6 +222,10 @@ class _CompareScreenState extends State<CompareScreen> {
         ),
     ];
 
+    final highlights = _loading ? null : compareHighlights(series, wp.nowHcm);
+    final verdict = _loading
+        ? null
+        : compareVerdict(series, wp.nowHcm, wp.formatTempValue);
     return Scaffold(
       appBar: AppBar(
         title: Text(
@@ -176,6 +254,7 @@ class _CompareScreenState extends State<CompareScreen> {
                   Expanded(
                     child: _CompareColumn(
                       series: series[i],
+                      highlights: highlights,
                       loading: _loading && series[i].result == null,
                       provider: wp,
                     ),
@@ -184,6 +263,20 @@ class _CompareScreenState extends State<CompareScreen> {
               ],
             ),
           ),
+          if (verdict case final v?) ...[
+            const SizedBox(height: Space.cardGap),
+            GlassCard(
+              title: 'KẾT LUẬN',
+              icon: Icons.lightbulb_outline_rounded,
+              child: Semantics(
+                liveRegion: true,
+                child: Text(
+                  v,
+                  style: TypeScale.label.copyWith(color: Palette.white),
+                ),
+              ),
+            ),
+          ],
           const SizedBox(height: Space.cardGap),
           GlassCard(
             title: 'Nhiệt độ 24 giờ tới',
@@ -251,8 +344,10 @@ class _CompareColumn extends StatelessWidget {
     required this.series,
     required this.loading,
     required this.provider,
+    this.highlights,
   });
 
+  final CompareHighlights? highlights;
   final CompareSeries series;
   final bool loading;
   final WeatherProvider provider;
@@ -285,6 +380,13 @@ class _CompareColumn extends StatelessWidget {
     );
 
     final rain = d == null ? null : rainNext3h(d.hourlyForecast, now);
+    final id = series.place.id;
+    final badges = [
+      if (highlights?.rainiestId == id)
+        (Icons.water_drop_rounded, 'Mưa nhiều nhất', ink.rain),
+      if (highlights?.hottestId == id)
+        (Icons.local_fire_department_rounded, 'Nóng nhất', ink.warning),
+    ];
     return GlassSurface(
       padding: const EdgeInsets.all(Space.m),
       child: Column(
@@ -313,6 +415,25 @@ class _CompareColumn extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
             style: small,
           ),
+          for (final (icon, text, color) in badges)
+            Padding(
+              padding: const EdgeInsets.only(top: Space.xs),
+              child: Row(
+                children: [
+                  Icon(icon, size: 14, color: color),
+                  const SizedBox(width: 2),
+                  Expanded(
+                    child: Text(
+                      text,
+                      style: small.copyWith(
+                        color: color,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           if (series.result?.fromCache == true && c != null)
             Text('Dữ liệu cũ', style: small.copyWith(color: ink.warning)),
           const SizedBox(height: Space.s),

@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:workmanager/workmanager.dart';
 
+import '../config/api_config.dart';
 import '../models/app_settings.dart';
 import '../models/weather.dart';
 import '../providers/location_provider.dart';
@@ -47,6 +48,8 @@ Future<int> runBackgroundCheck({
   } catch (e) {
     debugPrint('backgroundCheck reload: $e');
   }
+  // Background isolates do not run main(), and an existing isolate can retain an old URL.
+  await ApiConfig.loadBaseUrl();
   final app = await AppSettings.load();
   if (app.replayEnabled) return 0;
   final notify = notifications ?? NotificationService.platform();
@@ -57,6 +60,8 @@ Future<int> runBackgroundCheck({
   final service = api ?? ApiService(clock: clock);
   final lp = LocationProvider(apiService: service, clock: clock);
   await lp.loadLocal();
+  // Nha / Noi lam cho thong bao buoi sang (noi dung hen lai ben duoi).
+  planner.syncCommutePlaces(lp);
   final now = HcmTime.now(clock);
   final firstId = lp.pages.first.locationId;
   var sent = 0;
@@ -84,6 +89,8 @@ Future<int> runBackgroundCheck({
       debugPrint('backgroundCheck $id: $e');
     }
   }
+  // Hen lai nhac + thong bao buoi sang voi du lieu vua tai (chay truoc gio
+  // gui -> noi dung moi thay noi dung cu cung id).
   await planner.rescheduleReminders();
   await planner.flush();
   return sent;

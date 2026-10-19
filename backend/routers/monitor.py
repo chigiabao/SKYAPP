@@ -3,8 +3,9 @@ Monitoring (group 11) and data retention (group 9). Same auth as routers/admin.p
 
 Forecast log: after every successful ingest, post_ingest() writes into ai_forecast_log
   - source 'ai': the AI forecast (1/3/6 h) each series would publish now (issued at its last observed hour);
-  - source 'map_alert': the /weather/map alert rule (thunderstorm code or >= 10 mm in the next 3 h) on the
-    series' latest NWP issue.
+  - source 'ai_long_range': own-model forecasts at selected horizons through 168 h, scored separately;
+  - source 'map_alert': >= 10 mm in the next 3 h from the own long-range model on fresh history;
+    unavailable own forecasts are skipped, never replaced with external forecasts.
   Rows are INSERT OR IGNORE: the first publication of an issue is what gets scored. Prediction is batched
   (one LightGBM call per model for all series, ~1-2 s for 67 series) so the ingest stays fast.
 Retention (once per day, from the ingest loop): feedback > 365 days, ai_forecast_log > 90 days.
@@ -32,6 +33,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 import ai_model
 import database
+import long_range_model
 from database import DEFAULT_LOCATION_ID, now_local
 from routers.admin import require_admin
 
@@ -50,6 +52,7 @@ FORECAST_LOG_RETENTION_DAYS = 90
 RAIN_MM = 0.1               # observed rainy hour (same as ai_model.RAIN_THRESHOLD_MM)
 ALERT_RAIN_MM = 10.0        # same rule as /weather/map (MAP_ALERT_RAIN_MM)
 DEFAULT_RAIN_THRESHOLD = 0.5
+LONG_RANGE_HORIZONS = (1, 3, 6, 12, 24, 48, 72, 96, 120, 144, 168)
 V3_REQUIRED = ["feature_columns.json", "metadata_v3.json", "cell_static.json", "evaluation_v3.json"] + [
     f"{k}_model_{h}h.pkl" for k in ("temperature", "rain") for h in ai_model.HORIZONS]
 
@@ -128,11 +131,13 @@ def _predict_all(items: List[tuple]) -> Dict[str, dict]:
 def log_published_forecasts(db_path=None, now: Optional[datetime] = None) -> int:
     """Write the AI forecasts and map alerts published now into ai_forecast_log. Returns rows inserted."""
     path = str(db_path or database.DATABASE_PATH)
-    stamp = _naive_now(now).strftime(TS_FMT)
+    now = _naive_now(now)
+    stamp = now.strftime(TS_FMT)
     conn = _connect(path)
     try:
         series = _series_cells(conn)
-        items = [(sid, cid, ai_model.load_history_from_db(db_path=path, location_id=sid)) for sid, cid in series]
+        items = [(sid, cid, ai_model.load_history_from_db(db_path=path, location_id=sid, until=now))
+                 for sid, cid in series]
         rows = []
         for sid, res in _predict_all(items).items():
             issued = datetime.fromisoformat(str(res["issued_at"])[:19])
@@ -140,26 +145,36 @@ def log_published_forecasts(db_path=None, now: Optional[datetime] = None) -> int
                 h = int(key.rstrip("h"))
                 rows.append((sid, "ai", issued.strftime(TS_FMT), h, (issued + timedelta(hours=h)).strftime(TS_FMT),
                              p["temperature"], p["rain_probability"], None, None, res.get("model_version"), stamp))
-        try:
-            nwp = conn.execute(
-                "SELECT f.location_id, f.issued_at, f.timestamp, f.precipitation, f.precipitation_probability, "
-                "f.weather_code FROM nwp_forecast f JOIN (SELECT location_id, MAX(issued_at) iss FROM nwp_forecast "
-                "GROUP BY location_id) m ON f.location_id = m.location_id AND f.issued_at = m.iss "
-                "WHERE f.timestamp > f.issued_at AND f.timestamp <= datetime(f.issued_at, '+3 hours')").fetchall()
-        except sqlite3.OperationalError:
-            nwp = []
-        groups: Dict[tuple, list] = {}
-        for r in nwp:
-            groups.setdefault((r["location_id"], r["issued_at"]), []).append(r)
-        for (sid, iss), hrs in groups.items():
-            precip = [r["precipitation"] for r in hrs if r["precipitation"] is not None]
-            probs = [r["precipitation_probability"] / 100 for r in hrs if r["precipitation_probability"] is not None]
-            total = round(sum(precip), 2) if precip else None
-            alert = any(r["weather_code"] is not None and 95 <= r["weather_code"] <= 99 for r in hrs) or (
-                total is not None and total >= ALERT_RAIN_MM)
-            target = (datetime.fromisoformat(iss) + timedelta(hours=3)).strftime(TS_FMT)
-            rows.append((sid, "map_alert", iss, 3, target, None, round(max(probs), 2) if probs else None, total,
-                         int(alert), "nwp", stamp))
+        for sid, cid, hist in items:
+            if hist.empty:
+                continue
+            issued = pd.Timestamp(hist["timestamp"].iloc[-1]).to_pydatetime()
+            if not timedelta(0) <= now - issued <= timedelta(hours=3):
+                continue
+            try:
+                res = long_range_model.predict(hist, ai_model.canonical_cell_id(cid))
+            except (ValueError, OSError, KeyError):
+                continue
+            issued = _naive_now(datetime.fromisoformat(res["issued_at"]))
+            version = res["model_version"]
+            for h in LONG_RANGE_HORIZONS:
+                p = res["predictions"].get(f"{h}h")
+                if p is not None:
+                    rows.append((sid, "ai_long_range", issued.strftime(TS_FMT), h,
+                                 (issued + timedelta(hours=h)).strftime(TS_FMT), p.get("temperature"),
+                                 p.get("rain_probability"), p.get("precipitation_mm"), None, version, stamp))
+            window = now.replace(minute=0, second=0, microsecond=0)
+            offset = int((window - issued).total_seconds() // 3600)
+            hrs = [res["predictions"].get(f"{offset + h}h") for h in (1, 2, 3)]
+            if any(r is None or r.get("precipitation_mm") is None for r in hrs):
+                continue
+            precip = [r["precipitation_mm"] for r in hrs]
+            probs = [r["rain_probability"] for r in hrs if r["rain_probability"] is not None]
+            total = round(sum(precip), 2)
+            alert = total >= ALERT_RAIN_MM
+            target = (window + timedelta(hours=3)).strftime(TS_FMT)
+            rows.append((sid, "map_alert", window.strftime(TS_FMT), 3, target, None,
+                         round(max(probs), 2) if probs else None, total, int(alert), version, stamp))
         with conn:
             before = conn.total_changes
             conn.executemany("INSERT OR IGNORE INTO ai_forecast_log (series_id, source, issued_at, horizon_h, "
@@ -212,48 +227,58 @@ def _f1(tp: int, fp: int, fn: int) -> Optional[float]:
     return None if tp + fp + fn == 0 else round(2 * tp / (2 * tp + fp + fn), 3)
 
 
-def _scores(rows: list, thr: Dict[int, float]) -> dict:
+def _scores(rows: list, thr: Dict[int, float], source: str = "ai") -> dict:
     errs = [abs(r["temperature"] - r["obs_t"]) for r in rows if r["temperature"] is not None and r["obs_t"] is not None]
     tp = fp = fn = 0
     for r in rows:
         if r["rain_probability"] is None or r["obs_p"] is None:
             continue
         pred = r["rain_probability"] >= thr.get(r["horizon_h"], DEFAULT_RAIN_THRESHOLD)
-        act = r["obs_p"] >= RAIN_MM
+        # Direct-horizon training labels use a strict threshold; preserve legacy scoring.
+        act = (r["obs_p"] > long_range_model.RAIN_THRESHOLD_MM if source == "ai_long_range"
+               else r["obs_p"] >= RAIN_MM)
         tp, fp, fn = tp + (pred and act), fp + (pred and not act), fn + (act and not pred)
     return {"n": len(rows), "temperature_mae": round(sum(errs) / len(errs), 3) if errs else None,
             "rain_f1": _f1(tp, fp, fn)}
 
 
-def _ai_quality(conn, since: str) -> dict:
+def _ai_quality(conn, since: str, source: str = "ai") -> dict:
     rows = conn.execute(
-        "SELECT l.horizon_h, substr(l.target_time, 1, 10) day, l.temperature, l.rain_probability, "
+        "SELECT l.horizon_h, l.model_version, substr(l.target_time, 1, 10) day, l.temperature, l.rain_probability, "
         "h.temperature obs_t, h.precipitation obs_p FROM ai_forecast_log l JOIN hourly_weather h "
         "ON h.location_id = l.series_id AND h.timestamp = l.target_time "
-        "WHERE l.source = 'ai' AND l.issued_at >= ?", (since,)).fetchall()
-    thr = _rain_thresholds()
+        "WHERE l.source = ? AND l.issued_at >= ?", (source, since)).fetchall()
+    horizons = ai_model.HORIZONS if source == "ai" else sorted({r["horizon_h"] for r in rows})
+    thr = _rain_thresholds() if source == "ai" else {h: DEFAULT_RAIN_THRESHOLD for h in horizons}
     days: Dict[str, list] = {}
     for r in rows:
         days.setdefault(r["day"], []).append(r)
-    return {"rain_thresholds": {f"{h}h": v for h, v in thr.items()} or None,
-            "overall": _scores(rows, thr),
-            "by_horizon": {f"{h}h": _scores([r for r in rows if r["horizon_h"] == h], thr) for h in ai_model.HORIZONS},
-            "by_day": [{"day": d, **_scores(v, thr)} for d, v in sorted(days.items())]}
+    result = {"rain_thresholds": {f"{h}h": v for h, v in thr.items()} or None,
+            "overall": _scores(rows, thr, source),
+            "by_horizon": {f"{h}h": _scores([r for r in rows if r["horizon_h"] == h], thr, source) for h in horizons},
+            "by_day": [{"day": d, **_scores(v, thr, source)} for d, v in sorted(days.items())]}
+    if source == "ai_long_range":
+        result["source"] = source
+        result["by_model_version"] = {
+            version: _scores([r for r in rows if r["model_version"] == version], thr, source)
+            for version in sorted({r["model_version"] for r in rows})}
+    return result
 
 
-def _alert_quality(conn, since: str) -> dict:
-    """Map alert (NWP rule) vs. the same rule on the observed hours issued+1..+3 (all 3 must be stored)."""
+def _alert_quality(conn, since: str, legacy: bool = False) -> dict:
+    """Own alerts score rainfall only; historical NWP alerts retain their storm rule separately."""
+    version_filter = "a.model_version = 'nwp'" if legacy else "a.model_version != 'nwp' AND a.precipitation IS NOT NULL"
     rows = conn.execute(
-        "SELECT substr(a.issued_at, 1, 10) day, a.alert, COUNT(h.timestamp) n, SUM(h.precipitation) p, "
+        "SELECT substr(a.issued_at, 1, 10) day, a.alert, COUNT(h.precipitation) n, SUM(h.precipitation) p, "
         "MAX(CASE WHEN h.weather_code BETWEEN 95 AND 99 THEN 1 ELSE 0 END) storm FROM ai_forecast_log a "
         "LEFT JOIN hourly_weather h ON h.location_id = a.series_id AND h.timestamp > a.issued_at "
         "AND h.timestamp <= a.target_time WHERE a.source = 'map_alert' AND a.issued_at >= ? "
-        "GROUP BY a.series_id, a.issued_at", (since,)).fetchall()
+        f"AND {version_filter} AND a.alert IS NOT NULL GROUP BY a.series_id, a.issued_at", (since,)).fetchall()
     days: Dict[str, dict] = {}
     for r in rows:
         if r["n"] < 3:
             continue
-        observed = bool(r["storm"]) or (r["p"] or 0) >= ALERT_RAIN_MM
+        observed = (legacy and bool(r["storm"])) or (r["p"] or 0) >= ALERT_RAIN_MM
         d = days.setdefault(r["day"], {"day": r["day"], "evaluated": 0, "predicted": 0, "observed": 0,
                                        "false_alarms": 0, "missed": 0})
         d["evaluated"] += 1
@@ -263,7 +288,8 @@ def _alert_quality(conn, since: str) -> dict:
         d["missed"] += observed and not r["alert"]
     by_day = [days[k] for k in sorted(days)]
     total = {k: sum(d[k] for d in by_day) for k in ("evaluated", "predicted", "observed", "false_alarms", "missed")}
-    return {"rule": "thunderstorm code 95-99 or >= 10 mm in the next 3 h", "total": total, "by_day": by_day}
+    rule = "thunderstorm code 95-99 or >= 10 mm in the next 3 h" if legacy else ">= 10 mm in the next 3 h (rainfall only)"
+    return {"rule": rule, "total": total, "by_day": by_day}
 
 
 def _ingest_stats(conn, since: str) -> dict:
@@ -311,6 +337,8 @@ def get_monitor(days: int = Query(default=7, ge=1, le=90)):
         return {"generated_at": now.replace(tzinfo=database.LOCAL_TZ).isoformat(), "window_days": days,
                 "model": _model_info(MODELS_DIR / "v3"),
                 "ai_quality": _ai_quality(conn, since), "alerts": _alert_quality(conn, since),
+                "own_long_range_quality": _ai_quality(conn, since, source="ai_long_range"),
+                "legacy_alerts": _alert_quality(conn, since, legacy=True),
                 "ingest": ingest_stats, "api_calls": _api_calls(conn, since, ingest_stats["by_day"]),
                 "feedback": _feedback_new(conn, since)}
     except sqlite3.OperationalError as e:

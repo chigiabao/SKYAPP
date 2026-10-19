@@ -4,7 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// Cau hinh ket noi backend FastAPI - chi sua o mot noi nay.
 ///
 /// Mac dinh: web -> http://localhost:8000 (trinh duyet tren chinh may chay
-/// backend); con lai -> 10.0.2.2 (Android emulator -> may host).
+/// backend); Android -> 10.0.2.2 (emulator -> may host), iOS/desktop -> localhost.
 /// Ghi de khi chay / build, vi du thiet bi that cung mang LAN:
 ///   flutter run --dart-define=API_BASE_URL=http://192.168.1.10:8000
 ///
@@ -12,10 +12,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// [baseUrl] doc moi lan goi nen doi co hieu luc ngay, khong can build lai.
 class ApiConfig {
   /// URL da build san (dart-define hoac mac dinh theo nen tang).
-  static const String defaultBaseUrl = String.fromEnvironment(
-    'API_BASE_URL',
-    defaultValue: kIsWeb ? 'http://localhost:8000' : 'http://10.0.2.2:8000',
-  );
+  static String get defaultBaseUrl {
+    const configured = String.fromEnvironment('API_BASE_URL');
+    if (configured.isNotEmpty) return configured;
+    return !kIsWeb && defaultTargetPlatform == TargetPlatform.android
+        ? 'http://10.0.2.2:8000'
+        : 'http://localhost:8000';
+  }
 
   /// Khoa shared_preferences cua URL ghi de.
   static const String baseUrlKey = 'api_base_url_override';
@@ -82,7 +85,12 @@ class ApiConfig {
 
   static const Duration timeout = Duration(seconds: 10);
 
-  static const int hourlyHours = 24;
+  /// GET /weather/bundle: lan goi dau sau khi server khoi dong ~8 s (nap
+  /// climatology + mo hinh AI).
+  static const Duration bundleTimeout = Duration(seconds: 20);
+
+  /// 48 gio: du thay gio di lam sang mai.
+  static const int hourlyHours = 48;
   static const int dailyDays = 7;
 
   /// Du lieu "hien tai" cu hon nguong nay se hien badge "Dữ liệu cũ".

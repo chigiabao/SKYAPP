@@ -15,6 +15,13 @@ import workmanager_apple
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
+    // Background-only launches may never initialize the implicit UI engine.
+    FlutterLocalNotificationsPlugin.setPluginRegistrantCallback { registry in
+      GeneratedPluginRegistrant.register(with: registry)
+    }
+    WorkmanagerPlugin.setPluginRegistrantCallback { registry in
+      GeneratedPluginRegistrant.register(with: registry)
+    }
     // flutter_local_notifications: hien thong bao ca khi app dang mo.
     UNUserNotificationCenter.current().delegate = self as? UNUserNotificationCenterDelegate
     // workmanager + UIScene: handler BGTaskScheduler phai dang ky truoc khi
@@ -25,13 +32,6 @@ import workmanager_apple
   }
 
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
-    // Engine phu (tac vu nen / action thong bao) cung can plugin.
-    FlutterLocalNotificationsPlugin.setPluginRegistrantCallback { registry in
-      GeneratedPluginRegistrant.register(with: registry)
-    }
-    WorkmanagerPlugin.setPluginRegistrantCallback { registry in
-      GeneratedPluginRegistrant.register(with: registry)
-    }
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
   }
 }

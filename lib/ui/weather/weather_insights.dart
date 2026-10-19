@@ -313,6 +313,131 @@ String? humiditySentence(double? dewPoint) {
   );
 }
 
+/// Mot o tren "dòng thời gian mưa": xac suat 0..1 (gio thuc te: 1 neu co
+/// mua >= 0,1 mm, 0 neu khong), luong mua (mm) va co dong hay khong.
+typedef RainSlot = ({DateTime time, double p, double? mm, bool thunder});
+
+/// [count] gio toi (tu gio hien tai) cho the dong thoi gian mua.
+List<RainSlot> rainTimeline(
+  List<HourlyForecast> hours, {
+  required DateTime nowHcm,
+  int count = 24,
+}) => [
+  for (final h in _upcoming(hours, nowHcm, count))
+    (
+      time: h.time,
+      p: h.isObserved
+          ? ((h.precipitationMm ?? 0) >= 0.1 ? 1.0 : 0.0)
+          : (h.rainProbability ?? 0).clamp(0.0, 1.0).toDouble(),
+      mm: h.precipitationMm ?? h.precipitationMedian,
+      thunder: isThunderCode(h.weatherCode),
+    ),
+];
+
+/// Cau tom tat HANH DONG duoi so nhiet do o dau trang (mot dong), vd.
+/// "Dông 12–13h, mưa đến 20h · mang áo mưa khi về" / "Không mưa đến tối".
+///
+/// Cua so xet: den 24:00 hom nay (truoc 18h) hoac den 06:00 sang mai.
+/// Gio mua = xac suat >= 50 % / gio thuc te >= 0,1 mm / ma dong. Cac gio mua
+/// cach nhau <= 1 gio duoc gop thanh mot dot. null neu khong co gio nao.
+String? heroRainSummary(
+  List<HourlyForecast> hours, {
+  required DateTime nowHcm,
+}) {
+  final start = HcmTime.startOfHour(nowHcm);
+  final evening = nowHcm.hour >= 18;
+  final end = evening
+      ? HcmTime.startOfDay(nowHcm).add(const Duration(hours: 30))
+      : HcmTime.startOfDay(nowHcm).add(const Duration(days: 1));
+  final next = _upcoming(hours, nowHcm, end.difference(start).inHours);
+  if (next.isEmpty) return null;
+  bool rain(HourlyForecast h) =>
+      _isRainHour(h, 0.5) || isThunderCode(h.weatherCode);
+  final i = next.indexWhere(rain);
+  if (i < 0) return evening ? 'Đêm nay không mưa' : 'Không mưa đến tối';
+
+  // Dot mua dau tien (gop khoang ngat 1 gio).
+  var last = i;
+  for (var k = i + 1; k < next.length; k++) {
+    if (rain(next[k])) {
+      last = k;
+    } else if (k + 1 < next.length && rain(next[k + 1])) {
+      continue;
+    } else {
+      break;
+    }
+  }
+  final block = next.sublist(i, last + 1);
+  final thunder = [
+    for (final h in block)
+      if (isThunderCode(h.weatherCode)) h,
+  ];
+  String hr(DateTime t) => '${t.hour}';
+  DateTime endOf(HourlyForecast h) => h.time.add(const Duration(hours: 1));
+  final blockEnd = endOf(block.last);
+  final nowRaining = i == 0;
+  final certain = block.any(
+    (h) => h.isObserved || (h.rainProbability ?? 0) >= 0.7,
+  );
+
+  final String what;
+  if (thunder.isNotEmpty) {
+    final tEnd = endOf(thunder.last);
+    final tPart = nowRaining && thunder.first == block.first
+        ? 'Đang có dông đến ${hr(tEnd)}h'
+        : 'Dông ${hr(thunder.first.time)}–${hr(tEnd)}h';
+    what = blockEnd.isAfter(tEnd) ? '$tPart, mưa đến ${hr(blockEnd)}h' : tPart;
+  } else if (nowRaining) {
+    what = block.first.isObserved
+        ? 'Đang mưa, đến khoảng ${hr(blockEnd)}h'
+        : 'Sắp mưa, đến khoảng ${hr(blockEnd)}h';
+  } else {
+    final range = '${hr(block.first.time)}–${hr(blockEnd)}h';
+    var maxP = 0;
+    for (final h in block) {
+      if (!h.isObserved && h.rainPercent > maxP) maxP = h.rainPercent;
+    }
+    what = certain ? 'Mưa $range' : 'Có thể mưa $range ($maxP%)';
+  }
+
+  // Loi khuyen theo gio di / ve (16–19h) va muc do.
+  bool overlaps(int fromH, int toH) => block.any(
+    (h) =>
+        h.time.hour >= fromH &&
+        h.time.hour < toH &&
+        HcmTime.startOfDay(h.time) == HcmTime.startOfDay(block.first.time),
+  );
+  final String tip;
+  if (overlaps(16, 19)) {
+    tip = 'mang áo mưa khi về';
+  } else if (thunder.isNotEmpty) {
+    tip = 'tránh ra ngoài lúc dông';
+  } else if (overlaps(6, 9)) {
+    tip = 'mang áo mưa khi đi';
+  } else {
+    tip = certain ? 'nhớ mang ô' : 'nên mang ô';
+  }
+  return '$what · $tip';
+}
+
+/// Xac suat mua lon nhat (%) trong [hoursAhead] gio toi (gio du bao), null
+/// neu khong co so lieu.
+int? maxRainPercent(
+  List<HourlyForecast> hours, {
+  required DateTime nowHcm,
+  int hoursAhead = 2,
+}) {
+  int? best;
+  for (final h in _upcoming(hours, nowHcm, hoursAhead)) {
+    final int p = h.isObserved
+        ? ((h.precipitationMm ?? 0) >= 0.1 ? 100 : 0)
+        : (h.rainProbability == null ? -1 : h.rainPercent);
+    if (p < 0) continue;
+    if (best == null || p > best) best = p;
+  }
+  return best;
+}
+
 /// Cau dau tien cua [hourlySummary] (dong "Hôm nay" o dau trang).
 String? firstSentence(String? text) {
   if (text == null) return null;

@@ -2521,7 +2521,7 @@
  },
  {
   "id": "tsn",
-  "name": "Tân Sơn Nhất (điểm huấn luyện AI)",
+  "name": "Tân Sơn Nhất",
   "kind": "training_point",
   "lat": 10.7909,
   "lon": 106.6313,

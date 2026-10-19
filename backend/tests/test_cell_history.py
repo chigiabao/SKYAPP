@@ -32,12 +32,14 @@ def _hist_path():
     return weather_router.HISTORY_DB_PATH
 
 
-def test_no_history_file_falls_back_to_tsn(client):
+def test_reference_without_history_can_use_tsn_but_live_cannot(client):
     assert not _hist_path().exists()
     assert weather_router._clim_series(OTHER) == "tsn"
     r = client.get("/weather/hourly", params={"location_id": WARD, "hours": 6})
-    assert r.status_code == 200
-    assert {i["source"] for i in r.json()} == {"climatology"}
+    assert r.status_code == 503
+    times = [datetime(2024, 6, 10, 14) + timedelta(hours=h) for h in range(6)]
+    reference = weather_router._series(times, None, False, OTHER)
+    assert {i.source for i in reference} == {'climatology'}
 
 
 def test_cell_with_history_has_own_climatology(client):
@@ -50,9 +52,11 @@ def test_cell_with_history_has_own_climatology(client):
     assert abs(daily.loc[(6, 10), "temp_max"] - 40.0) < 1e-6
     assert hourly.loc[(6, 10, 15), "rain"] == 0.0               # rain filled from precipitation
     assert hourly["uv_index"].isna().all()                       # not in history: no uv climatology
-    r = client.get("/weather/hourly", params={"location_id": WARD, "hours": 6}).json()
-    assert {i["source"] for i in r} == {"climatology"}
-    assert all(abs(i["temperature"] - 40.0) < 0.05 for i in r)
+    assert client.get('/weather/hourly', params={'location_id': WARD, 'hours': 6}).status_code == 503
+    times = [datetime(2024, 6, 10, 14) + timedelta(hours=h) for h in range(6)]
+    reference = weather_router._series(times, None, False, OTHER)
+    assert {i.source for i in reference} == {'climatology'}
+    assert all(abs(i.temperature - 40.0) < 0.05 for i in reference)
 
 
 def test_cell_without_history_rows_falls_back_to_tsn(client):

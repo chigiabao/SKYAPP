@@ -122,6 +122,53 @@ Future<void> _scrollAll(WidgetTester tester, Finder scrollable) async {
   }
 }
 
+Future<void> _openConditions(WidgetTester tester) async {
+  final scrollable = find
+      .descendant(
+        of: find.byType(CustomScrollView),
+        matching: find.byType(Scrollable),
+      )
+      .first;
+  tester.state<ScrollableState>(scrollable).position.jumpTo(0);
+  await tester.pump();
+  await tester.scrollUntilVisible(
+    find.text('Điều kiện'),
+    200,
+    scrollable: scrollable,
+  );
+  await tester.pump();
+  await Scrollable.ensureVisible(
+    tester.element(find.text('Điều kiện')),
+    alignment: 0.2,
+  );
+  await tester.pump();
+  final target = find.text('Điều kiện');
+  final position = tester.state<ScrollableState>(scrollable).position;
+  // Lazy sliver offset corrections can move the target after ensureVisible.
+  for (
+    var attempt = 0;
+    attempt < 5 && target.hitTestable().evaluate().isEmpty;
+    attempt++
+  ) {
+    position.jumpTo(
+      (position.pixels + tester.getCenter(target).dy - 180).clamp(
+        position.minScrollExtent,
+        position.maxScrollExtent,
+      ),
+    );
+    await tester.pump();
+  }
+  expect(target.hitTestable(), findsOneWidget);
+  await tester.tap(target.hitTestable());
+  await tester.pump();
+  expect(
+    tester
+        .widget<SegmentedButton<bool>>(find.byType(SegmentedButton<bool>))
+        .selected,
+    {true},
+  );
+}
+
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
@@ -259,6 +306,7 @@ void main() {
         prefs: prefs,
         size: const Size(400, 6000),
       );
+      await _openConditions(tester);
       Offset at(HomeMetric m) =>
           tester.getTopLeft(find.byKey(ValueKey('metric-${m.name}')));
       final pressure = at(HomeMetric.pressure);
@@ -286,6 +334,8 @@ void main() {
         await _pump(tester, const HomeScreen(), prefs: prefs, scale: scale);
         expect(find.text('TP. Hồ Chí Minh'), findsOneWidget);
         await _scrollAll(tester, find.byType(CustomScrollView));
+        await _openConditions(tester);
+        await _scrollAll(tester, find.byType(CustomScrollView));
       });
     }
 
@@ -297,6 +347,8 @@ void main() {
         prefs: prefs,
         scale: 1.6, // 1.6 x 1.3 ~ 2.1
       );
+      await _scrollAll(tester, find.byType(CustomScrollView));
+      await _openConditions(tester);
       await _scrollAll(tester, find.byType(CustomScrollView));
     });
   });
@@ -314,11 +366,13 @@ void main() {
           locations: LocationProvider(),
         );
         for (final t in [
-          'GIAO DIỆN',
-          'ĐƠN VỊ',
-          'CHỈ SỐ TRÊN TRANG CHỦ',
+          'THÔNG BÁO VÀ CẢNH BÁO',
           'ĐỊA ĐIỂM',
+          'HOẠT ĐỘNG',
+          'GIAO DIỆN',
+          'CHỈ SỐ TRÊN TRANG CHỦ',
           'TRỢ NĂNG',
+          'ĐƠN VỊ',
         ]) {
           await tester.scrollUntilVisible(
             find.text(t),
@@ -327,10 +381,10 @@ void main() {
           );
           expect(tester.takeException(), isNull);
         }
-        // Muc cua agent tai khoan van con.
+        // Muc cua agent tai khoan van con (nam tren Giao dien -> cuon len).
         await tester.scrollUntilVisible(
           find.text('Tài khoản và đồng bộ'),
-          200,
+          -200,
           scrollable: find.byType(Scrollable).first,
         );
         await _scrollAll(tester, find.byType(ListView).first);

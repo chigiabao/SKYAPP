@@ -1,5 +1,4 @@
-/// Thanh "pill" kinh o day Home: nut ban do, cham trang (moi dia diem mot
-/// trang), nut danh sach dia diem. Kem bottom sheet kinh dung chung.
+/// Responsive Home navigation and shared location sheets.
 library;
 
 import 'package:flutter/material.dart';
@@ -9,9 +8,9 @@ import '../../../screens/map_screen.dart';
 import '../app_scene.dart';
 import '../design_tokens.dart';
 import 'glass_card.dart';
+import 'home_navigation.dart';
 
-/// Thanh pill noi o day man hinh: ban do (trai), cham trang (giua), danh
-/// sach dia diem (phai). Nut >= 48 dp.
+/// Labeled destinations with an explicit selected state and 48 dp targets.
 class BottomPillBar extends StatelessWidget {
   const BottomPillBar({
     super.key,
@@ -20,77 +19,53 @@ class BottomPillBar extends StatelessWidget {
     required this.onMap,
     required this.onLocations,
     this.onTrip,
+    this.tripRainPercent,
     this.firstIsCurrentLocation = true,
+    this.currentLocationIndex,
+    this.onHome,
+    this.vertical = false,
   });
 
-  /// Mo man "Chuyến đi" (null = an nut).
+  /// Chi so trang vi tri hien tai trong nhan truy cap; null -> theo
+  /// [firstIsCurrentLocation].
+  final int? currentLocationIndex;
+
+  /// Nut nhanh "Tôi sắp ra ngoài" -> Chuyen di (null = an nut).
   final VoidCallback? onTrip;
 
-  /// Trang dau la "Vị trí hiện tại" (cham hinh mui ten).
+  /// Xac suat mua lon nhat 2 gio toi (%), hien nho tren nut; null = an.
+  final int? tripRainPercent;
+
+  /// Trang dau la vi tri hien tai khi khong co currentLocationIndex.
   final bool firstIsCurrentLocation;
   final int pageCount;
   final int currentPage;
   final VoidCallback onMap;
   final VoidCallback onLocations;
+  final VoidCallback? onHome;
+  final bool vertical;
 
   /// Chieu cao thanh (khong tinh vung an toan).
-  static const double height = Touch.min + Space.xs;
+  static const double height = 104;
+
+  static double heightFor(double width, TextScaler scaler) =>
+      HomeNavigation.heightFor(width, scaler);
 
   @override
   Widget build(BuildContext context) {
-    return GlassSurface(
-      radius: Radii.pill,
-      padding: const EdgeInsets.symmetric(horizontal: Space.xs, vertical: 2),
-      child: Row(
-        children: [
-          GlassIconButton(
-            icon: Icons.map_outlined,
-            tooltip: 'Bản đồ',
-            onPressed: onMap,
-          ),
-          if (onTrip != null)
-            GlassIconButton(
-              icon: Icons.directions_car_outlined,
-              tooltip: 'Chuyến đi',
-              onPressed: onTrip!,
-            ),
-          Expanded(
-            child: Semantics(
-              label: 'Địa điểm ${currentPage + 1} trên $pageCount',
-              excludeSemantics: true,
-              // Nhieu trang: thu nho thay vi tran.
-              child: FittedBox(
-                fit: BoxFit.scaleDown,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    for (int i = 0; i < pageCount; i++)
-                      Padding(
-                        padding: const EdgeInsets.all(Space.xs),
-                        child: Icon(
-                          i == 0 && firstIsCurrentLocation
-                              ? Icons.near_me_outlined
-                              : i == currentPage
-                              ? Icons.circle
-                              : Icons.circle_outlined,
-                          size: i == 0 && firstIsCurrentLocation ? 14 : 8,
-                          color: i == currentPage
-                              ? Palette.white
-                              : Palette.white.withValues(alpha: 0.45),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          GlassIconButton(
-            icon: Icons.format_list_bulleted_rounded,
-            tooltip: 'Danh sách địa điểm',
-            onPressed: onLocations,
-          ),
-        ],
-      ),
+    final isCurrent = currentLocationIndex != null
+        ? currentPage == currentLocationIndex
+        : firstIsCurrentLocation && currentPage == 0;
+    return HomeNavigation(
+      onHome: onHome,
+      onMap: onMap,
+      onLocations: onLocations,
+      onTrip: onTrip,
+      rainPercent: tripRainPercent,
+      vertical: vertical,
+      locationPosition:
+          '${isCurrent ? 'Vị trí hiện tại. ' : ''}'
+          'Địa điểm ${currentPage + 1} trên $pageCount',
     );
   }
 }

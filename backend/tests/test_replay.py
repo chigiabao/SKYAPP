@@ -1,4 +1,4 @@
-"""`at` replay mode, `source` labels, NWP-backed hourly/daily, AI target_time and /weather/ai-verify (synthetic DB)."""
+"""Historical replay, own-model sources, no external fallback, and short-range AI verification."""
 import sqlite3
 from datetime import datetime, timedelta
 
@@ -6,7 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import main
-from conftest import LAST_TS, freeze_now, point_app_at, write_db
+from conftest import FROZEN_NOW, LAST_TS, freeze_now, point_app_at, write_db
 from database import LOCAL_TZ, WEATHER_COLUMNS, migrate
 from routers import weather as weather_router
 
@@ -92,12 +92,9 @@ def test_current_live_source(client):
 
 # --- /hourly + /daily: sources ------------------------------------------------------------------------
 
-def test_hourly_live_without_nwp_is_climatology(client):
-    items = client.get("/weather/hourly", params={"hours": 24}).json()
-    assert {x["source"] for x in items} == {"climatology"}
-    days = client.get("/weather/daily", params={"days": 7}).json()
-    assert {x["source"] for x in days} == {"climatology"}
-    assert all(x["wind_gusts_max"] is not None for x in days)
+def test_hourly_live_without_own_input_is_unavailable(client):
+    assert client.get('/weather/hourly', params={'hours': 24}).status_code == 503
+    assert client.get('/weather/daily', params={'days': 7}).status_code == 503
 
 
 def test_hourly_replay_observed_then_climatology(client, syn_db):
@@ -160,18 +157,13 @@ def live_nwp(client, syn_db, monkeypatch):
     return syn_db
 
 
-def test_hourly_live_observed_then_forecast(client, live_nwp):
+def test_hourly_live_does_not_serve_external_forecast(client, live_nwp):
     _add_forecast(live_nwp)
-    items = client.get("/weather/hourly", params={"hours": 24}).json()
-    assert _ts(items[0]["timestamp"]) == LAST_TS.replace(tzinfo=LOCAL_TZ)
-    assert items[0]["source"] == "observed"
-    assert {x["source"] for x in items[1:]} == {"forecast"}
-    for x in items[1:]:
-        assert x["rain_probability"] == round(x["precipitation_probability"] / 100, 2)
-        assert x["wind_gusts"] is not None and x["wind_direction"] == 90.0
+    response = client.get('/weather/hourly', params={'hours': 24})
+    assert response.status_code == 503  # old input cannot be served by a post-2024 model
 
 
-def test_hourly_live_beyond_forecast_is_climatology(client, live_nwp, monkeypatch):
+def test_hourly_live_beyond_forecast_never_falls_back_to_climatology(client, live_nwp, monkeypatch):
     # climatology only covers June 8-24, so run this one a day earlier with a 3 h issue
     _add_forecast(live_nwp)
     with sqlite3.connect(live_nwp) as con:
@@ -182,26 +174,34 @@ def test_hourly_live_beyond_forecast_is_climatology(client, live_nwp, monkeypatc
     con.close()
     weather_router.invalidate_climatology()
     freeze_now(monkeypatch, LIVE_NOW - timedelta(days=1))
-    items = client.get("/weather/hourly", params={"hours": 7}).json()
-    assert [x["source"] for x in items] == ["observed"] + ["forecast"] * 4 + ["climatology"] * 2
+    assert client.get('/weather/hourly', params={'hours': 7}).status_code == 503
 
 
-def test_daily_live_forecast_aggregation(client, live_nwp):
+def test_daily_live_ai_aggregation(client, live_nwp, monkeypatch):
     d25 = datetime(2023, 6, 25)
     codes = {d25 + timedelta(hours=5): 51,                                     # isolated drizzle: ignored
              d25 + timedelta(days=1, hours=5): 53, d25 + timedelta(days=1, hours=6): 51,   # 2 h drizzle
              d25 + timedelta(days=2, hours=3): 95, d25 + timedelta(days=2, hours=9): 61}
     _add_forecast(live_nwp, code_at=codes)
     weather_router.invalidate_climatology()
+    from models import WeatherData
+    forecast = {}
+    for k in range(72):
+        t = d25 + timedelta(hours=k)
+        forecast[t] = WeatherData(timestamp=t.replace(tzinfo=LOCAL_TZ), temperature=25.0 + k % 24 / 10,
+                                 rain_probability=(40 + k % 24) / 100, precipitation=0.0,
+                                 weather_code=codes.get(t, 3), source='ai')
+    monkeypatch.setattr(weather_router, '_own_forecast_rows', lambda sid, now: forecast)
     days = client.get("/weather/daily", params={"days": 4}).json()
     assert [d["date"] for d in days] == ["2023-06-24", "2023-06-25", "2023-06-26", "2023-06-27"]
     assert days[0]["source"] == "observed"
-    assert [d["source"] for d in days[1:]] == ["forecast"] * 3
+    assert [d['source'] for d in days[1:]] == ['ai'] * 3
     assert [d["weather_code"] for d in days[1:]] == [3, 53, 95]
     for d in days[1:]:
-        assert d["rain_day_probability"] == 0.63          # max over the day of (40 + k % 24) / 100
-        assert d["precipitation_total"] == d["precipitation_median"] == 0.0
-        assert d["wind_gusts_max"] == 24.0
+        assert d['rain_day_probability'] is None  # no calibrated daily-event target
+        assert d['precipitation_total'] == 0.0
+        assert d['precipitation_median'] is None
+        assert d['wind_gusts_max'] is None
         assert d["temperature_min"] <= d["temperature_avg"] <= d["temperature_max"]
     assert days[1]["temperature_min"] != days[1]["temperature_max"]
 
@@ -305,15 +305,19 @@ def test_current_air_quality_nearest_and_bounded_by_at(client, syn_db):
     assert body["us_aqi"] is None                                      # nothing within +-1 h of 15:00
 
 
-def test_hourly_and_daily_uv_aqi(client, live_nwp):
+def test_own_forecast_never_borrows_external_uv_aqi(client, live_nwp, monkeypatch):
     _add_forecast(live_nwp)
     _add_aq(live_nwp, [("2023-06-25 01:00:00", 80, 20, 30), ("2023-06-25 05:00:00", 120, 40, 50)])
     weather_router.invalidate_climatology()
+    from models import WeatherData
+    forecast = {LAST_TS + timedelta(hours=h): WeatherData(
+        timestamp=(LAST_TS + timedelta(hours=h)).replace(tzinfo=LOCAL_TZ), temperature=28.0,
+        rain_probability=0.2, precipitation=0.0, source='ai') for h in range(1, 169)}
+    monkeypatch.setattr(weather_router, '_own_forecast_rows', lambda sid, now: forecast)
     items = client.get("/weather/hourly", params={"hours": 6}).json()
-    assert [x["us_aqi"] for x in items] == [None, None, 80, None, None, None]
-    assert all(x["uv_index"] == 1.0 for x in items[1:])               # from the NWP issue
+    assert all(x['us_aqi'] is None and x['uv_index'] is None for x in items)
     days = client.get("/weather/daily", params={"days": 2}).json()
-    assert days[1]["us_aqi_max"] == 120 and days[1]["uv_index_max"] == 1.0
+    assert days[1]['us_aqi_max'] is None and days[1]['uv_index_max'] is None
     assert days[0]["us_aqi_max"] is None
 
 
@@ -324,16 +328,16 @@ def test_climatology_uv_needs_history(client, syn_db):
     con.commit()
     con.close()
     weather_router.invalidate_climatology()
-    items = client.get("/weather/hourly", params={"hours": 3}).json()
+    items = client.get('/weather/hourly', params={'hours': 3, 'at': FROZEN_NOW.isoformat()}).json()
     assert {x["source"] for x in items} == {"climatology"}
     assert all(x["uv_index"] is None and x["us_aqi"] is None for x in items)
-    assert client.get("/weather/daily", params={"days": 1}).json()[0]["uv_index_max"] is None
+    assert client.get('/weather/daily', params={'days': 1, 'at': FROZEN_NOW.isoformat()}).json()[0]['uv_index_max'] is None
 
     con = sqlite3.connect(syn_db)
     con.execute("UPDATE hourly_weather SET uv_index = 7")                                   # all 3 years
     con.commit()
     con.close()
     weather_router.invalidate_climatology()
-    items = client.get("/weather/hourly", params={"hours": 3}).json()
+    items = client.get('/weather/hourly', params={'hours': 3, 'at': FROZEN_NOW.isoformat()}).json()
     assert all(x["uv_index"] == 7.0 for x in items)
-    assert client.get("/weather/daily", params={"days": 1}).json()[0]["uv_index_max"] == 7.0
+    assert client.get('/weather/daily', params={'days': 1, 'at': FROZEN_NOW.isoformat()}).json()[0]['uv_index_max'] == 7.0

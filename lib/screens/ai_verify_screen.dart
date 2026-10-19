@@ -1,6 +1,10 @@
+import 'dart:math' as math;
+
+import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../models/place.dart';
 import '../models/units.dart';
 import '../models/weather.dart';
 import '../providers/preferences_provider.dart';
@@ -9,13 +13,19 @@ import '../services/api_service.dart';
 import '../ui/weather/widgets/glass_page.dart';
 import '../utils/constants.dart';
 import '../widgets/ai_forecast_card.dart';
+import 'forecast/forecast_charts.dart';
 import 'forecast/forecast_format.dart';
 
 /// Kiem chung du bao AI: moi moc (1h/3h/6h) so du bao voi "thuc te"
 /// (du lieu phan tich cua mo hinh, khong phai tram do). Dung thoi diem
 /// "hien tai" cua app (che do xem lai -> thoi diem xem lai).
 class AIVerifyScreen extends StatefulWidget {
-  const AIVerifyScreen({super.key});
+  const AIVerifyScreen({super.key, this.intervalLoader});
+
+  /// Tai lai ban du bao AI phat hanh luc [issuedAt] de lay khoang 90%
+  /// (ai-verify khong gui khoang). null = mac dinh: GET /weather/ai-forecast
+  /// ?at= cho dia diem mac dinh; dia diem khac -> khong ve dai (khong bia).
+  final Future<AIForecast?> Function(DateTime issuedAt)? intervalLoader;
 
   @override
   State<AIVerifyScreen> createState() => _AIVerifyScreenState();
@@ -23,9 +33,23 @@ class AIVerifyScreen extends StatefulWidget {
 
 class _AIVerifyScreenState extends State<AIVerifyScreen> {
   Future<AIVerification>? _future;
+  Future<AIForecast?>? _intervals;
+  DateTime? _intervalsFor;
+
+  Future<AIForecast?> _intervalsOf(WeatherProvider p, DateTime issuedAt) {
+    if (_intervals != null && _intervalsFor == issuedAt) return _intervals!;
+    _intervalsFor = issuedAt;
+    final loader = widget.intervalLoader;
+    return _intervals = loader != null
+        ? loader(issuedAt)
+        : p.locationId == Place.defaultId
+        ? ApiService().fetchAIForecast(at: issuedAt).catchError((_) => null)
+        : Future.value(null);
+  }
 
   /// Thoi diem xem lai ung voi [_future] (null = truc tiep).
   DateTime? _loadedFor;
+  String? _loadedLocation;
 
   @override
   void didChangeDependencies() {
@@ -35,6 +59,9 @@ class _AIVerifyScreenState extends State<AIVerifyScreen> {
 
   void _load(WeatherProvider p) {
     _loadedFor = p.isReplay ? p.replayAt : null;
+    _loadedLocation = p.locationId;
+    _intervals = null;
+    _intervalsFor = null;
     _future = p.fetchAIVerification();
   }
 
@@ -49,7 +76,9 @@ class _AIVerifyScreenState extends State<AIVerifyScreen> {
     final provider = context.watch<WeatherProvider>();
     // Bat/tat xem lai khi man hinh dang mo -> tai lai cho thoi diem moi
     final key = provider.isReplay ? provider.replayAt : null;
-    if (key != _loadedFor) _load(provider);
+    if (key != _loadedFor || provider.locationId != _loadedLocation) {
+      _load(provider);
+    }
     final theme = Theme.of(context);
 
     return Scaffold(
@@ -77,7 +106,17 @@ class _AIVerifyScreenState extends State<AIVerifyScreen> {
           if (snap.hasError || !snap.hasData) {
             return _ErrorView(error: snap.error, onRetry: _reload);
           }
-          return _VerifyBody(data: snap.data!, provider: provider);
+          final data = snap.data!;
+          return FutureBuilder<AIForecast?>(
+            future: _intervalsOf(provider, data.issuedAt),
+            builder: (context, iv) => _VerifyBody(
+              data: data,
+              provider: provider,
+              issued: iv.connectionState == ConnectionState.done
+                  ? iv.data
+                  : null,
+            ),
+          );
         },
       ),
     );
@@ -130,43 +169,36 @@ class _ErrorView extends StatelessWidget {
 }
 
 class _VerifyBody extends StatelessWidget {
-  const _VerifyBody({required this.data, required this.provider});
+  const _VerifyBody({required this.data, required this.provider, this.issued});
 
   final AIVerification data;
   final WeatherProvider provider;
+
+  /// Ban du bao goc (cung luc phat hanh) - chi de lay khoang 90%.
+  final AIForecast? issued;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final now = provider.nowHcm;
-    final errors = [
-      for (final h in data.horizons)
-        if (h.temperatureError != null) h.temperatureError!,
-    ];
     final noneAvailable = data.horizons.every((h) => !h.hasActual);
+    final original = issued;
+    final match =
+        original != null &&
+            original.issuedAt == data.issuedAt &&
+            original.modelVersion == data.modelVersion &&
+            original.isEnabled('temperature_interval')
+        ? original
+        : null;
 
     return ListView(
       padding: const EdgeInsets.all(AppSizes.paddingM),
       children: [
-        Text(
-          'Bản dự báo phát hành ${ForecastFormat.moment(data.issuedAt)}'
-          '${data.modelVersion.isEmpty ? '' : ' · ${data.modelVersion}'}',
-          style: theme.textTheme.bodyMedium,
-        ),
-        if (errors.isNotEmpty) ...[
-          const SizedBox(height: AppSizes.paddingS),
-          Text(
-            'Sai số nhiệt độ trung bình: '
-            '${_degrees(errors.reduce((a, b) => a + b) / errors.length, provider)}'
-            ' (${errors.length}/${data.horizons.length} mốc)',
-            style: AppTextStyles.bodyLarge.copyWith(
-              color: theme.textTheme.bodyLarge?.color,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
+        _VerdictCard(data: data, provider: provider),
+        if (data.horizons.any((h) => h.predictedTemperature != null)) ...[
+          const SizedBox(height: AppSizes.paddingM),
+          _VerifyChart(data: data, issued: match, provider: provider),
         ],
-        const SizedBox(height: AppSizes.paddingM),
-        _EvaluationCard(evaluation: data.evaluation, provider: provider),
         const SizedBox(height: AppSizes.paddingM),
         if (data.horizons.isEmpty)
           const Card(
@@ -181,7 +213,315 @@ class _VerifyBody extends StatelessWidget {
           const SizedBox(height: AppSizes.paddingM),
         ],
         _NotesCard(showReplayTip: noneAvailable && !provider.isReplay),
+        const SizedBox(height: AppSizes.paddingM),
+        Card(
+          margin: EdgeInsets.zero,
+          clipBehavior: Clip.antiAlias,
+          child: Theme(
+            data: theme.copyWith(dividerColor: Colors.transparent),
+            child: ExpansionTile(
+              title: Text(
+                'Chi tiết kỹ thuật',
+                style: AppTextStyles.bodyLarge.copyWith(
+                  color: theme.textTheme.bodyLarge?.color,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              subtitle: Text(
+                'Sai số MAE, F1 mưa, độ phủ khoảng, phiên bản mô hình',
+                style: theme.textTheme.bodySmall,
+              ),
+              childrenPadding: const EdgeInsets.fromLTRB(
+                AppSizes.paddingM,
+                0,
+                AppSizes.paddingM,
+                AppSizes.paddingM,
+              ),
+              expandedCrossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Bản dự báo phát hành ${ForecastFormat.moment(data.issuedAt)}'
+                  '${data.modelVersion.isEmpty ? '' : ' · ${data.modelVersion}'}',
+                  style: theme.textTheme.bodyMedium,
+                ),
+                const SizedBox(height: AppSizes.paddingS),
+                _EvaluationCard(
+                  evaluation: data.evaluation,
+                  provider: provider,
+                ),
+              ],
+            ),
+          ),
+        ),
       ],
+    );
+  }
+}
+
+/// Nhiet do 1 chu so thap phan theo don vi dang chon: "26,5°".
+String _temp1(double celsius, WeatherProvider provider) {
+  final v = provider.isCelsius ? celsius : celsius * 9 / 5 + 32;
+  return '${v.toStringAsFixed(1).replaceAll('.', ',')}°';
+}
+
+/// Cau ket luan dau man (moc xa nhat da co thuc te) + dong phu.
+class _VerdictCard extends StatelessWidget {
+  const _VerdictCard({required this.data, required this.provider});
+
+  final AIVerification data;
+  final WeatherProvider provider;
+
+  /// Moc du bao khong phai so gio da troi qua ke tu luc phat hanh.
+  static String? headline(AIVerification data, WeatherProvider provider) {
+    final done = [
+      for (final h in data.horizons)
+        if (h.temperatureError != null &&
+            h.predictedTemperature != null &&
+            h.actualTemperature != null)
+          h,
+    ];
+    if (done.isEmpty) return null;
+    final h = done.last;
+    return 'Mốc ${h.horizon}: AI dự báo '
+        '${_temp1(h.predictedTemperature!, provider)}, thực tế '
+        '${_temp1(h.actualTemperature!, provider)} – lệch '
+        '${_degrees(h.temperatureError!, provider)}.';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final head = headline(data, provider);
+    final errors = [
+      for (final h in data.horizons)
+        if (h.temperatureError != null) h.temperatureError!,
+    ];
+    final sub = [
+      'Bản dự báo lúc ${ForecastFormat.moment(data.issuedAt)}.',
+      'Thực tế: phân tích mô hình Open-Meteo (không phải trạm đo).',
+      if (errors.length > 1)
+        'Lệch trung bình '
+            '${_degrees(errors.reduce((a, b) => a + b) / errors.length, provider)}'
+            ' (${errors.length}/${data.horizons.length} mốc).',
+    ].join(' ');
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.all(AppSizes.paddingM),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Semantics(
+              header: true,
+              child: Text(
+                head ?? 'Chưa có số liệu thực tế để so với dự báo AI.',
+                style: AppTextStyles.heading3.copyWith(
+                  color: theme.textTheme.titleLarge?.color,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
+              ),
+            ),
+            const SizedBox(height: AppSizes.paddingXS),
+            Text(sub, style: theme.textTheme.bodySmall),
+            const SizedBox(height: AppSizes.paddingS),
+            Text(
+              AIEvaluationLine.text(data.evaluation, provider),
+              style: theme.textTheme.bodyMedium,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Du bao (net dut) so voi thuc te (net lien) tai cac moc; dai mo = khoang
+/// cua ban du bao goc (neu tai duoc; khong co thi khong ve).
+class _VerifyChart extends StatelessWidget {
+  const _VerifyChart({
+    required this.data,
+    required this.issued,
+    required this.provider,
+  });
+
+  final AIVerification data;
+  final AIForecast? issued;
+  final WeatherProvider provider;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = ChartPalette(context);
+    final c = provider.isCelsius;
+    double u(double v) => c ? v : v * 9 / 5 + 32;
+    final items = data.horizons;
+
+    final pred = <FlSpot>[];
+    final act = <FlSpot>[];
+    final lo = <FlSpot>[];
+    final hi = <FlSpot>[];
+    final all = <double>[];
+    for (var i = 0; i < items.length; i++) {
+      final h = items[i];
+      final x = i.toDouble();
+      if (h.predictedTemperature case final v?) {
+        pred.add(FlSpot(x, u(v)));
+        all.add(u(v));
+      } else {
+        pred.add(FlSpot.nullSpot);
+      }
+      if (h.actualTemperature case final v?) {
+        act.add(FlSpot(x, u(v)));
+        all.add(u(v));
+      } else {
+        act.add(FlSpot.nullSpot);
+      }
+      final b = issued?.predictions
+          .where((pr) => pr.timeLabel == h.horizon && pr.hasInterval)
+          .firstOrNull;
+      if (b != null) {
+        lo.add(FlSpot(x, u(b.intervalLow!)));
+        hi.add(FlSpot(x, u(b.intervalHigh!)));
+        all
+          ..add(u(b.intervalLow!))
+          ..add(u(b.intervalHigh!));
+      } else {
+        lo.add(FlSpot.nullSpot);
+        hi.add(FlSpot.nullSpot);
+      }
+    }
+    final minY = (all.reduce(math.min) - 1).floorToDouble();
+    final maxY = (all.reduce(math.max) + 1).ceilToDouble();
+    final hasBand = lo.where((spot) => !spot.isNull()).length >= 2;
+    final level = issued?.predictions
+        .where((x) => x.hasInterval)
+        .firstOrNull
+        ?.effectiveIntervalLevel;
+    final bandLabel = 'Dải ${intervalLevelLabel(level)}';
+    final bandColor = (GlassThemeMarker.inkOf(context)?.accent ?? p.low)
+        .withValues(alpha: 0.28);
+    final actualColor = p.isDark || GlassThemeMarker.isGlass(context)
+        ? Colors.white
+        : const Color(0xFF0F172A);
+
+    LineChartBarData edge(List<FlSpot> s) => LineChartBarData(
+      spots: s,
+      color: Colors.transparent,
+      barWidth: 0,
+      dotData: const FlDotData(show: false),
+    );
+    FlDotData dots(Color color) => FlDotData(
+      getDotPainter: (s, _, _, _) =>
+          FlDotCirclePainter(radius: 4, color: color, strokeWidth: 0),
+    );
+
+    return ChartFrame(
+      height: 200,
+      semanticsLabel:
+          'Biểu đồ dự báo AI so với thực tế tại ${items.length} mốc'
+          '${hasBand ? ', có $bandLabel' : ''}',
+      footer: ChartLegend(
+        items: [
+          (p.high, 'Dự báo AI (nét đứt)', true),
+          (actualColor, 'Thực tế', false),
+          if (hasBand) (bandColor, bandLabel, false),
+        ],
+      ),
+      child: LineChart(
+        duration: p.duration,
+        curve: kChartCurve,
+        LineChartData(
+          minX: -0.3,
+          maxX: items.length - 0.7,
+          minY: minY,
+          maxY: maxY,
+          gridData: FlGridData(
+            drawVerticalLine: false,
+            horizontalInterval: 1,
+            getDrawingHorizontalLine: (_) =>
+                FlLine(color: p.grid, strokeWidth: 1),
+          ),
+          borderData: FlBorderData(show: false),
+          titlesData: FlTitlesData(
+            topTitles: const AxisTitles(),
+            rightTitles: const AxisTitles(),
+            leftTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                reservedSize: 36,
+                interval: 1,
+                getTitlesWidget: (v, meta) =>
+                    v == meta.min || v == meta.max || v != v.roundToDouble()
+                    ? const SizedBox.shrink()
+                    : SideTitleWidget(
+                        axisSide: meta.axisSide,
+                        child: Text('${v.round()}°', style: p.axisStyle),
+                      ),
+              ),
+            ),
+            bottomTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                reservedSize: 46,
+                interval: 1,
+                getTitlesWidget: (v, meta) {
+                  final i = v.round();
+                  if (v != i || i < 0 || i >= items.length) {
+                    return const SizedBox.shrink();
+                  }
+                  final t = items[i].targetTime;
+                  return SideTitleWidget(
+                    axisSide: meta.axisSide,
+                    child: Text(
+                      '${t == null ? '' : ForecastFormat.hourMinute(t)}\n'
+                      'sau ${items[i].horizon}',
+                      textAlign: TextAlign.center,
+                      style: p.axisStyle,
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+          betweenBarsData: hasBand
+              ? [BetweenBarsData(fromIndex: 0, toIndex: 1, color: bandColor)]
+              : const [],
+          lineBarsData: [
+            edge(hasBand ? lo : const []),
+            edge(hasBand ? hi : const []),
+            LineChartBarData(
+              spots: pred,
+              color: p.high,
+              barWidth: 2.5,
+              dashArray: const [6, 4],
+              dotData: dots(p.high),
+            ),
+            LineChartBarData(
+              spots: act,
+              color: actualColor,
+              barWidth: 2.5,
+              dotData: dots(actualColor),
+            ),
+          ],
+          lineTouchData: LineTouchData(
+            touchTooltipData: LineTouchTooltipData(
+              getTooltipColor: (_) => p.tooltipBg,
+              tooltipRoundedRadius: 8,
+              fitInsideHorizontally: true,
+              fitInsideVertically: true,
+              getTooltipItems: (spots) => [
+                for (final s in spots)
+                  s.barIndex < 2
+                      ? null
+                      : LineTooltipItem(
+                          '${s.barIndex == 2 ? 'Dự báo' : 'Thực tế'} '
+                          '${s.y.toStringAsFixed(1).replaceAll('.', ',')}°',
+                          p.tooltipStyle,
+                        ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -275,65 +615,57 @@ class _EvaluationCard extends StatelessWidget {
             (e.temperatureMae.containsKey(h) || e.rainF1.containsKey(h)))
           h,
     ];
-    return Card(
-      margin: EdgeInsets.zero,
-      child: Padding(
-        padding: const EdgeInsets.all(AppSizes.paddingM),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Đánh giá tại ô lưới này',
-              style: AppTextStyles.heading3.copyWith(
-                color: theme.textTheme.titleLarge?.color,
-              ),
-            ),
-            const SizedBox(height: AppSizes.paddingS),
-            Text(AIEvaluationLine.text(e, provider), style: strong),
-            if (horizons.isNotEmpty) ...[
-              const SizedBox(height: AppSizes.paddingS),
-              Table(
-                defaultVerticalAlignment: TableCellVerticalAlignment.middle,
-                children: [
-                  _row(context, const [
-                    'Mốc',
-                    'Sai số nhiệt độ',
-                    'F1 mưa',
-                  ], header: true),
-                  for (final h in horizons)
-                    _row(context, [
-                      h,
-                      e!.temperatureMae[h] == null
-                          ? '--'
-                          : '±${formatTempDelta(e.temperatureMae[h]!, provider)}',
-                      e.rainF1[h] == null
-                          ? '--'
-                          : e.rainF1[h]!
-                                .toStringAsFixed(2)
-                                .replaceAll('.', ','),
-                    ]),
-                ],
-              ),
-            ],
-            if (e != null) ..._extraLines(context, e),
-            const SizedBox(height: AppSizes.paddingS),
-            Text(
-              e == null
-                  ? 'Máy chủ chưa gửi kết quả đánh giá cho ô dữ liệu của địa '
-                        'điểm này.'
-                  : [
-                      'Một mô hình chung cho mọi ô dữ liệu, đánh giá riêng '
-                          'trên dữ liệu kiểm tra của ô này'
-                          '${e.cellId == null ? '' : ' (${e.cellId})'}.',
-                      if (e.testPeriodText != null)
-                        'Giai đoạn kiểm tra: ${e.testPeriodText}.',
-                      'F1 mưa: 0 = kém, 1 = đúng hoàn toàn.',
-                    ].join(' '),
-              style: theme.textTheme.bodySmall,
-            ),
-          ],
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Đánh giá tại ô lưới này',
+          style: AppTextStyles.heading3.copyWith(
+            color: theme.textTheme.titleLarge?.color,
+          ),
         ),
-      ),
+        const SizedBox(height: AppSizes.paddingS),
+        Text(AIEvaluationLine.text(e, provider), style: strong),
+        if (horizons.isNotEmpty) ...[
+          const SizedBox(height: AppSizes.paddingS),
+          Table(
+            defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+            children: [
+              _row(context, const [
+                'Mốc',
+                'Sai số nhiệt độ',
+                'F1 mưa',
+              ], header: true),
+              for (final h in horizons)
+                _row(context, [
+                  h,
+                  e!.temperatureMae[h] == null
+                      ? '--'
+                      : '±${formatTempDelta(e.temperatureMae[h]!, provider)}',
+                  e.rainF1[h] == null
+                      ? '--'
+                      : e.rainF1[h]!.toStringAsFixed(2).replaceAll('.', ','),
+                ]),
+            ],
+          ),
+        ],
+        if (e != null) ..._extraLines(context, e),
+        const SizedBox(height: AppSizes.paddingS),
+        Text(
+          e == null
+              ? 'Máy chủ chưa gửi kết quả đánh giá cho ô dữ liệu của địa '
+                    'điểm này.'
+              : [
+                  'Một mô hình chung cho mọi ô dữ liệu, đánh giá riêng '
+                      'trên dữ liệu kiểm tra của ô này'
+                      '${e.cellId == null ? '' : ' (${e.cellId})'}.',
+                  if (e.testPeriodText != null)
+                    'Giai đoạn kiểm tra: ${e.testPeriodText}.',
+                  'F1 mưa: 0 = kém, 1 = đúng hoàn toàn.',
+                ].join(' '),
+          style: theme.textTheme.bodySmall,
+        ),
+      ],
     );
   }
 
@@ -505,7 +837,7 @@ class _HorizonCard extends StatelessWidget {
       children: [
         for (var i = 0; i < cells.length; i++)
           Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4),
+            padding: const EdgeInsets.only(top: 4, bottom: 4, right: 8),
             child: Text(
               cells[i],
               style: header || i == 0

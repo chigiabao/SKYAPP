@@ -5,6 +5,7 @@ library;
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart' show mapEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:intl/intl.dart';
@@ -77,6 +78,8 @@ String? mapFrameLabel(DataSource? source, DateTime? valid) {
     DataSource.observed => 'Thực tế (dữ liệu phân tích) lúc ${_hm(valid)}',
     DataSource.forecast =>
       'Dự báo lúc ${_hm(valid)} ${_weekdays[valid.weekday - 1]}',
+    DataSource.ai =>
+      'Dự báo AI lúc ${_hm(valid)} ${_weekdays[valid.weekday - 1]}',
     _ => 'Dữ liệu lúc ${_hm(valid)} ${_weekdays[valid.weekday - 1]}',
   };
 }
@@ -84,7 +87,7 @@ String? mapFrameLabel(DataSource? source, DateTime? valid) {
 /// Nguon phan "3 gio toi" theo `outlook_source`.
 String? outlookSourceLabel(String? s) => switch (s) {
   'forecast' => 'Dự báo Open-Meteo',
-  'ai' => 'Dự báo AI (xem lại)',
+  'ai' => 'Dự báo AI Sky Weather',
   _ => null,
 };
 
@@ -165,6 +168,31 @@ abstract final class MapScale {
     return tempColors[i];
   }
 
+  /// Khoang nhiet do (min, max) cua khung dang xem; null = khong co du lieu.
+  static (double, double)? tempRange(Iterable<MapCell> cells) {
+    double? lo, hi;
+    for (final c in cells) {
+      final t = c.temperature;
+      if (t == null) continue;
+      lo = lo == null || t < lo ? t : lo;
+      hi = hi == null || t > hi ? t : hi;
+    }
+    return lo == null ? null : (lo, hi!);
+  }
+
+  /// Mau tuong doi: [lo] -> mau mat nhat, [hi] -> nong nhat, noi suy muot
+  /// giua 5 moc. Khoang < 1 do thi mo rong quanh trung binh (tranh phong dai
+  /// chenh lech nho thanh do / xanh).
+  static Color forTempIn(double? c, double lo, double hi) {
+    if (c == null) return noData;
+    final mid = (lo + hi) / 2;
+    final half = math.max((hi - lo) / 2, 0.5);
+    final t = ((c - (mid - half)) / (2 * half)).clamp(0.0, 1.0);
+    final x = t * (tempColors.length - 1);
+    final i = x.floor().clamp(0, tempColors.length - 2);
+    return Color.lerp(tempColors[i], tempColors[i + 1], x - i)!;
+  }
+
   static Color forRain(int? percent) {
     if (percent == null) return noData;
     var i = 0;
@@ -183,8 +211,15 @@ abstract final class MapScale {
     return windColors[i];
   }
 
-  static Color colorFor(MapLayerKind layer, MapCell c) => switch (layer) {
-    MapLayerKind.temperature => forTemp(c.temperature),
+  static Color colorFor(
+    MapLayerKind layer,
+    MapCell c, [
+    (double, double)? range,
+  ]) => switch (layer) {
+    MapLayerKind.temperature =>
+      range == null
+          ? forTemp(c.temperature)
+          : forTempIn(c.temperature, range.$1, range.$2),
     MapLayerKind.rain => forRain(c.rainPercent),
     MapLayerKind.wind => forWind(c.windSpeed),
   };
@@ -194,7 +229,19 @@ abstract final class MapScale {
     MapLayerKind layer,
     String Function(double c) temp, [
     UnitPrefs units = const UnitPrefs(),
+    (double, double)? range,
   ]) {
+    if (layer == MapLayerKind.temperature && range != null) {
+      // Thang tuong doi: nhan la nhiet do that tai tung moc.
+      final (lo, hi) = range;
+      final mid = (lo + hi) / 2;
+      final half = math.max((hi - lo) / 2, 0.5);
+      final n = tempColors.length - 1;
+      return [
+        for (var i = 0; i <= n; i++)
+          LegendEntry(tempColors[i], '${temp(mid - half + 2 * half * i / n)}°'),
+      ];
+    }
     if (layer == MapLayerKind.temperature) {
       final s = tempSteps;
       return [
@@ -257,6 +304,9 @@ List<CellMarkerData> buildCellMarkers(
   String Function(MapCell c)? names,
   UnitPrefs units = const UnitPrefs(),
 }) {
+  final range = layer == MapLayerKind.temperature
+      ? MapScale.tempRange(cells)
+      : null;
   return [
     for (final c in cells)
       CellMarkerData(
@@ -269,7 +319,7 @@ List<CellMarkerData> buildCellMarkers(
           MapLayerKind.wind =>
             c.windSpeed == null ? '--' : '${c.windSpeed!.round()}',
         },
-        color: MapScale.colorFor(layer, c),
+        color: MapScale.colorFor(layer, c, range),
         arrowAngle: layer == MapLayerKind.wind && c.windDirection != null
             ? windArrowAngle(c.windDirection!)
             : null,
@@ -300,7 +350,7 @@ const double kCellDLat = 0.0703;
 const double kCellDLon = 0.0795;
 
 /// Do mo nen o (van thay ban do nen).
-const double kCellFillAlpha = 0.68;
+const double kCellFillAlpha = 0.58;
 
 /// Nguong hien nhan theo chieu rong o tren man hinh (px).
 const double kLabelMinPx = 36;
@@ -396,8 +446,18 @@ class MapScreen extends StatefulWidget {
   State<MapScreen> createState() => _MapScreenState();
 }
 
-class _MapScreenState extends State<MapScreen> {
-  MapLayerKind _layer = MapLayerKind.temperature;
+class _MapScreenState extends State<MapScreen>
+    with SingleTickerProviderStateMixin {
+  /// Chuyen mau o giua cac khung (300 ms; tat khi giam chuyen dong).
+  late final AnimationController _fade = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 300),
+    value: 1,
+  );
+  Map<String, Color> _fromColors = const {};
+  Map<String, Color> _toColors = const {};
+
+  MapLayerKind _layer = MapLayerKind.rain;
   bool _tilesFailed = false;
 
   /// Chieu rong o tren man hinh (px) theo zoom hien tai.
@@ -419,11 +479,33 @@ class _MapScreenState extends State<MapScreen> {
   void dispose() {
     _debounce?.cancel();
     _play?.cancel();
+    _fade.dispose();
     _map.dispose();
     super.dispose();
   }
 
   /// Keo slider: cap nhat nhan ngay, tai khung sau 300 ms (debounce).
+  Color _cellColor(String id, Color target) {
+    final from = _fromColors[id];
+    if (from == null || _fade.value >= 1) return target;
+    return Color.lerp(from, target, Motion.enter.transform(_fade.value))!;
+  }
+
+  /// Doi khung / lop: bat dau tween tu mau dang hien sang mau moi.
+  void _retarget(List<CellMarkerData> markers, bool reduceMotion) {
+    final next = {for (final m in markers) m.cell.cellId: m.color};
+    if (mapEquals(next, _toColors)) return;
+    _fromColors = {
+      for (final e in _toColors.entries) e.key: _cellColor(e.key, e.value),
+    };
+    _toColors = next;
+    if (reduceMotion || _fromColors.isEmpty) {
+      _fade.value = 1;
+    } else {
+      _fade.forward(from: 0);
+    }
+  }
+
   void _onSlide(int h) {
     _stopPlay();
     setState(() => _dragOffset = h);
@@ -618,6 +700,7 @@ class _MapScreenState extends State<MapScreen> {
       names: (c) => _cellNames(c),
       units: PreferencesProvider.unitsOf(context),
     );
+    _retarget(markers, mq.disableAnimations);
     final boundary = _lp.boundary;
     final focus = widget.focusLocationId;
     final mode = labelModeFor(_cellPx, _layer);
@@ -669,21 +752,28 @@ class _MapScreenState extends State<MapScreen> {
                 ),
             ],
           ),
-        PolygonLayer(
-          // O canh bao ve sau cung de vien cam nam tren cung.
-          polygons: [
-            for (final alert in [false, true])
-              for (final m in markers)
-                if (m.alert == alert)
-                  Polygon(
-                    points: cellRect(m.cell),
-                    color: m.color.withValues(alpha: kCellFillAlpha),
-                    borderColor: alert
-                        ? Palette.alert
-                        : const Color(0x59FFFFFF),
-                    borderStrokeWidth: alert ? 2.5 : 0.6,
-                  ),
-          ],
+        AnimatedBuilder(
+          animation: _fade,
+          builder: (context, _) => PolygonLayer(
+            // O canh bao ve sau cung de vien cam nam tren cung.
+            polygons: [
+              for (final alert in [false, true])
+                for (final m in markers)
+                  if (m.alert == alert)
+                    Polygon(
+                      points: cellRect(m.cell),
+                      color: _cellColor(
+                        m.cell.cellId,
+                        m.color,
+                      ).withValues(alpha: kCellFillAlpha),
+                      // Vien manh, mo: ranh gioi o nhe, khong ke o vuong.
+                      borderColor: alert
+                          ? Palette.alert
+                          : const Color(0x1FFFFFFF),
+                      borderStrokeWidth: alert ? 2 : 0.5,
+                    ),
+            ],
+          ),
         ),
         MarkerLayer(
           markers: [
@@ -818,8 +908,7 @@ class _MapScreenState extends State<MapScreen> {
               child: _MessageCard(
                 messages: [
                   if (_tilesFailed)
-                    'Không tải được bản đồ nền (cần kết nối mạng). '
-                        'Dữ liệu thời tiết vẫn hiển thị trên nền tối.',
+                    'Mất bản đồ nền; dữ liệu thời tiết vẫn hiển thị.',
                   if (cells.isEmpty && !_lp.mapLoading)
                     _lp.mapError == ApiErrorKind.notFound
                         ? 'Máy chủ chưa hỗ trợ dữ liệu bản đồ.'
@@ -857,6 +946,9 @@ class _MapScreenState extends State<MapScreen> {
                     _layer,
                     temp,
                     PreferencesProvider.unitsOf(context),
+                    _layer == MapLayerKind.temperature
+                        ? MapScale.tempRange(cells)
+                        : null,
                   ),
                   outlookSource: first?.outlookSource,
                 ),
@@ -1190,7 +1282,8 @@ class MapLegend extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(switch (layer) {
-            MapLayerKind.temperature => 'NHIỆT ĐỘ',
+            MapLayerKind.temperature =>
+              'NHIỆT ĐỘ · MÀU THEO THẤP–CAO KHUNG NÀY',
             MapLayerKind.rain => 'KHẢ NĂNG MƯA 3 GIỜ TỚI',
             MapLayerKind.wind => 'GIÓ (KM/H) · MŨI TÊN CHỈ HƯỚNG GIÓ THỔI TỚI',
           }, style: TypeScale.cardTitle.copyWith(color: Palette.title)),

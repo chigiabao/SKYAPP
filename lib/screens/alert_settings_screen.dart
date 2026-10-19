@@ -7,6 +7,7 @@ import '../models/units.dart';
 import '../models/weather_alerts.dart';
 import '../providers/planner_provider.dart';
 import '../providers/preferences_provider.dart';
+import '../providers/weather_provider.dart';
 import '../services/gps_service.dart';
 import '../ui/weather/design_tokens.dart';
 import '../ui/weather/glass_ink.dart';
@@ -33,32 +34,64 @@ const Map<AlertType, _Range> _ranges = {
   AlertType.aqi: _Range(51, 201, 50),
 };
 
-String _hint(AlertType t) {
-  switch (t) {
-    case AlertType.rain:
-      return 'Xác suất mưa trong giờ';
-    case AlertType.heavyRain:
-      return 'Lượng mưa một giờ';
-    case AlertType.thunderstorm:
-      return 'Mã thời tiết WMO 95–99 (96/99: kèm mưa đá)';
-    case AlertType.heat:
-      return 'Nhiệt độ; hoặc chỉ số nhiệt ≥ 41°C';
-    case AlertType.uv:
-      return 'Chỉ số UV';
-    case AlertType.wind:
-      return 'Gió giật';
-    case AlertType.aqi:
-      return 'Chỉ số chất lượng không khí (US AQI)';
-  }
+/// Muc AQI (US) theo nguong.
+String _aqiWord(double v) => v >= 201
+    ? 'rất có hại'
+    : v >= 151
+    ? 'có hại cho sức khỏe'
+    : v >= 101
+    ? 'kém với người nhạy cảm'
+    : 'trung bình';
+
+/// Muc UV theo nguong.
+String _uvWord(double v) => v >= 11
+    ? 'cực cao'
+    : v >= 8
+    ? 'rất cao'
+    : v >= 6
+    ? 'cao'
+    : 'trung bình';
+
+/// Nguong luu theo don vi goc (°C, km/h, mm/h); chi phan hien thi doi theo
+/// [u] / [temp].
+String _fmt(
+  AlertType t,
+  double v,
+  UnitPrefs u,
+  String Function(double c) temp,
+) => switch (t) {
+  AlertType.rain => '${v.round()}%',
+  AlertType.heavyRain => u.rainRateText(v),
+  AlertType.heat => temp(v),
+  AlertType.wind => u.windText(v),
+  AlertType.uv => '${v.round()}',
+  AlertType.aqi => '${v.round()}',
+  AlertType.thunderstorm => '',
+};
+
+/// Mo ta bang loi nguoi dung, kem nguong hien hanh.
+String _hint(
+  AlertType t,
+  AlertSettings s,
+  UnitPrefs u,
+  String Function(double c) temp,
+) {
+  final v = s.thresholdOf(t);
+  String f(double x) => _fmt(t, x, u, temp);
+  return switch (t) {
+    AlertType.rain => 'Báo khi khả năng mưa từ ${f(v!)}',
+    AlertType.heavyRain => 'Báo khi mưa từ ${f(v!)} – dễ ngập đường',
+    AlertType.thunderstorm =>
+      'Báo khi có dông, sét; mức Nguy hiểm nếu kèm mưa đá',
+    AlertType.heat =>
+      'Báo khi nhiệt độ từ ${f(v!)}, hoặc cảm giác từ ${temp(s.heatIndex)}',
+    AlertType.uv => 'Báo khi chỉ số UV từ ${f(v!)} (${_uvWord(v)})',
+    AlertType.wind => 'Báo khi gió giật từ ${f(v!)}',
+    AlertType.aqi => 'Báo khi AQI từ ${f(v!)} (${_aqiWord(v)})',
+  };
 }
 
-/// Nguong luu theo don vi goc; chi phan hien thi doi theo [u].
-String _fmt(AlertType t, double v, UnitPrefs u) {
-  if (t == AlertType.wind) return u.windText(v);
-  if (t == AlertType.heavyRain) return u.rainRateText(v);
-  final n = v % 1 == 0 ? v.toStringAsFixed(0) : v.toStringAsFixed(1);
-  return t.unit.isEmpty ? n : '$n ${t.unit}';
-}
+String _celsius(double c) => '${c.round()}°C';
 
 /// Cai dat canh bao: bat/tat va nguong tung loai, muc uu tien thong bao,
 /// gio yen lang, so gio xet toi.
@@ -69,12 +102,22 @@ class AlertSettingsScreen extends StatelessWidget {
   Widget build(BuildContext context) =>
       GlassPage(child: Builder(builder: _buildPage));
 
+  /// Nhiet do theo don vi nguoi dung chon (°C / °F); khong co provider -> °C.
+  static String Function(double) _tempOf(BuildContext context) {
+    try {
+      return context.read<WeatherProvider>().formatTemperature;
+    } on ProviderNotFoundException {
+      return _celsius;
+    }
+  }
+
   Widget _buildPage(BuildContext context) {
     final theme = Theme.of(context);
     final ink = GlassInk.of(context);
     final planner = context.watch<PlannerProvider>();
     final s = planner.settings;
     final units = PreferencesProvider.unitsOf(context);
+    final temp = _tempOf(context);
     final mq = MediaQuery.of(context);
     final gutter = Space.gutter(mq.size.width);
     final hPad = mq.size.width > Space.contentMaxWidth + 2 * gutter
@@ -99,9 +142,7 @@ class AlertSettingsScreen extends StatelessWidget {
               ),
             ),
             subtitle: Text(
-              value == null
-                  ? _hint(t)
-                  : '${_hint(t)} ≥ ${_fmt(t, value, units)}',
+              _hint(t, s, units, temp),
               style: TypeScale.small.copyWith(color: ink.secondary),
             ),
             value: on,
@@ -113,8 +154,9 @@ class AlertSettingsScreen extends StatelessWidget {
               min: r.min,
               max: r.max,
               divisions: r.divisions,
-              label: _fmt(t, value, units),
-              semanticFormatterCallback: (v) => 'Ngưỡng ${_fmt(t, v, units)}',
+              label: _fmt(t, value, units, temp),
+              semanticFormatterCallback: (v) =>
+                  'Ngưỡng ${_fmt(t, v, units, temp)}',
               onChanged: (v) => planner.setSettings(s.withThreshold(t, v)),
             ),
         ],

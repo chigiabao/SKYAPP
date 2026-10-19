@@ -84,6 +84,9 @@ class ApiService {
   String get baseUrl => _baseUrl ?? ApiConfig.baseUrl;
   final Duration timeout;
 
+  /// Rieng /weather/bundle: lan dau sau khi server khoi dong mat ~8 s.
+  final Duration bundleTimeout;
+
   /// Tra ve thoi diem that hien tai (thay duoc khi test).
   final DateTime Function() clock;
 
@@ -91,15 +94,20 @@ class ApiService {
     http.Client? client,
     this._baseUrl,
     this.timeout = ApiConfig.timeout,
+    this.bundleTimeout = ApiConfig.bundleTimeout,
     DateTime Function()? clock,
   }) : _client = client ?? http.Client(),
        clock = clock ?? DateTime.now;
 
-  Future<dynamic> _getJson(String path, [Map<String, String>? query]) async {
+  Future<dynamic> _getJson(
+    String path, [
+    Map<String, String>? query,
+    Duration? timeoutOverride,
+  ]) async {
     final uri = Uri.parse('$baseUrl$path').replace(queryParameters: query);
     final http.Response response;
     try {
-      response = await _client.get(uri).timeout(timeout);
+      response = await _client.get(uri).timeout(timeoutOverride ?? timeout);
     } on TimeoutException {
       debugPrint('ApiService: timeout $uri');
       throw ApiException(ApiErrorKind.timeout);
@@ -113,7 +121,7 @@ class ApiService {
       throw ApiException(
         code == 400 || code == 422
             ? ApiErrorKind.badRequest
-            : code == 404
+            : code == 404 || code == 405
             ? ApiErrorKind.notFound
             : ApiErrorKind.server,
       );
@@ -127,8 +135,12 @@ class ApiService {
   }
 
   /// Ep kieu JSON; sai kieu -> ApiException(invalidData).
-  Future<T> _getTyped<T>(String path, [Map<String, String>? query]) async {
-    final json = await _getJson(path, query);
+  Future<T> _getTyped<T>(
+    String path, [
+    Map<String, String>? query,
+    Duration? timeoutOverride,
+  ]) async {
+    final json = await _getJson(path, query, timeoutOverride);
     if (json is T) return json;
     debugPrint('ApiService: unexpected JSON for $path: ${json.runtimeType}');
     throw ApiException(ApiErrorKind.invalidData);
@@ -256,19 +268,13 @@ class ApiService {
       ? fetchWeatherData(at: at)
       : _fetchBundle(locationId, at);
 
+  /// baseUrl da biet khong co /weather/bundle (backend cu) -> goi 4 API le.
+  String? _noBundleFor;
+
   Future<WeatherData> _fetchBundle(String locationId, DateTime? at) async {
-    final results = await Future.wait<dynamic>([
-      fetchCurrentRaw(at: at, locationId: locationId),
-      fetchHourlyRaw(at: at, locationId: locationId),
-      fetchDailyRaw(at: at, locationId: locationId),
-      _fetchAIRaw(at, locationId),
-    ]);
-    final bundle = <String, dynamic>{
-      'current': results[0],
-      'hourly': results[1],
-      'daily': results[2],
-      'ai': results[3],
-    };
+    final bundle =
+        await _fetchCombined(locationId, at) ??
+        await _fetchSeparate(locationId, at);
     final WeatherData data;
     try {
       data = WeatherData.fromJson(bundle, locationName: ApiConfig.locationName);
@@ -281,6 +287,56 @@ class ApiService {
     }
     if (at == null) await _saveCache(bundle, locationId);
     return data;
+  }
+
+  /// GET /weather/bundle: mot request cho ca current/hourly/daily/AI.
+  /// null neu backend chua co endpoint (404/405) -> goi 4 API le.
+  Future<Map<String, dynamic>?> _fetchCombined(
+    String locationId,
+    DateTime? at,
+  ) async {
+    final base = baseUrl;
+    if (_noBundleFor == base) return null;
+    final Map<String, dynamic> json;
+    try {
+      json = await _getTyped<Map<String, dynamic>>('/weather/bundle', {
+        'location_id': locationId,
+        ...?_query(at),
+        'hours': '${ApiConfig.hourlyHours}',
+        'days': '${ApiConfig.dailyDays}',
+      }, bundleTimeout);
+    } on ApiException catch (e) {
+      if (e.kind != ApiErrorKind.notFound) rethrow;
+      _noBundleFor = base;
+      return null;
+    }
+    final ai = json['ai_forecast'];
+    return {
+      'current': json['current'],
+      'hourly': json['hourly'],
+      'daily': json['daily'],
+      'ai': ai is Map<String, dynamic> ? ai : null,
+      'forecast_error': json['forecast_error'],
+    };
+  }
+
+  /// Backend cu: 4 request song song.
+  Future<Map<String, dynamic>> _fetchSeparate(
+    String locationId,
+    DateTime? at,
+  ) async {
+    final results = await Future.wait<dynamic>([
+      fetchCurrentRaw(at: at, locationId: locationId),
+      fetchHourlyRaw(at: at, locationId: locationId),
+      fetchDailyRaw(at: at, locationId: locationId),
+      _fetchAIRaw(at, locationId),
+    ]);
+    return {
+      'current': results[0],
+      'hourly': results[1],
+      'daily': results[2],
+      'ai': results[3],
+    };
   }
 
   /// Uu tien mang; neu loi thi dung cache (fromCache = true).

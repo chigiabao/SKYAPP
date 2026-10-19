@@ -34,7 +34,7 @@ AlertLevel _max(AlertLevel a, AlertLevel b) => a.index >= b.index ? a : b;
 enum AlertType {
   rain('Mưa', '%'),
   heavyRain('Mưa lớn', 'mm/h'),
-  thunderstorm('Dông', ''),
+  thunderstorm('Dông, sét', ''),
   heat('Nắng nóng', '°C'),
   uv('UV cao', ''),
   wind('Gió giật mạnh', 'km/h'),
@@ -485,7 +485,7 @@ class AlertEvent {
   /// Nhu [detail] nhung gia tri hien thi theo don vi [u] (nguong van goc).
   String detailFor(UnitPrefs u) {
     final v = peakTextFor(u);
-    final src = observed ? 'Đang xảy ra (số liệu phân tích)' : 'Dự báo';
+    final src = observed ? 'Đang xảy ra (theo số liệu phân tích)' : 'Dự báo';
     return v == null ? src : '$v · $src';
   }
 
@@ -494,7 +494,7 @@ class AlertEvent {
   String? peakTextFor(UnitPrefs u) {
     switch (type) {
       case AlertType.thunderstorm:
-        return peak >= 96 ? 'Dông kèm mưa đá' : null;
+        return peak >= 96 ? 'Có sét, kèm mưa đá' : 'Có sét';
       case AlertType.rain:
         return observed ? u.rainText(peak) : 'Xác suất tới ${peak.round()}%';
       case AlertType.heavyRain:
@@ -502,7 +502,7 @@ class AlertEvent {
       case AlertType.heat:
         return 'Cảm giác tới ${peak.round()}°C';
       case AlertType.uv:
-        return 'UV tới ${peak.toStringAsFixed(peak % 1 == 0 ? 0 : 1)}';
+        return 'Chỉ số UV tới ${peak.toStringAsFixed(peak % 1 == 0 ? 0 : 1)}';
       case AlertType.wind:
         return 'Giật tới ${u.windText(peak)}';
       case AlertType.aqi:

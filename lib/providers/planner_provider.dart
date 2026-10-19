@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/activities.dart';
 import '../models/habits.dart';
+import '../models/place.dart' show PlaceLabel;
 import '../models/reminders.dart';
 import '../models/weather.dart';
 import '../models/weather_alerts.dart';
@@ -35,6 +36,10 @@ class PlannerProvider extends ChangeNotifier {
   static const String activityKey = 'planner_activity_v1';
   static const String notifyKey = 'planner_notify_v1';
   static const String habitKey = 'planner_habits_v1';
+  static const String commuteKey = 'planner_commute_v1';
+
+  /// Id thong bao buoi sang (nhac 1..40, canh bao tu 1000).
+  static const int morningBriefId = 900;
 
   /// So chong trung rieng (khong phai lich su hien thi): "Xoá lịch sử" hay
   /// gioi han [historyLimit] khong lam gui lai canh bao con hieu luc. Muc co
@@ -66,6 +71,9 @@ class PlannerProvider extends ChangeNotifier {
   int _held = 0;
   NotifySettings _notifySettings = const NotifySettings();
   HabitData _habits = const HabitData();
+  CommuteSettings _commute = const CommuteSettings();
+  DateTime? _briefAt;
+  Future<void> _applying = Future.value();
   ReminderPlan _reminders = const ReminderPlan([], 0);
   final Set<Future<void>> _pending = {};
 
@@ -89,6 +97,10 @@ class PlannerProvider extends ChangeNotifier {
   bool get isLoaded => _loaded;
   NotifySettings get notifySettings => _notifySettings;
   HabitData get habits => _habits;
+  CommuteSettings get commute => _commute;
+
+  /// Lan gui thong bao buoi sang da hen (null = khong hen).
+  DateTime? get morningBriefAt => _briefAt;
 
   /// Nhac da hen (lan len lich gan nhat).
   ReminderPlan get reminderPlan => _reminders;
@@ -142,6 +154,11 @@ class PlannerProvider extends ChangeNotifier {
         if (j is Map<String, dynamic>) {
           _notifySettings = NotifySettings.fromJson(j);
         }
+      }
+      final cm = p.getString(commuteKey);
+      if (cm != null) {
+        final j = jsonDecode(cm);
+        if (j is Map<String, dynamic>) _commute = CommuteSettings.fromJson(j);
       }
       final hb = p.getString(habitKey);
       if (hb != null) {
@@ -345,17 +362,94 @@ class PlannerProvider extends ChangeNotifier {
           )
         : const ReminderPlan([], 0);
     _reminders = plan;
+    final brief = _planBrief(now);
+    _briefAt = brief?.at;
     notifyListeners();
     Future<void> apply() async {
       await _notify.cancelScheduled();
       for (final r in plan.reminders) {
         await _notify.schedule(r.id, r.fireAt, r.title, r.body);
       }
+      if (brief != null) {
+        await _notify.schedule(
+          morningBriefId,
+          brief.at,
+          'Thời tiết đi làm hôm nay',
+          brief.body,
+        );
+      }
     }
 
-    final f = apply();
+    // Lan luot: hai lan hen lai lien tiep khong chen huy / hen cua nhau.
+    final f = _applying = _applying.then((_) => apply());
     _track(f);
     await f.catchError((Object _) {});
+  }
+
+  /// Lan gui thong bao buoi sang tiep theo (gio TP.HCM that) + noi dung tu
+  /// du lieu truc tiep gan nhat cua Nha / Noi lam. null = tat / roi vao gio
+  /// yen lang ma nguoi dung khong cho phep.
+  ({DateTime at, String body})? _planBrief(DateTime now) {
+    final c = _commute;
+    if (!_notifySettings.system || !c.briefEnabled) return null;
+    var at = HcmTime.startOfDay(
+      now,
+    ).add(Duration(hours: c.briefHour, minutes: c.briefMinute));
+    if (!at.isAfter(now)) at = at.add(const Duration(days: 1));
+    if (!c.briefInQuiet && _settings.inQuietHours(at)) return null;
+    final ids = <String>{?c.homeId, ?c.workId};
+    final body = morningBrief(
+      [
+        for (final id in ids)
+          (name: _names[id] ?? id, hours: _liveHours[id]),
+      ],
+      at,
+      c,
+    );
+    return (
+      at: at,
+      body:
+          body ??
+          (ids.isEmpty
+              ? 'Chọn Nhà và Nơi làm trong Cài đặt để nhận tóm tắt mưa.'
+              : 'Chưa có dự báo mới cho hôm nay. Mở Sky Weather để cập nhật.'),
+    );
+  }
+
+  /// Gio di / ve, dia diem, thong bao buoi sang.
+  void setCommute(CommuteSettings c) {
+    _commute = c;
+    notifyListeners();
+    _write(commuteKey, c.toJson());
+    rescheduleReminders();
+  }
+
+  /// Bat thong bao buoi sang: can thong bao he thong (xin quyen neu chua
+  /// bat). false = khong duoc cap quyen / khong ho tro (web).
+  Future<bool> setMorningBrief(bool on) async {
+    if (on && !_notifySettings.system) {
+      if (!await setSystemNotifications(true)) return false;
+    }
+    setCommute(_commute.copyWith(briefEnabled: on));
+    return true;
+  }
+
+  /// Lay Nha / Noi lam tu nhan dia diem da luu (nguoi dung co the doi o man
+  /// Dia diem). Khong doi gi neu khong co nhan.
+  void syncCommutePlaces(LocationProvider lp) {
+    String? find(Set<PlaceLabel> ls) => lp.saved
+        .where((s) => ls.contains(s.label))
+        .map((s) => s.locationId)
+        .firstOrNull;
+    final home = find({PlaceLabel.home}) ?? _commute.homeId;
+    final work = find({PlaceLabel.work, PlaceLabel.school}) ?? _commute.workId;
+    for (final id in {?home, ?work}) {
+      _names[id] = lp.placeById(id).name;
+    }
+    if (home == _commute.homeId && work == _commute.workId) return;
+    _commute = _commute.copyWith(homeId: home, workId: work);
+    _write(commuteKey, _commute.toJson());
+    notifyListeners();
   }
 
   /// Canh bao cua mot dia diem tu du lieu co san (khong ghi lich su).
@@ -392,6 +486,11 @@ class PlannerProvider extends ChangeNotifier {
       return Future.value(const []);
     }
     _liveHours[placeId] = hours;
+    // Du lieu moi cua Nha / Noi lam -> cap nhat noi dung thong bao buoi sang.
+    if (_commute.briefEnabled &&
+        (placeId == _commute.homeId || placeId == _commute.workId)) {
+      rescheduleReminders();
+    }
     return _serial(() async {
       await load();
       final p = await _freshPrefs();
@@ -452,6 +551,7 @@ class PlannerProvider extends ChangeNotifier {
   Future<void> refreshAll(WeatherProvider wp, LocationProvider lp) async {
     if (_refreshing) return;
     _refreshing = true;
+    syncCommutePlaces(lp);
     notifyListeners();
     final ids = <String>{for (final p in lp.pages) p.locationId};
     for (final id in ids) {

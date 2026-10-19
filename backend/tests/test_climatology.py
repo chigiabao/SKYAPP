@@ -5,7 +5,7 @@ from datetime import datetime
 
 import pytest
 
-from conftest import SYN_YEARS, _row, insert_rows
+from conftest import FROZEN_NOW, SYN_YEARS, _row, insert_rows
 from routers import weather as weather_router
 
 MONTH, DAY, HOUR = 6, 10, 15   # a rainy hour in 1 of 3 years (FROZEN_NOW date)
@@ -33,7 +33,7 @@ def test_hourly_climatology_by_hand(client, syn_rows):
     assert row["rain_probability"] == pytest.approx(rain_prob)
     assert row["precipitation_median"] == pytest.approx(precip_median)
 
-    items = client.get("/weather/hourly", params={"hours": 3}).json()
+    items = client.get('/weather/hourly', params={'hours': 3, 'at': FROZEN_NOW.isoformat()}).json()
     item = next(x for x in items if x["timestamp"].startswith(f"2024-06-10T{HOUR:02d}:00"))
     assert item["temperature"] == round(mean_temp, 1)
     assert item["rain_probability"] == round(rain_prob, 2)
@@ -58,7 +58,7 @@ def test_daily_climatology_by_hand(client, syn_rows):
     assert row["rain_day_prob"] == pytest.approx(rain_day_prob)
     assert row["precip_median"] == pytest.approx(statistics.median(totals))
 
-    item = client.get("/weather/daily", params={"days": 1}).json()[0]
+    item = client.get('/weather/daily', params={'days': 1, 'at': FROZEN_NOW.isoformat()}).json()[0]
     assert item["date"] == "2024-06-10"
     assert item["temperature_min"] == round(t_min, 1)
     assert item["temperature_max"] == round(t_max, 1)
@@ -67,18 +67,18 @@ def test_daily_climatology_by_hand(client, syn_rows):
 
 
 def test_invalidate_climatology(client, syn_db):
-    before = client.get("/weather/hourly", params={"hours": 1}).json()[0]
+    before = client.get('/weather/hourly', params={'hours': 1, 'at': FROZEN_NOW.isoformat()}).json()[0]
     hot = _row(datetime(2020, 6, 10, 14))
     hot["temperature"] = 60.0
     with sqlite3.connect(syn_db) as con:
         insert_rows(con, [hot])
     con.close()
 
-    cached = client.get("/weather/hourly", params={"hours": 1}).json()[0]
+    cached = client.get('/weather/hourly', params={'hours': 1, 'at': FROZEN_NOW.isoformat()}).json()[0]
     assert cached["temperature"] == before["temperature"], "climatology is expected to be cached"
 
     weather_router.invalidate_climatology()
-    after = client.get("/weather/hourly", params={"hours": 1}).json()[0]
+    after = client.get('/weather/hourly', params={'hours': 1, 'at': FROZEN_NOW.isoformat()}).json()[0]
     sample = _hour_rows(_all_rows_at(syn_db), 6, 10, 14)
     assert len(sample) == len(SYN_YEARS) + 1
     expected = sum(r["temperature"] for r in sample) / len(sample)

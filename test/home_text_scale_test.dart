@@ -8,6 +8,7 @@ import 'package:sky_weather_app/models/weather.dart';
 import 'package:sky_weather_app/providers/weather_provider.dart';
 import 'package:sky_weather_app/screens/home_screen.dart';
 import 'package:sky_weather_app/services/api_service.dart';
+import 'package:sky_weather_app/ui/weather/widgets/hourly_strip.dart';
 import 'package:sky_weather_app/utils/formatters.dart';
 import 'package:sky_weather_app/utils/theme.dart';
 
@@ -107,7 +108,7 @@ Future<void> _pumpHome(
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
-  for (final scale in [1.0, 1.3, 1.6]) {
+  for (final scale in [1.0, 1.3, 1.6, 2.0]) {
     for (final dark in [false, true]) {
       testWidgets(
         'Home khong tran layout o textScale $scale (${dark ? 'toi' : 'sang'})',
@@ -121,16 +122,49 @@ void main() {
 
           // Cuon qua toan bo trang; ghi nhan cac the da hien.
           final seen = <String>{};
-          for (var i = 0; i < 10; i++) {
-            for (final t in ['THEO GIỜ', 'DỰ BÁO 7 NGÀY', 'CHỈ SỐ UV']) {
-              if (find.text(t).evaluate().isNotEmpty) seen.add(t);
+          for (final conditions in [false, true]) {
+            if (conditions) {
+              final scrollable = find
+                  .descendant(
+                    of: find.byType(CustomScrollView),
+                    matching: find.byType(Scrollable),
+                  )
+                  .first;
+              tester.state<ScrollableState>(scrollable).position.jumpTo(0);
+              await tester.pump();
+              await tester.scrollUntilVisible(
+                find.text('Điều kiện'),
+                200,
+                scrollable: scrollable,
+              );
+              await tester.pump();
+              await Scrollable.ensureVisible(
+                tester.element(find.text('Điều kiện')),
+                alignment: 0.2,
+              );
+              await tester.pump();
+              await tester.tap(find.text('Điều kiện'));
+              await tester.pump();
+              expect(
+                tester
+                    .widget<SegmentedButton<bool>>(
+                      find.byType(SegmentedButton<bool>),
+                    )
+                    .selected,
+                {true},
+              );
             }
-            await tester.drag(
-              find.byType(CustomScrollView),
-              const Offset(0, -300),
-            );
-            await tester.pump();
-            expect(tester.takeException(), isNull);
+            for (var i = 0; i < 10; i++) {
+              for (final t in ['THEO GIỜ', 'DỰ BÁO 7 NGÀY', 'CHỈ SỐ UV']) {
+                if (find.text(t).evaluate().isNotEmpty) seen.add(t);
+              }
+              await tester.drag(
+                find.byType(CustomScrollView),
+                const Offset(0, -300),
+              );
+              await tester.pump();
+              expect(tester.takeException(), isNull);
+            }
           }
           expect(seen, containsAll(['THEO GIỜ', 'DỰ BÁO 7 NGÀY', 'CHỈ SỐ UV']));
           // Bat ky RenderFlex overflow nao se nem FlutterError -> takeException.
@@ -144,7 +178,13 @@ void main() {
     await _pumpHome(tester, scale: 1.0, theme: AppTheme.lightTheme);
     await tester.drag(find.byType(CustomScrollView), const Offset(0, -700));
     await tester.pump();
-    expect(find.text('Bây giờ'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(HourlyStrip),
+        matching: find.text('Bây giờ'),
+      ),
+      findsOneWidget,
+    );
   });
 
   test('Dinh dang luong mua', () {

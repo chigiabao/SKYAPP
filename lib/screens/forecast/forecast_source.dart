@@ -44,7 +44,7 @@ class ForecastSource {
       note: single != null
           ? single.note
           : 'Mỗi giờ/ngày được đánh dấu nguồn riêng (xem chú thích).',
-      isRealForecast: single == DataSource.forecast,
+      isRealForecast: single == DataSource.forecast || single == DataSource.ai,
       summary: s,
     );
   }

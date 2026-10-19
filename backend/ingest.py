@@ -9,12 +9,13 @@ weighted calls per rolling minute) and retried with backoff.
 
 - Observed/analysis hours -> hourly_weather (Historical Forecast API, same source as the original export).
                               A series without data is backfilled BACKFILL_DAYS days.
-- 7-day forecast           -> nwp_forecast, one issue per run (Forecast API); only the latest KEEP_ISSUES kept.
+- 7-day forecast (opt-in)  -> nwp_forecast, one issue per run (Forecast API); only the latest KEEP_ISSUES kept.
+                              Disabled unless EXTERNAL_FORECAST_ENABLED=1; forecasts come from our trained model.
 - Air quality (optional)   -> air_quality, past AQ_PAST_DAYS + AQ_FORECAST_DAYS upserted (Air Quality API);
                               if only this call fails the weather data is still written and a WARNING is logged.
-Every run writes one ingest_log row. A series is written only if its observed and forecast chunks both
-succeeded; failed series are listed in ingest_log.failed_cells and series_status, and are caught up by the next
-run (each series' observed window starts from its own last stored hour). All writes of a run happen in one
+Every valid run writes one ingest_log row. Observed data is written even if an optional forecast fetch fails.
+Failed historical (or forecast-only) series are listed in ingest_log.failed_cells and series_status, and caught
+up by the next run (each series' observed window starts from its own last stored hour). All writes happen in one
 transaction after the network work.
 
 CLI:  python ingest.py [--location <location/cell/series id; default: all>] [--since YYYY-MM-DD] [--forecast-only]
@@ -23,6 +24,7 @@ CLI:  python ingest.py [--location <location/cell/series id; default: all>] [--s
 import argparse
 import json
 import logging
+import os
 import sqlite3
 import sys
 import threading
@@ -334,7 +336,8 @@ def run_ingest(location_id: Optional[str] = None, since: Optional[date] = None,
                on_success: Optional[Callable[[], None]] = None) -> dict:
     """One ingest run over all series (or only the series of `location_id`); returns the ingest_log row.
     status: ok | partial (some series failed, the others were written) | error. Raises IngestBusy if a run
-    is already in progress."""
+    is already in progress. External forecasts require EXTERNAL_FORECAST_ENABLED=1;
+    forecast_only raises ValueError before network access when disabled."""
     if not _lock.acquire(blocking=False):
         raise IngestBusy("ingest already running")
     try:
@@ -377,9 +380,14 @@ def _fetch_observed(conn, series, since, hour, stats, failed) -> dict:
 
 
 def _run(location_id, since, forecast_only, now, db_path, on_success) -> dict:
+    external_forecast = os.getenv("EXTERNAL_FORECAST_ENABLED", "0") == "1"
+    if forecast_only and not external_forecast:
+        raise ValueError("forecast_only requires EXTERNAL_FORECAST_ENABLED=1; external forecasts are disabled")
     t0 = time.monotonic()
     hour = current_hour(now)
-    source = "open-meteo:forecast" if forecast_only else "open-meteo:historical-forecast+forecast"
+    source = "open-meteo:forecast" if forecast_only else "open-meteo:historical-forecast"
+    if external_forecast and not forecast_only:
+        source += "+forecast"
     conn = connect(db_path)
     try:
         cur = conn.execute(
@@ -404,12 +412,16 @@ def _run(location_id, since, forecast_only, now, db_path, on_success) -> dict:
             issued_at = hour.strftime(TS_FMT)
             horizon = (hour + timedelta(hours=FORECAST_HOURS)).strftime(TS_FMT)
             fc: dict[str, list[dict]] = {}
-            for i, chunk in enumerate(_chunks([s for s in series if s["series_id"] not in failed]), 1):
+            forecast_series = [s for s in series if s["series_id"] not in failed] if external_forecast else []
+            for i, chunk in enumerate(_chunks(forecast_series), 1):
                 try:
                     fetched = fetch_forecast_batch(chunk, stats)
                 except Exception as e:  # noqa: BLE001
                     log.warning("forecast chunk %d: FAILED %d series: %s", i, len(chunk), e)
-                    failed.update({s["series_id"]: f"forecast: {_err(e)}" for s in chunk})
+                    if forecast_only:
+                        failed.update({s["series_id"]: f"forecast: {_err(e)}" for s in chunk})
+                    else:
+                        notes.append(f"WARNING external forecast skipped for {len(chunk)} series: {_err(e)}")
                     continue
                 for s, rows in zip(chunk, fetched):
                     fc[s["series_id"]] = [r for r in rows if issued_at < r["timestamp"] <= horizon]
@@ -432,10 +444,14 @@ def _run(location_id, since, forecast_only, now, db_path, on_success) -> dict:
                     sid = s["series_id"]
                     a, b = upsert_hourly(conn, sid, obs.get(sid, []))
                     ins, upd = ins + a, upd + b
-                    n_fc += store_forecast(conn, sid, issued_at, fc[sid])
+                    if sid in fc:
+                        n_fc += store_forecast(conn, sid, issued_at, fc[sid])
                     if sid in aq:
                         n_aq += upsert_air_quality(conn, sid, aq[sid])
-            notes.append(f"forecast issue {issued_at}: {n_fc} hours")
+            if fc:
+                notes.append(f"forecast issue {issued_at}: {n_fc} hours")
+            elif not external_forecast:
+                notes.append("external forecasts disabled; forecasts supplied by our trained model")
             if aq:
                 notes.append(f"air quality: {n_aq} hours")
             if forecast_only:
@@ -555,7 +571,8 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="Ingest Open-Meteo data into weather.db")
     ap.add_argument("--location", default=None, help="location, cell or series id (default: all series)")
     ap.add_argument("--since", type=date.fromisoformat, help="re-fetch observed hours from this date (YYYY-MM-DD)")
-    ap.add_argument("--forecast-only", action="store_true")
+    ap.add_argument("--forecast-only", action="store_true",
+                    help="fetch only external reference forecasts (requires EXTERNAL_FORECAST_ENABLED=1; default: 0)")
     ap.add_argument("--check", action="store_true", help="only run the consistency check")
     ap.add_argument("--check-start", type=date.fromisoformat, default=date(2026, 10, 1))
     ap.add_argument("--check-end", type=date.fromisoformat, default=date(2026, 10, 10))

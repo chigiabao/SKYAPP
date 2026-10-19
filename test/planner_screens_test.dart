@@ -15,10 +15,10 @@ import 'package:sky_weather_app/screens/activities_screen.dart';
 import 'package:sky_weather_app/screens/alert_settings_screen.dart';
 import 'package:sky_weather_app/screens/alerts_screen.dart';
 import 'package:sky_weather_app/screens/home_screen.dart';
+import 'package:sky_weather_app/ui/weather/widgets/rain_timeline_card.dart';
 import 'package:sky_weather_app/services/api_service.dart';
 import 'package:sky_weather_app/ui/weather/app_scene.dart';
 import 'package:sky_weather_app/utils/theme.dart';
-import 'package:sky_weather_app/widgets/planner_cards.dart';
 
 final DateTime _now = DateTime.utc(2026, 10, 15, 14, 10);
 
@@ -169,8 +169,8 @@ void main() {
       final wp = await _wp();
       final planner = PlannerProvider();
       await _pump(tester, wp, planner, const HomeScreen());
-      expect(find.byType(AlertsSummaryBanner), findsOneWidget);
-      expect(find.textContaining('Dông · 16:00'), findsOneWidget);
+      expect(find.byType(RainTimelineCard), findsOneWidget);
+      expect(find.textContaining('Dông, sét · 16:00'), findsOneWidget);
       expect(find.byTooltip('Đóng cảnh báo'), findsOneWidget);
       // Danh gia luc tai -> co thong bao chua doc o nut header.
       expect(
@@ -178,7 +178,7 @@ void main() {
         findsOneWidget,
       );
 
-      await tester.tap(find.byType(AlertsSummaryBanner).first);
+      await tester.tap(find.byType(RainTimelineCard).first);
       await tester.pumpAndSettle();
       expect(find.byType(AlertsScreen), findsOneWidget);
       expect(find.text(kAlertDisclaimer), findsOneWidget);
@@ -190,7 +190,7 @@ void main() {
       await _pump(tester, wp, PlannerProvider(), const HomeScreen());
       await tester.tap(find.byTooltip('Đóng cảnh báo'));
       await tester.pump();
-      expect(find.byType(AlertsSummaryBanner), findsNothing);
+      expect(find.byType(RainTimelineCard), findsNothing);
     });
 
     testWidgets('khong co canh bao -> khong banner; co the goi y', (
@@ -209,7 +209,7 @@ void main() {
         const HomeScreen(),
         size: const Size(390, 4000),
       );
-      expect(find.byType(AlertsSummaryBanner), findsNothing);
+      expect(find.byType(RainTimelineCard), findsNothing);
       expect(find.text('GỢI Ý HOẠT ĐỘNG'), findsOneWidget);
       expect(find.textContaining('Chạy bộ ·'), findsOneWidget);
     });
@@ -229,7 +229,7 @@ void main() {
       size: const Size(390, 2400),
     );
     await tester.pumpAndSettle();
-    expect(find.textContaining('Dông · 16:00'), findsOneWidget);
+    expect(find.textContaining('Dông, sét · 16:00'), findsOneWidget);
     expect(find.text('LỊCH SỬ THÔNG BÁO'), findsOneWidget);
     expect(find.textContaining('Cảnh báo dông'), findsWidgets);
     await expectLater(tester, meetsGuideline(androidTapTargetGuideline));
@@ -251,7 +251,7 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('CHẾ ĐỘ XEM LẠI'), findsOneWidget);
-    expect(find.textContaining('Dông · 16:00'), findsOneWidget);
+    expect(find.textContaining('Dông, sét · 16:00'), findsOneWidget);
     expect(planner.history, isEmpty);
   });
 
@@ -268,7 +268,7 @@ void main() {
       const AlertSettingsScreen(),
       size: const Size(390, 3000),
     );
-    expect(find.text('Dông'), findsOneWidget);
+    expect(find.text('Dông, sét'), findsOneWidget);
     await tester.tap(find.widgetWithText(SwitchListTile, 'UV cao'));
     await tester.pump();
     expect(planner.settings.isEnabled(AlertType.uv), isFalse);

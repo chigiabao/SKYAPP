@@ -43,6 +43,15 @@ class ActivitiesScreen extends StatelessWidget {
 
     final detail = <Widget>[];
     for (final a in planner.favorites) {
+      if (a == Activity.commute) {
+        detail.add(
+          Padding(
+            padding: const EdgeInsets.only(bottom: Space.cardGap),
+            child: _CommuteCard(planner: planner, hours: hours, now: now),
+          ),
+        );
+        continue;
+      }
       final ws = bestWindows(
         a,
         hours,
@@ -88,8 +97,18 @@ class ActivitiesScreen extends StatelessWidget {
                 : Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      for (final w in ws)
-                        ActivityWindowRow(activity: a, window: w, nowHcm: now),
+                      for (var i = 0; i < ws.length; i++)
+                        ActivityWindowRow(
+                          activity: a,
+                          window: ws[i],
+                          nowHcm: now,
+                          // The da co ten hoat dong; ngay chi hien khi doi.
+                          showActivity: false,
+                          showDay:
+                              i == 0 ||
+                              HcmTime.startOfDay(ws[i].start) !=
+                                  HcmTime.startOfDay(ws[i - 1].start),
+                        ),
                     ],
                   ),
           ),
@@ -155,6 +174,75 @@ class ActivitiesScreen extends StatelessWidget {
           _RoutinesCard(planner: planner, wp: wp),
           const SizedBox(height: Space.cardGap),
           _HabitsCard(planner: planner, wp: wp),
+        ],
+      ),
+    );
+  }
+}
+
+/// Gio di / ve (mac dinh 7:30 / 17:30) + loi khuyen cho lan di / ve toi.
+class _CommuteCard extends StatelessWidget {
+  const _CommuteCard({
+    required this.planner,
+    required this.hours,
+    required this.now,
+  });
+
+  final PlannerProvider planner;
+  final List<HourlyForecast> hours;
+  final DateTime now;
+
+  Future<void> _pick(BuildContext context, bool leave) async {
+    final c = planner.commute;
+    final t = await showTimePicker(
+      context: context,
+      initialTime: leave
+          ? TimeOfDay(hour: c.leaveHour, minute: c.leaveMinute)
+          : TimeOfDay(hour: c.returnHour, minute: c.returnMinute),
+      helpText: leave ? 'Giờ đi làm / đi học' : 'Giờ về',
+    );
+    if (t == null) return;
+    planner.setCommute(
+      leave
+          ? c.copyWith(leaveHour: t.hour, leaveMinute: t.minute)
+          : c.copyWith(returnHour: t.hour, returnMinute: t.minute),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = planner.commute;
+    final style = OutlinedButton.styleFrom(
+      foregroundColor: Palette.white,
+      minimumSize: const Size(Touch.min, Touch.min),
+    );
+    return GlassCard(
+      title: Activity.commute.label.toUpperCase(),
+      icon: Icons.two_wheeler_rounded,
+      footer: 'Theo dự báo mô hình của Nhà (lúc đi) và Nơi làm (lúc về).',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          CommuteRows(hours: hours, nowHcm: now),
+          const SizedBox(height: Space.s),
+          Wrap(
+            spacing: Space.s,
+            runSpacing: Space.s,
+            children: [
+              OutlinedButton.icon(
+                onPressed: () => _pick(context, true),
+                style: style,
+                icon: const Icon(Icons.schedule_rounded),
+                label: Text('Đi ${shortHm(c.leaveHour, c.leaveMinute)}'),
+              ),
+              OutlinedButton.icon(
+                onPressed: () => _pick(context, false),
+                style: style,
+                icon: const Icon(Icons.home_outlined),
+                label: Text('Về ${shortHm(c.returnHour, c.returnMinute)}'),
+              ),
+            ],
+          ),
         ],
       ),
     );

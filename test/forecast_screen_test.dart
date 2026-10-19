@@ -29,6 +29,21 @@ List<HourlyForecast> _hours() {
   ];
 }
 
+/// 48 gio tu 00:00 hom nay (giong backend moi).
+List<HourlyForecast> _hours48() {
+  final base = HcmTime.startOfDay(_nowHcm);
+  return [
+    for (var i = 0; i < 48; i++)
+      HourlyForecast(
+        time: base.add(Duration(hours: i)),
+        temperature: 26,
+        condition: WeatherCondition.cloudy,
+        rainProbability: 0.2,
+        precipitationMm: i == 30 ? 2.5 : 0,
+      ),
+  ];
+}
+
 List<DailyForecast> _days() {
   final base = HcmTime.startOfDay(_nowHcm);
   return [
@@ -51,6 +66,7 @@ Future<void> _pump(
   required int dayIndex,
   double scale = 1.0,
   bool dark = false,
+  List<HourlyForecast>? hours,
 }) async {
   tester.view.physicalSize = const Size(360, 740);
   tester.view.devicePixelRatio = 1.0;
@@ -76,7 +92,7 @@ Future<void> _pump(
           child: ForecastScreen(
             selectedDay: days[dayIndex],
             allDays: days,
-            hourlyData: _hours(),
+            hourlyData: hours ?? _hours(),
           ),
         ),
       ),
@@ -126,11 +142,13 @@ void main() {
     await _pump(tester, dayIndex: 4);
     expect(_appBarTitle(tester), 'Thứ 2, 19/10');
     expect(find.text('Nhiệt độ theo giờ'), findsNothing);
+    expect(find.text('13 mm'), findsOneWidget); // trung vi (nhieu nam)
+    await tester.drag(find.byType(ListView).first, const Offset(0, -300));
+    await tester.pump();
     expect(
       find.textContaining('Chưa có số liệu theo giờ cho Thứ 2, 19/10'),
       findsOneWidget,
     );
-    expect(find.text('13 mm'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -199,5 +217,74 @@ void main() {
     );
     expect(find.text('Chưa có dữ liệu dự báo.'), findsOneWidget);
     expect(find.text('Dự báo chi tiết'), findsOneWidget);
+  });
+
+  group('48 gio theo gio', () {
+    testWidgets('missing rainfall is not described as a complete dry day', (
+      tester,
+    ) async {
+      final base = HcmTime.startOfDay(_nowHcm);
+      await _pump(
+        tester,
+        dayIndex: 0,
+        hours: [
+          for (var i = 0; i < 24; i++)
+            HourlyForecast(
+              time: base.add(Duration(hours: i)),
+              temperature: 26,
+              condition: WeatherCondition.cloudy,
+              precipitationMm: i == 0 ? 0 : null,
+            ),
+        ],
+      );
+      final summary = find.textContaining('Chỉ có lượng mưa cho 1/24 giờ.');
+      await tester.scrollUntilVisible(
+        summary,
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
+      expect(summary, findsOneWidget);
+      expect(find.textContaining('trong các giờ có số liệu.'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    test('hoursOfDay chi lay gio cua dung ngay', () {
+      final today = HcmTime.startOfDay(_nowHcm);
+      final h = _hours48();
+      final t = ForecastScreen.hoursOfDay(h, today);
+      final m = ForecastScreen.hoursOfDay(
+        h,
+        today.add(const Duration(days: 1)),
+      );
+      expect(t.length, 24);
+      expect(m.length, 24);
+      expect(t.every((x) => x.time.day == today.day), isTrue);
+      expect(m.first.time.hour, 0);
+      expect(m.last.time.hour, 23);
+    });
+
+    testWidgets('Hom nay: chi 24 gio cua hom nay, khong 48', (tester) async {
+      await _pump(tester, dayIndex: 0, hours: _hours48());
+      expect(find.textContaining('Có số liệu 00:00–23:00'), findsOneWidget);
+      expect(find.textContaining('các giờ còn lại'), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('Ngay mai: du 24 gio + tong mua', (tester) async {
+      await _pump(tester, dayIndex: 1, hours: _hours48());
+      expect(find.textContaining('Có số liệu 00:00–23:00'), findsOneWidget);
+      expect(find.textContaining('Chưa có số liệu theo giờ'), findsNothing);
+      expect(find.text('1/24 giờ'), findsOneWidget); // gio co mua
+      await tester.drag(find.byType(ListView).first, const Offset(0, -500));
+      await tester.pump();
+      expect(find.textContaining('1 giờ có mưa · tổng 3 mm'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('textScale 2.0 voi 48 gio: khong tran', (tester) async {
+      await _pump(tester, dayIndex: 1, scale: 2.0, hours: _hours48());
+      await _scrollAll(tester);
+      expect(tester.takeException(), isNull);
+    });
   });
 }

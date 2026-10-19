@@ -188,7 +188,7 @@ class DailyItem extends StatelessWidget {
   }
 
   /// Uu tien trung vi (trung binh bi keo cao boi vai nam mua lon).
-  double get _rainAmount =>
+  double? get _rainAmount =>
       forecast.precipitationMedian ?? forecast.precipitationMm;
 
   static Widget _fitStart(Widget child) => Align(

@@ -8,13 +8,15 @@ import '../../providers/weather_provider.dart';
 import '../../ui/weather/widgets/glass_page.dart';
 import '../../utils/constants.dart';
 import '../../utils/formatters.dart';
+import '../../models/units.dart';
 import 'forecast_format.dart';
 import '../../providers/preferences_provider.dart';
 
 /// Mau va chu dung chung cho cac bieu do (theo theme sang/toi).
 class ChartPalette {
   ChartPalette(BuildContext context)
-    : isDark = Theme.of(context).brightness == Brightness.dark,
+    : duration = chartMotionOff(context) ? Duration.zero : kChartDuration,
+      isDark = Theme.of(context).brightness == Brightness.dark,
       axisText =
           GlassThemeMarker.inkOf(context)?.secondary ??
           Theme.of(context).textTheme.bodySmall?.color ??
@@ -42,6 +44,8 @@ class ChartPalette {
           ? const Color(0xFFFFD54F)
           : const Color(0xFFC62828);
 
+  /// Thoi gian chuyen du lieu cua fl_chart (0 khi giam chuyen dong).
+  final Duration duration;
   final bool isDark;
   final Color axisText;
   final Color grid;
@@ -60,6 +64,17 @@ class ChartPalette {
   TextStyle get tooltipStyle =>
       TextStyle(color: tooltipText, fontWeight: FontWeight.w600, fontSize: 12);
 }
+
+/// Bieu do ve dan / doi du lieu: 700 ms, easeOutCubic.
+const kChartDuration = Duration(milliseconds: 700);
+const kChartCurve = Curves.easeOutCubic;
+
+/// Giam chuyen dong: he thong hoac cai dat app (PreferencesProvider cung day
+/// vao MediaQuery.disableAnimations, kiem tra ca hai cho chac).
+bool chartMotionOff(BuildContext context) =>
+    (MediaQuery.maybeDisableAnimationsOf(context) ?? false) ||
+    (PreferencesProvider.maybeOf(context, listen: false)?.reduceMotion ??
+        false);
 
 double _toUnit(double celsius, bool isCelsius) =>
     isCelsius ? celsius : celsius * 9 / 5 + 32;
@@ -99,7 +114,10 @@ class ChartFrame extends StatelessWidget {
               child: ExcludeSemantics(
                 child: MediaQuery.withClampedTextScaling(
                   maxScaleFactor: 1.3,
-                  child: SizedBox(height: height, child: child),
+                  child: SizedBox(
+                    height: height,
+                    child: ChartReveal(child: child),
+                  ),
                 ),
               ),
             ),
@@ -116,6 +134,38 @@ class ChartFrame extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Lan dau hien: bieu do lo dan tu trai sang phai (700 ms, easeOutCubic).
+/// Giam chuyen dong -> hien ngay.
+class ChartReveal extends StatelessWidget {
+  const ChartReveal({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (chartMotionOff(context)) return child;
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0, end: 1),
+      duration: kChartDuration,
+      curve: kChartCurve,
+      child: child,
+      builder: (context, t, child) =>
+          t >= 1 ? child! : ClipRect(clipper: _RevealClipper(t), child: child),
+    );
+  }
+}
+
+class _RevealClipper extends CustomClipper<Rect> {
+  _RevealClipper(this.t);
+  final double t;
+
+  @override
+  Rect getClip(Size size) => Rect.fromLTWH(0, 0, size.width * t, size.height);
+
+  @override
+  bool shouldReclip(_RevealClipper old) => old.t != t;
 }
 
 /// Chu thich nho: mau + nhan.
@@ -240,6 +290,8 @@ class HourlyTemperatureChart extends StatelessWidget {
       semanticsLabel:
           'Biểu đồ nhiệt độ ${hours.length} giờ, từ $lo$unit đến $hi$unit',
       child: LineChart(
+        duration: p.duration,
+        curve: kChartCurve,
         LineChartData(
           minX: 0,
           maxX: (hours.length - 1).toDouble(),
@@ -338,7 +390,8 @@ class HourlyTemperatureChart extends StatelessWidget {
   }
 }
 
-/// Kha nang mua theo gio (%), du 24 cot; cot gio hien tai co nen danh dau.
+/// Luong mua theo gio (mm hoac in theo cai dat). Gio thuc te / du bao dung
+/// `precipitation`; thieu -> trung vi; thieu ca hai -> khong cot (khong bia 0).
 class HourlyRainChart extends StatelessWidget {
   const HourlyRainChart({
     super.key,
@@ -349,21 +402,39 @@ class HourlyRainChart extends StatelessWidget {
   final List<HourlyForecast> hours;
   final int? nowIndex;
 
+  /// Luong mua cua gio (mm); null = chua co so lieu.
+  static double? mmOf(HourlyForecast h) =>
+      h.precipitationMm ?? h.precipitationMedian;
+
   @override
   Widget build(BuildContext context) {
     final p = ChartPalette(context);
-    final missing = hours.where((h) => h.rainProbability == null).length;
-    final maxPct = hours
-        .where((h) => h.rainProbability != null)
-        .fold<int>(0, (m, h) => math.max(m, h.rainPercent));
+    final u = PreferencesProvider.unitsOf(context);
+    final inch = u.precip == PrecipUnit.inch;
+    double axis(double mm) => inch ? UnitConvert.mmToInch(mm) : mm;
+    final mms = [for (final h in hours) mmOf(h)];
+    final missing = mms.where((v) => v == null).length;
+    final present = mms.whereType<double>();
+    final maxMm = present.isEmpty ? 0.0 : present.reduce(math.max);
+    // Truc toi thieu 2 mm de mua phun khong bi phong to thanh "mua lon".
+    final raw = axis(math.max(maxMm * 1.15, 2.0));
+    // Buoc tron (2 vach): 13,6 mm -> truc 0/10/20 thay vi 0/6,8/13,6.
+    const steps = [0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0];
+    final interval = steps.firstWhere(
+      (s) => s * 2 >= raw,
+      orElse: () => (raw / 2).ceilToDouble(),
+    );
+    final maxAxis = interval * 2;
+    final rainy = present.where((v) => v >= 0.1).length;
 
     return ChartFrame(
       height: 170,
       semanticsLabel:
-          'Biểu đồ khả năng mưa theo giờ, cao nhất $maxPct phần trăm',
+          'Biểu đồ lượng mưa theo giờ: $rainy giờ có mưa, '
+          'nhiều nhất ${u.rainText(maxMm)} trong một giờ',
       footer: ChartLegend(
         items: [
-          (p.rain, 'Khả năng mưa', false),
+          (p.rain, 'Lượng mưa trong giờ (${u.precip.label})', false),
           if (nowIndex != null) (p.marker, 'Cột viền: giờ hiện tại', true),
           if (missing > 0) (p.grid, 'Không cột: chưa có số liệu', true),
         ],
@@ -371,15 +442,18 @@ class HourlyRainChart extends StatelessWidget {
       child: LayoutBuilder(
         builder: (context, constraints) {
           final plotWidth = math.max(constraints.maxWidth - 40, 1.0);
-          final barWidth = (plotWidth / hours.length * 0.6).clamp(3.0, 18.0);
+          final barWidth = (plotWidth / hours.length * 0.6).clamp(2.0, 18.0);
+          final labelEvery = hours.length > 30 ? 6 : 3;
           return BarChart(
+            duration: p.duration,
+            curve: kChartCurve,
             BarChartData(
-              maxY: 100,
+              maxY: maxAxis,
               minY: 0,
               alignment: BarChartAlignment.spaceAround,
               gridData: FlGridData(
                 drawVerticalLine: false,
-                horizontalInterval: 25,
+                horizontalInterval: interval,
                 getDrawingHorizontalLine: (_) =>
                     FlLine(color: p.grid, strokeWidth: 1),
               ),
@@ -388,10 +462,19 @@ class HourlyRainChart extends StatelessWidget {
                 left: SideTitles(
                   showTitles: true,
                   reservedSize: 40,
-                  interval: 50,
+                  interval: interval,
                   getTitlesWidget: (value, meta) => SideTitleWidget(
                     axisSide: meta.axisSide,
-                    child: Text('${value.round()}%', style: p.axisStyle),
+                    child: Text(
+                      value == 0
+                          ? '0'
+                          : value
+                                .toStringAsFixed(
+                                  interval >= 1 ? 0 : (interval < 0.1 ? 2 : 1),
+                                )
+                                .replaceAll('.', ','),
+                      style: p.axisStyle,
+                    ),
                   ),
                 ),
                 bottom: SideTitles(
@@ -399,7 +482,7 @@ class HourlyRainChart extends StatelessWidget {
                   reservedSize: 28,
                   getTitlesWidget: (value, meta) {
                     final i = value.round();
-                    if (i < 0 || i >= hours.length || i % 3 != 0) {
+                    if (i < 0 || i >= hours.length || i % labelEvery != 0) {
                       return const SizedBox.shrink();
                     }
                     return SideTitleWidget(
@@ -418,9 +501,7 @@ class HourlyRainChart extends StatelessWidget {
                     x: i,
                     barRods: [
                       BarChartRodData(
-                        toY: hours[i].rainProbability == null
-                            ? 0
-                            : hours[i].rainPercent.toDouble(),
+                        toY: axis(mms[i] ?? 0),
                         width: barWidth,
                         color: p.rain,
                         borderSide: i == nowIndex
@@ -431,7 +512,7 @@ class HourlyRainChart extends StatelessWidget {
                         ),
                         backDrawRodData: BackgroundBarChartRodData(
                           show: i == nowIndex,
-                          toY: 100,
+                          toY: maxAxis,
                           color: p.marker.withValues(alpha: 0.14),
                         ),
                       ),
@@ -446,11 +527,15 @@ class HourlyRainChart extends StatelessWidget {
                   fitInsideVertically: true,
                   getTooltipItem: (group, gi, rod, ri) {
                     final h = hours[group.x];
-                    final value = h.rainProbability == null
+                    final mm = mmOf(h);
+                    final amount = mm == null
                         ? 'chưa có số liệu'
-                        : '${h.rainPercent}%';
+                        : u.rainText(mm);
+                    final chance = h.isObserved || h.rainProbability == null
+                        ? ''
+                        : '\nKhả năng ${h.rainPercent}%';
                     return BarTooltipItem(
-                      '${ForecastFormat.hourMinute(h.time)}\n$value',
+                      '${ForecastFormat.hourMinute(h.time)}\n$amount$chance',
                       p.tooltipStyle,
                     );
                   },
@@ -542,6 +627,8 @@ class HourlyWindChart extends StatelessWidget {
         ],
       ),
       child: LineChart(
+        duration: p.duration,
+        curve: kChartCurve,
         LineChartData(
           minX: 0,
           maxX: (hours.length - 1).toDouble(),
@@ -711,6 +798,8 @@ class DailyTemperatureChart extends StatelessWidget {
         items: [(p.high, 'Cao nhất', false), (p.low, 'Thấp nhất', true)],
       ),
       child: LineChart(
+        duration: p.duration,
+        curve: kChartCurve,
         LineChartData(
           minX: -0.4,
           maxX: days.length - 0.6,
@@ -817,7 +906,14 @@ class DailyBarChart extends StatelessWidget {
     this.secondaryValues,
     this.secondaryColor,
     this.secondaryLabel = '',
+    this.toAxis,
+    this.format,
   });
+
+  /// Doi gia tri goc sang don vi truc / chu tooltip; null = theo [unitSuffix]
+  /// ('%' giu nguyen, con lai la gio km/h).
+  final double Function(double)? toAxis;
+  final String Function(double)? format;
 
   final List<DailyForecast> days;
   final List<double?> values;
@@ -842,7 +938,8 @@ class DailyBarChart extends StatelessWidget {
     final shortUnit = unitSuffix.trim();
     // Cot gio ve theo don vi truc; tooltip dung so goc (km/h).
     final u = PreferencesProvider.unitsOf(context);
-    double axis(double v) => shortUnit == '%' ? v : u.windAxisValue(v);
+    double axis(double v) =>
+        toAxis?.call(v) ?? (shortUnit == '%' ? v : u.windAxisValue(v));
     final present = [
       ...values.whereType<double>(),
       ...?second?.whereType<double>(),
@@ -854,7 +951,11 @@ class DailyBarChart extends StatelessWidget {
       maxY = fixedMaxY!;
       interval = maxY / 2;
     } else {
-      interval = maxValue <= 20 ? 5 : (maxValue <= 50 ? 10 : 20);
+      interval = maxValue <= 2
+          ? 0.5
+          : maxValue <= 20
+          ? 5
+          : (maxValue <= 50 ? 10 : 20);
       maxY = math.max(
         ((maxValue * 1.15) / interval).ceil() * interval,
         interval * 2,
@@ -874,6 +975,8 @@ class DailyBarChart extends StatelessWidget {
                 28.0,
               );
           return BarChart(
+            duration: p.duration,
+            curve: kChartCurve,
             BarChartData(
               minY: 0,
               maxY: maxY.toDouble(),
@@ -895,6 +998,8 @@ class DailyBarChart extends StatelessWidget {
                     child: Text(
                       shortUnit == '%'
                           ? '${value.round()}%'
+                          : interval < 1
+                          ? value.toStringAsFixed(1).replaceAll('.', ',')
                           : '${value.round()}',
                       style: p.axisStyle,
                     ),
@@ -968,6 +1073,8 @@ class DailyBarChart extends StatelessWidget {
                     final v = isSecond ? second[group.x] : values[group.x];
                     final text = v == null
                         ? 'chưa có số liệu'
+                        : format != null
+                        ? format!(v)
                         : shortUnit == '%'
                         ? WeatherFormat.percent(v)
                         : u.windText(v);

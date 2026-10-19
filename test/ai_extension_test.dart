@@ -7,6 +7,7 @@ import 'package:sky_weather_app/models/app_settings.dart';
 import 'package:sky_weather_app/models/weather.dart';
 import 'package:sky_weather_app/providers/weather_provider.dart';
 import 'package:sky_weather_app/services/api_service.dart';
+import 'package:sky_weather_app/ui/weather/widgets/glass_card.dart';
 import 'package:sky_weather_app/utils/theme.dart';
 import 'package:sky_weather_app/widgets/ai_forecast_card.dart';
 
@@ -215,8 +216,9 @@ void main() {
 
     Future<void> pump(
       WidgetTester tester,
-      AIForecast f, {
+      AIForecast? f, {
       double scale = 1.0,
+      bool compact = false,
     }) async {
       tester.view.physicalSize = const Size(360, 1400);
       tester.view.devicePixelRatio = 1.0;
@@ -240,7 +242,7 @@ void main() {
                 backgroundColor: Colors.black,
                 body: SingleChildScrollView(
                   padding: const EdgeInsets.all(16),
-                  child: AIForecastCard(forecast: f),
+                  child: AIForecastCard(forecast: f, compact: compact),
                 ),
               ),
             ),
@@ -275,6 +277,36 @@ void main() {
       );
       expect(box.width, greaterThanOrEqualTo(48));
       expect(box.height, greaterThanOrEqualTo(48));
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('compact: 1 cau, khong chu ky thuat, cham >= 48dp', (
+      tester,
+    ) async {
+      final f = AIForecast.fromJson(_newJson());
+      await pump(tester, f, compact: true);
+      final p = AIForecastCard.compactPrediction(f)!;
+      expect(find.textContaining('AI: ${p.timeLabel} tới'), findsOneWidget);
+      expect(find.textContaining('mưa ${p.rainPercent}%'), findsOneWidget);
+      expect(find.text('Chi tiết'), findsOneWidget);
+      expect(find.textContaining('LightGBM'), findsNothing);
+      expect(find.textContaining('mô hình v'), findsNothing);
+      final tap = tester.getSize(find.byType(Pressable).first);
+      expect(tap.height, greaterThanOrEqualTo(48));
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('compact: chua co du bao, textScale 2.0 khong tran', (
+      tester,
+    ) async {
+      await pump(tester, null, compact: true, scale: 2.0);
+      expect(find.text('AI: chưa có dự báo'), findsOneWidget);
+      await pump(
+        tester,
+        AIForecast.fromJson(_newJson()),
+        compact: true,
+        scale: 2.0,
+      );
       expect(tester.takeException(), isNull);
     });
 
@@ -349,6 +381,10 @@ void main() {
       );
       await pump(tester, withSix, scale: 2.0);
       expect(find.text('(26–27°)'), findsOneWidget);
+      expect(
+        tester.getTopLeft(find.text('SAU 3H')).dy,
+        greaterThan(tester.getTopLeft(find.text('SAU 1H')).dy),
+      );
       expect(tester.takeException(), isNull);
     });
   });

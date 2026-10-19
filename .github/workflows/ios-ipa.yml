@@ -1,6 +1,4 @@
-# Build Sky Weather: iOS .ipa CHUA KY (cai bang 3uTools), web, Android apk debug.
-# Xem README > "Cài lên iPhone". Job test chay song song; build khong doi test
-# de luon co file cai (test do van hien do tren tab Actions).
+# The iOS artifact is unsigned: it requires provisioning and signing before installation.
 name: Build iOS / Web / Android
 
 on:
@@ -9,13 +7,16 @@ on:
   workflow_dispatch:
     inputs:
       api_base_url:
-        description: "API_BASE_URL (vd http://192.168.1.10:8000 hoac https://xxx.trycloudflare.com). Bo trong = dung bien repo API_BASE_URL / mac dinh trong app."
+        description: "Backend URL: HTTPS or local-network HTTP. Required for iOS (input or repo variable API_BASE_URL)."
         required: false
         default: ""
 
 concurrency:
   group: build-${{ github.ref }}
   cancel-in-progress: true
+
+permissions:
+  contents: read
 
 env:
   FLUTTER_VERSION: "3.47.7"
@@ -34,30 +35,77 @@ jobs:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
       - run: flutter pub get
+      - name: flutter analyze
+        run: flutter analyze --no-pub
       # Test golden gan @Tags(['golden']) (dart_test.yaml).
       - name: flutter test (tru golden)
-        run: flutter test --exclude-tags golden
+        run: flutter test --no-pub --exclude-tags golden
       # Anh golden tao tren Windows; khac font/anti-alias tren Linux nen khong chan build.
       - name: flutter test (golden, khong chan)
         continue-on-error: true
-        run: flutter test --tags golden
+        run: flutter test --no-pub --tags golden
 
   ios:
+    needs: test
     runs-on: macos-latest
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+      - name: Validate iOS backend URL
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import ipaddress
+          import os
+          from urllib.parse import urlsplit
+
+          raw = os.environ.get('API_BASE_URL', '')
+          try:
+              url = urlsplit(raw)
+              port = url.port
+              assert raw and raw == raw.strip() and not any(c.isspace() for c in raw)
+              assert url.scheme in ('http', 'https') and url.hostname
+              assert not url.username and not url.password and not url.query and not url.fragment
+              assert port is None or 0 < port <= 65535
+              host = url.hostname.lower().rstrip('.')
+              assert host not in ('localhost', '10.0.2.2') and not host.endswith('.localhost')
+              try:
+                  address = ipaddress.ip_address(host)
+              except ValueError:
+                  address = None
+              if address is not None:
+                  assert not (address.is_loopback or address.is_unspecified or address.is_multicast or address.is_link_local)
+              if url.scheme == 'http':
+                  assert (address is not None and address.is_private) or (address is None and ('.' not in host or host.endswith('.local')))
+          except (ValueError, AssertionError):
+              raise SystemExit('Set API_BASE_URL to a real HTTPS backend or local-network HTTP host; loopback/emulator URLs are not usable on an iPhone.')
+          PY
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
           flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
       - run: flutter pub get
+      - name: Build simulator and run native configuration tests
+        shell: bash
+        run: |
+          flutter build ios --simulator --debug --no-codesign "--dart-define=API_BASE_URL=$API_BASE_URL"
+          DEVICE_ID=$(xcrun simctl list devices available --json | python3 -c 'import json,sys; devices=json.load(sys.stdin)["devices"]; print(next(d["udid"] for runtime, group in devices.items() if "iOS" in runtime for d in group if d["name"].startswith("iPhone")))')
+          xcodebuild test -workspace ios/Runner.xcworkspace -scheme Runner \
+            -configuration Debug -destination "platform=iOS Simulator,id=$DEVICE_ID" \
+            -parallel-testing-enabled NO \
+            -resultBundlePath build/ios/RunnerTests.xcresult CODE_SIGNING_ALLOWED=NO
+      - name: Upload native test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SkyWeather-ios-native-tests
+          path: build/ios/RunnerTests.xcresult
+          if-no-files-found: ignore
+          retention-days: 14
       - name: flutter build ios (khong ky)
         run: |
-          ARGS=()
-          if [ -n "$API_BASE_URL" ]; then ARGS+=("--dart-define=API_BASE_URL=$API_BASE_URL"); fi
-          flutter build ios --release --no-codesign "${ARGS[@]}"
+          flutter build ios --release --no-codesign "--dart-define=API_BASE_URL=$API_BASE_URL"
       - name: Dong goi SkyWeather-unsigned.ipa
         run: |
           cd build/ios/iphoneos
@@ -66,13 +114,19 @@ jobs:
           cp -R Runner.app Payload/
           zip -qry SkyWeather-unsigned.ipa Payload
           ls -lh SkyWeather-unsigned.ipa
+          printf '%s\n' '### iOS unsigned build' \
+            'Native simulator tests passed. The IPA is NOT signed or directly installable.' \
+            'Device installation requires a valid signing identity and provisioning profile; no signing was performed.' \
+            'Backend reachability, permissions and background delivery still require a real-device check.' >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         with:
           name: SkyWeather-unsigned-ipa
           path: build/ios/iphoneos/SkyWeather-unsigned.ipa
           retention-days: 14
+          if-no-files-found: error
 
   web:
+    needs: test
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -95,6 +149,7 @@ jobs:
           retention-days: 14
 
   android:
+    needs: test
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:

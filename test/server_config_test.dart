@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -10,16 +11,66 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sky_weather_app/config/api_config.dart';
 import 'package:sky_weather_app/models/app_settings.dart';
 import 'package:sky_weather_app/providers/preferences_provider.dart';
+import 'package:sky_weather_app/providers/planner_provider.dart';
 import 'package:sky_weather_app/providers/weather_provider.dart';
 import 'package:sky_weather_app/screens/settings_screen.dart';
 import 'package:sky_weather_app/services/account_service.dart';
 import 'package:sky_weather_app/services/api_service.dart';
+import 'package:sky_weather_app/services/background_check.dart';
+import 'package:sky_weather_app/services/notification_service.dart';
 import 'package:sky_weather_app/ui/weather/app_scene.dart';
 import 'package:sky_weather_app/utils/theme.dart';
 
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
   tearDown(() => ApiConfig.setBaseUrl(null));
+
+  for (final platform in [TargetPlatform.android, TargetPlatform.iOS]) {
+    test('backend default matches $platform simulator', () {
+      debugDefaultTargetPlatformOverride = platform;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      const configured = String.fromEnvironment('API_BASE_URL');
+      expect(
+        ApiConfig.defaultBaseUrl,
+        configured.isNotEmpty
+            ? configured
+            : platform == TargetPlatform.android
+            ? 'http://10.0.2.2:8000'
+            : 'http://localhost:8000',
+      );
+    });
+  }
+
+  test(
+    'background reloads saved backend changes and removals before requests',
+    () async {
+      await ApiConfig.setBaseUrl('https://old.example');
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(PlannerProvider.notifyKey, '{"system":true}');
+      await prefs.setString(ApiConfig.baseUrlKey, 'https://new.example');
+      final urls = <String>[];
+      final client = MockClient((request) async {
+        urls.add(request.url.origin);
+        return http.Response('{}', 503);
+      });
+      addTearDown(client.close);
+      final api = ApiService(client: client);
+      await runBackgroundCheck(
+        notifications: const NoopNotificationService(),
+        api: api,
+      );
+      expect(urls, isNotEmpty);
+      expect(urls, everyElement('https://new.example'));
+      urls.clear();
+      await prefs.remove(ApiConfig.baseUrlKey);
+      await runBackgroundCheck(
+        notifications: const NoopNotificationService(),
+        api: api,
+      );
+      expect(urls, isNotEmpty);
+      expect(urls, everyElement(Uri.parse(ApiConfig.defaultBaseUrl).origin));
+    },
+  );
 
   group('ApiConfig.normalizeBaseUrl', () {
     test('nhan http/https, bo / cuoi va khoang trang', () {

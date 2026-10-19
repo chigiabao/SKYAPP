@@ -16,10 +16,43 @@ import '../ui/weather/widgets/glass_card.dart';
 /// The kinh "Dự báo AI (thử nghiệm)": hang o 1h / 3h / 6h, moi o co gio muc
 /// tieu tuyet doi, nhiet do, thanh kha nang mua; lien ket "Kiểm chứng" mau
 /// nhan cua canh. forecast == null -> "Chưa có dự báo AI" (khong so gia).
+///
+/// [compact] = 1-2 dong cho Home ("AI: 3h tới 26° (25–27°), mưa 40%") + lien
+/// ket "Chi tiết" mo man kiem chung; khong co chu ky thuat (ten mo hinh...).
 class AIForecastCard extends StatelessWidget {
   final AIForecast? forecast;
+  final bool compact;
 
-  const AIForecastCard({super.key, required this.forecast});
+  const AIForecastCard({
+    super.key,
+    required this.forecast,
+    this.compact = false,
+  });
+
+  /// Moc hien o ban compact: uu tien 3h, khong co thi moc dau tien.
+  static AIPrediction? compactPrediction(AIForecast? f) {
+    if (f == null || f.predictions.isEmpty) return null;
+    return f.predictions.where((p) => p.timeLabel == '3h').firstOrNull ??
+        f.predictions.first;
+  }
+
+  /// Cau compact, vd "AI: 3h tới 26° (25–27°), mưa 40%".
+  static String compactText(AIForecast? f, WeatherProvider provider) {
+    final p = compactPrediction(f);
+    if (f == null || p == null) return 'AI: chưa có dự báo';
+    String t(double c) => provider.formatTempValue(c);
+    final range = f.isEnabled('temperature_interval') && p.hasInterval
+        ? ' (${t(p.intervalLow!)}–${t(p.intervalHigh!)}°)'
+        : '';
+    final rain = f.isEnabled('rain_probability')
+        ? ', mưa ${p.rainPercent}%'
+        : '';
+    return 'AI: ${p.timeLabel} tới ${t(p.temperature)}°$range$rain';
+  }
+
+  static void openDetails(BuildContext context) =>
+      Navigator.of(context)
+          .push(MaterialPageRoute(builder: (_) => const AIVerifyScreen()));
 
   /// "lgbm-hcmc-v2-20261015" -> "mô hình v2"; khong co so phien ban -> null.
   static String? shortModel(String version) {
@@ -27,16 +60,85 @@ class AIForecastCard extends StatelessWidget {
     return m == null ? null : 'mô hình v${m.group(1)}';
   }
 
+  Widget _buildCompact(BuildContext context) {
+    final provider = context.watch<WeatherProvider>();
+    final ink = GlassInk.of(context);
+    final text = compactText(forecast, provider);
+    return GlassCard(
+      padding: const EdgeInsets.symmetric(
+        horizontal: Space.cardPadding,
+        vertical: Space.xs,
+      ),
+      child: Pressable(
+        onTap: () => openDetails(context),
+        semanticsLabel: '$text. Chi tiết dự báo AI',
+        child: ExcludeSemantics(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: Touch.min),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.auto_awesome_outlined,
+                  size: IconSizes.sm,
+                  color: ink.accent,
+                ),
+                const SizedBox(width: Space.s),
+                Expanded(
+                  flex: 3,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: Space.s),
+                    child: Text(
+                      text,
+                      style: TypeScale.label.copyWith(
+                        color: Palette.white,
+                        fontFeatures: kTabular,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: Space.s),
+                // Co chu lon: nhan "Chi tiết" tu xuong dong, khong tran.
+                Flexible(
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      Flexible(
+                        child: Text(
+                          'Chi tiết',
+                          textAlign: TextAlign.end,
+                          style: TypeScale.body.copyWith(
+                            fontWeight: FontWeight.w600,
+                            color: ink.accent,
+                          ),
+                        ),
+                      ),
+                      Icon(
+                        Icons.chevron_right_rounded,
+                        size: IconSizes.md,
+                        color: ink.accent,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (compact) return _buildCompact(context);
     final f = forecast;
     final ink = GlassInk.of(context);
     return GlassCard(
       title: 'Dự báo AI (thử nghiệm)',
       icon: Icons.auto_awesome_outlined,
       trailing: Pressable(
-        onTap: () => Navigator.of(context)
-            .push(MaterialPageRoute(builder: (_) => const AIVerifyScreen())),
+        onTap: () => openDetails(context),
         semanticsLabel: 'Kiểm chứng dự báo AI',
         child: ExcludeSemantics(
           child: ConstrainedBox(
@@ -88,27 +190,53 @@ class AIForecastCard extends StatelessWidget {
           if (f == null || f.predictions.isEmpty)
             const _UnavailableState()
           else
-            IntrinsicHeight(
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  for (var i = 0; i < f.predictions.length; i++) ...[
-                    if (i > 0)
-                      const VerticalDivider(
-                        width: Space.xl,
-                        thickness: 1,
-                        color: Palette.divider,
-                      ),
-                    Expanded(
-                      child: _PredictionColumn(
-                        prediction: f.predictions[i],
-                        forecast: f,
-                        domain: _domain(f),
-                      ),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final count = f.predictions.length;
+                final columnWidth =
+                    (constraints.maxWidth - (count - 1) * Space.xl) / count;
+                final stacked =
+                    columnWidth < MediaQuery.textScalerOf(context).scale(90);
+                final columns = [
+                  for (final prediction in f.predictions)
+                    _PredictionColumn(
+                      prediction: prediction,
+                      forecast: f,
+                      domain: _domain(f),
                     ),
-                  ],
-                ],
-              ),
+                ];
+                if (stacked) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      for (var i = 0; i < columns.length; i++) ...[
+                        if (i > 0)
+                          const Divider(
+                            height: Space.xl,
+                            color: Palette.divider,
+                          ),
+                        IntrinsicHeight(child: columns[i]),
+                      ],
+                    ],
+                  );
+                }
+                return IntrinsicHeight(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      for (var i = 0; i < columns.length; i++) ...[
+                        if (i > 0)
+                          const VerticalDivider(
+                            width: Space.xl,
+                            thickness: 1,
+                            color: Palette.divider,
+                          ),
+                        Expanded(child: columns[i]),
+                      ],
+                    ],
+                  ),
+                );
+              },
             ),
           if (f != null && _showsInterval(f)) ...[
             const SizedBox(height: Space.s),

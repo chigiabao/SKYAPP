@@ -9,6 +9,7 @@ import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 
 import '../models/place.dart';
+import '../models/weather.dart';
 import '../models/weather_alerts.dart';
 import '../providers/location_provider.dart';
 import '../providers/preferences_provider.dart';
@@ -23,6 +24,7 @@ import '../ui/weather/widgets/glass_page.dart';
 
 /// Mau tung muc nguy hiem tren tuyen.
 Color hazardColor(RouteHazard h) => switch (h) {
+  RouteHazard.unknown => const Color(0xFF9CA3AF),
   RouteHazard.none => const Color(0xFF34D399),
   RouteHazard.rain => const Color(0xFFFACC15),
   RouteHazard.heavy => const Color(0xFFFB923C),
@@ -34,7 +36,13 @@ List<Polyline> routeWeatherPolylines(TripRoute r, {double width = 6}) {
   final g = r.geometry;
   if (g.length < 2) return const [];
   if (r.samples.isEmpty) {
-    return [Polyline(points: g, color: Palette.rain, strokeWidth: width)];
+    return [
+      Polyline(
+        points: g,
+        color: hazardColor(RouteHazard.unknown),
+        strokeWidth: width,
+      ),
+    ];
   }
   final idx = [for (final s in r.samples) nearestIndex(g, s.point)];
   final out = <Polyline>[];
@@ -63,15 +71,50 @@ String _durationText(double min) {
   return m < 60 ? '$m phút' : '${m ~/ 60} giờ ${m % 60} phút';
 }
 
+String routeWeatherSummary(TripRoute route) {
+  final worst = route.worstAlert;
+  if (worst != null) {
+    return 'Đoạn xấu nhất: ${worst.alertReason ?? worst.hazard.label}'
+        ', lúc ${_hhmm(worst.eta)}.';
+  }
+  if (route.availableSampleCount == 0) {
+    return 'Chưa có dự báo thời tiết dọc tuyến; chưa thể đánh giá nguy cơ.';
+  }
+  if (!route.hasCompleteForecastCoverage) {
+    return 'Dự báo dọc tuyến chưa đầy đủ; chưa thể đánh giá toàn tuyến.';
+  }
+  if (!route.hasCompleteHazardCoverage) {
+    return 'Chưa đủ dữ liệu để đánh giá mọi nguy cơ trên tuyến.';
+  }
+  return 'Chưa ghi nhận ngưỡng cảnh báo trong dữ liệu hiện có.';
+}
+
+String? routeCoverageNote(TripRoute route) {
+  if (route.hasOwnModelForecasts) {
+    return 'AI riêng chỉ ước lượng nguy cơ mưa, không dự báo dông hay gió giật. '
+        'Không thể kết luận tuyến an toàn.';
+  }
+  if (!route.hasCompleteHazardCoverage) {
+    return 'Thiếu dữ liệu tại một số điểm hoặc thiếu chỉ số nguy cơ. '
+        'Không có cảnh báo không đồng nghĩa tuyến an toàn.';
+  }
+  return null;
+}
+
 class TripScreen extends StatefulWidget {
   const TripScreen({
     super.key,
-    required this.locations,
+    this.locations,
     this.gps = const GeolocatorGps(),
     this.showTiles = true,
+    this.quickStart = false,
   });
 
-  final LocationProvider locations;
+  /// null = lay tu Provider.
+  final LocationProvider? locations;
+
+  /// "Tôi sắp ra ngoài": diem di GPS, khong co tuyen, hien mua 2 gio toi.
+  final bool quickStart;
   final GpsService gps;
 
   /// Tat lop nen OSM (test).
@@ -82,10 +125,10 @@ class TripScreen extends StatefulWidget {
 }
 
 class _TripScreenState extends State<TripScreen> {
-  bool _withRoute = true;
+  late bool _withRoute = !widget.quickStart;
   Place? _from; // null = GPS
   Place? _to;
-  TripProfile _profile = TripProfile.driving;
+  TripProfile _profile = TripProfile.driving; // xe may
   DateTime? _departAt; // null = bay gio
   bool _background = false;
   final _search = TextEditingController();
@@ -96,7 +139,41 @@ class _TripScreenState extends State<TripScreen> {
   /// Loi quyen / dinh vi tat -> hien nut "Mở cài đặt" (Android + iOS).
   GpsStatus? _gpsIssue;
 
-  LocationProvider get _lp => widget.locations;
+  LocationProvider get _lp =>
+      widget.locations ?? context.read<LocationProvider>();
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.quickStart) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _loadNowcast());
+    }
+  }
+
+  /// Mua 2 gio toi tai vi tri GPS hien tai.
+  Future<void> _loadNowcast() async {
+    if (!mounted) return;
+    final trip = context.read<TripProvider>();
+    if (trip.nowcastLoading) return;
+    final fix = await widget.gps.locate();
+    if (!mounted) return;
+    if (fix.status != GpsStatus.ok) {
+      setState(() => _gpsIssue = fix.status);
+      trip.setNowcastError(
+        fix.detail ?? 'Không lấy được vị trí hiện tại để xem mưa.',
+      );
+      return;
+    }
+    await trip.loadNowcast(fix.lat!, fix.lon!);
+  }
+
+  void _setWithRoute(bool v) {
+    setState(() => _withRoute = v);
+    final trip = context.read<TripProvider>();
+    if (!v && trip.nowcastPlace == null && !trip.nowcastLoading) {
+      _loadNowcast();
+    }
+  }
 
   @override
   void dispose() {
@@ -233,6 +310,12 @@ class _TripScreenState extends State<TripScreen> {
             _EndedCard(trip: trip, locations: _lp),
             const SizedBox(height: Space.cardGap),
           ],
+          if (!_withRoute) ...[
+            _NowcastCard(trip: trip, onRetry: _loadNowcast),
+            const SizedBox(height: Space.cardGap),
+            _startCard(context, trip),
+            const SizedBox(height: Space.cardGap),
+          ],
           _setupCard(context, trip),
           if (_withRoute && trip.plan != null) ...[
             const SizedBox(height: Space.cardGap),
@@ -240,8 +323,10 @@ class _TripScreenState extends State<TripScreen> {
             const SizedBox(height: Space.cardGap),
             _RouteSummary(trip: trip),
           ],
-          const SizedBox(height: Space.cardGap),
-          _startCard(context, trip),
+          if (_withRoute) ...[
+            const SizedBox(height: Space.cardGap),
+            _startCard(context, trip),
+          ],
           const SizedBox(height: Space.cardGap),
           _HistoryCard(trip: trip, locations: _lp),
         ],
@@ -268,7 +353,7 @@ class _TripScreenState extends State<TripScreen> {
                 ButtonSegment(value: false, label: Text('Không có tuyến')),
               ],
               selected: {_withRoute},
-              onSelectionChanged: (s) => setState(() => _withRoute = s.first),
+              onSelectionChanged: (s) => _setWithRoute(s.first),
             ),
             const SizedBox(height: Space.s),
             if (!_withRoute)
@@ -402,6 +487,13 @@ class _TripScreenState extends State<TripScreen> {
                     : const Icon(Icons.alt_route_rounded),
                 label: const Text('Xem tuyến và thời tiết'),
               ),
+              if (_to == null) ...[
+                const SizedBox(height: Space.xs),
+                Text(
+                  'Chọn điểm đến để xem tuyến.',
+                  style: TypeScale.small.copyWith(color: ink.secondary),
+                ),
+              ],
               if (trip.planError != null) ...[
                 const SizedBox(height: Space.s),
                 Text(
@@ -476,28 +568,147 @@ class _TripScreenState extends State<TripScreen> {
                   style: TypeScale.body.copyWith(color: ink.secondary),
                 ),
               ),
-            SizedBox(
-              height: 64,
+            ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 64),
               child: FilledButton.icon(
                 onPressed: canStart ? _start : null,
                 icon: const Icon(Icons.play_arrow_rounded, size: 28),
                 label: Text(
-                  _withRoute
-                      ? 'Bắt đầu theo tuyến'
-                      : 'Bắt đầu (không có tuyến)',
+                  _withRoute ? 'Bắt đầu theo tuyến' : 'Bắt đầu theo dõi',
                   style: const TextStyle(fontSize: 18),
                 ),
               ),
             ),
-            const SizedBox(height: Space.s),
-            Text(
-              'Chỉ lưu trên máy: phường đi, phường đến, thời gian và cảnh báo. '
-              'Không lưu đường đi GPS.',
-              style: TypeScale.label.copyWith(color: ink.secondary),
-            ),
+            // Chua chon diem den: goi y da hien o nut "Xem tuyến" phia tren.
+            if (!canStart && _to != null) ...[
+              const SizedBox(height: Space.xs),
+              Text(
+                'Bấm "Xem tuyến và thời tiết" trước khi bắt đầu.',
+                style: TypeScale.small.copyWith(color: ink.secondary),
+              ),
+            ],
+            if (!_withRoute) ...[
+              const SizedBox(height: Space.s),
+              ConstrainedBox(
+                constraints: const BoxConstraints(minHeight: Touch.min),
+                child: OutlinedButton.icon(
+                  onPressed: () => _setWithRoute(true),
+                  icon: const Icon(Icons.flag_rounded),
+                  label: const Text('Chọn điểm đến'),
+                ),
+              ),
+            ],
           ],
         ),
       ),
+    );
+  }
+}
+
+/// "Mưa trong 2 giờ tới tại chỗ bạn" + loi khuyen (che do khong co tuyen).
+class _NowcastCard extends StatelessWidget {
+  const _NowcastCard({required this.trip, required this.onRetry});
+
+  final TripProvider trip;
+  final VoidCallback onRetry;
+
+  /// Loi khuyen theo xac suat / luong mua lon nhat.
+  static String advice(List<HourlyForecast> hours) {
+    var p = 0.0;
+    var mm = 0.0;
+    var storm = false;
+    for (final h in hours) {
+      p = (h.rainProbability ?? 0) > p ? h.rainProbability! : p;
+      mm = (h.precipitationMm ?? 0) > mm ? h.precipitationMm! : mm;
+      storm = storm || h.condition == WeatherCondition.thunderstorm;
+    }
+    if (storm) return 'Có thể có dông: mặc áo mưa bộ, tránh trú dưới cây to.';
+    if (p >= 0.6 || mm >= 2) {
+      return 'Mưa khá chắc: mang áo mưa bộ, chạy chậm và tránh chỗ ngập.';
+    }
+    if (p >= 0.3 || mm >= 0.2) return 'Có thể mưa: bỏ sẵn áo mưa vào cốp xe.';
+    return 'Khả năng mưa thấp, chưa cần áo mưa.';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ink = GlassInk.of(context);
+    final units = PreferencesProvider.unitsOf(context);
+    final body = TypeScale.body.copyWith(color: Palette.white);
+    final hours = trip.nowcastHours;
+    final place = trip.nowcastPlace;
+    final Widget child;
+    if (trip.nowcastLoading) {
+      child = Row(
+        children: [
+          const SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+          const SizedBox(width: Space.m),
+          Expanded(child: Text('Đang lấy vị trí và dự báo…', style: body)),
+        ],
+      );
+    } else if (trip.nowcastError != null) {
+      child = Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(trip.nowcastError!, style: body.copyWith(color: ink.warning)),
+          TextButton.icon(
+            onPressed: onRetry,
+            icon: const Icon(Icons.refresh_rounded),
+            label: const Text('Thử lại'),
+          ),
+        ],
+      );
+    } else if (place == null || hours.isEmpty) {
+      child = Text('Chưa có dự báo cho chỗ bạn.', style: body);
+    } else {
+      child = Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            advice(hours),
+            style: body.copyWith(fontSize: 18, fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: Space.s),
+          for (final (i, h) in hours.indexed)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: Space.xs),
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 72,
+                    child: Text(
+                      i == 0 ? 'Bây giờ' : _hhmm(h.time),
+                      style: TypeScale.hourLabel.copyWith(color: ink.secondary),
+                    ),
+                  ),
+                  Icon(Icons.water_drop_rounded, size: 18, color: ink.rain),
+                  const SizedBox(width: Space.xs),
+                  Expanded(
+                    child: Text(
+                      h.rainProbability == null
+                          ? units.rainText(h.precipitationMm)
+                          : '${(h.rainProbability! * 100).round()}% · '
+                                '${units.rainText(h.precipitationMm)}',
+                      style: body,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      );
+    }
+    return GlassCard(
+      title: 'MƯA TRONG 2 GIỜ TỚI TẠI CHỖ BẠN',
+      icon: Icons.umbrella_rounded,
+      footer: place == null
+          ? null
+          : 'Gần ${place.name} · theo từng giờ · Open-Meteo',
+      child: Material(type: MaterialType.transparency, child: child),
     );
   }
 }
@@ -602,12 +813,16 @@ class _RouteSummary extends StatelessWidget {
     final r = trip.plan!;
     final ink = GlassInk.of(context);
     final units = PreferencesProvider.unitsOf(context);
-    final worst = r.worstAlert;
     final better = trip.betterDeparture;
+    final coverageNote = routeCoverageNote(r);
     final body = TypeScale.body.copyWith(color: Palette.white);
     String? suggestion;
     if (trip.comparing) {
       suggestion = 'Đang so sánh giờ đi sớm / muộn hơn…';
+    } else if (trip.departOptions.isNotEmpty &&
+        (!r.hasCompleteHazardCoverage ||
+            trip.departOptions.any((o) => !o.route.hasCompleteHazardCoverage))) {
+      suggestion = 'Chưa đủ dữ liệu để kết luận giờ đi tốt nhất.';
     } else if (better != null) {
       final m = better.offsetMin;
       suggestion =
@@ -630,12 +845,13 @@ class _RouteSummary extends StatelessWidget {
           ),
           const SizedBox(height: Space.s),
           Text(
-            worst == null
-                ? 'Không có đoạn mưa lớn, dông hay gió giật trên tuyến.'
-                : 'Đoạn xấu nhất: ${worst.alertReason ?? worst.hazard.label}'
-                      ', lúc ${_hhmm(worst.eta)}.',
+            routeWeatherSummary(r),
             style: body,
           ),
+          if (coverageNote != null) ...[
+            const SizedBox(height: Space.s),
+            Text(coverageNote, style: body.copyWith(color: ink.secondary)),
+          ],
           if (suggestion != null) ...[
             const SizedBox(height: Space.s),
             Text(suggestion, style: body.copyWith(color: ink.secondary)),
@@ -672,6 +888,14 @@ class _DrivingView extends StatelessWidget {
     final units = PreferencesProvider.unitsOf(context);
     final paused = trip.phase == TripPhase.paused;
     final alert = trip.lastAlert;
+    final route = trip.ahead ?? trip.route;
+    // The provider's legacy all-clear message is not a complete hazard assessment.
+    final status =
+        route != null &&
+            trip.status == 'Không có mưa lớn hay dông trên phần đường còn lại.'
+        ? routeWeatherSummary(route)
+        : trip.status;
+    final coverageNote = route == null ? null : routeCoverageNote(route);
     final big = const TextStyle(
       color: Palette.white,
       fontSize: 28,
@@ -726,11 +950,18 @@ class _DrivingView extends StatelessWidget {
                         Text(alert.body, style: mid),
                         const SizedBox(height: Space.l),
                       ],
-                      if (trip.status != null)
+                      if (status != null)
                         Text(
-                          trip.status!,
+                          status,
                           style: mid.copyWith(color: Palette.secondary),
                         ),
+                      if (coverageNote != null) ...[
+                        const SizedBox(height: Space.s),
+                        Text(
+                          coverageNote,
+                          style: mid.copyWith(color: Palette.secondary),
+                        ),
+                      ],
                       if (kIsWeb)
                         Padding(
                           padding: const EdgeInsets.only(top: Space.l),
@@ -805,7 +1036,9 @@ class _EndedCard extends StatelessWidget {
       icon: Icons.check_circle_outline_rounded,
       trailing: TextButton(onPressed: trip.reset, child: const Text('Đóng')),
       child: Text(
-        n == 0 ? 'Không có cảnh báo trên đường.' : '$n cảnh báo trên đường.',
+        n == 0
+            ? 'Chưa ghi nhận cảnh báo; không đồng nghĩa tuyến an toàn.'
+            : '$n cảnh báo trên đường.',
         style: TypeScale.body.copyWith(color: Palette.white),
       ),
     );
@@ -827,7 +1060,9 @@ class _HistoryCard extends StatelessWidget {
     return GlassCard(
       title: 'LỊCH SỬ CHUYẾN ĐI',
       icon: Icons.history_rounded,
-      footer: 'Chỉ lưu trên máy này, không có đường đi GPS.',
+      footer:
+          'Chỉ lưu trên máy: phường đi, phường đến, thời gian và cảnh báo. '
+          'Không lưu đường đi GPS.',
       trailing: items.isEmpty
           ? null
           : TextButton(
@@ -868,6 +1103,10 @@ class _HistoryCard extends StatelessWidget {
 /// Mo man chuyen di.
 Future<void> openTripScreen(
   BuildContext context, {
-  required LocationProvider locations,
-}) => Navigator.of(context)
-    .push(MaterialPageRoute(builder: (_) => TripScreen(locations: locations)));
+  LocationProvider? locations,
+  bool quickStart = false,
+}) => Navigator.of(context).push(
+  MaterialPageRoute(
+    builder: (_) => TripScreen(locations: locations, quickStart: quickStart),
+  ),
+);

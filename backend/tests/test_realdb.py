@@ -27,7 +27,12 @@ def test_current_real(real_client):
 
 def test_hourly_real_starts_at_current_hcmc_hour(real_client):
     before = now_local().replace(minute=0, second=0, microsecond=0)
-    items = real_client.get("/weather/hourly", params={"hours": 168}).json()
+    response = real_client.get('/weather/hourly', params={'hours': 168})
+    if response.status_code == 503:
+        assert isinstance(response.json()['detail'], str)
+        return  # Missing/stale model input must not silently become external/climatology.
+    assert response.status_code == 200
+    items = response.json()
     after = now_local().replace(minute=0, second=0, microsecond=0)
     first = datetime.fromisoformat(items[0]["timestamp"])
     assert first in (before, after)
@@ -37,16 +42,29 @@ def test_hourly_real_starts_at_current_hcmc_hour(real_client):
     for it in items:
         assert it["timestamp"].endswith("+07:00")
         assert 0 <= it["rain_probability"] <= 1
-        assert it["precipitation_median"] is not None
+        if it['source'] == 'ai':
+            assert it['precipitation_median'] is None
+            assert it['wind_gusts'] is None and it['uv_index'] is None
+        else:
+            assert it['source'] == 'observed'
         assert it["weather_code"] in WMO_CODES
 
 
 def test_daily_real(real_client):
-    items = real_client.get("/weather/daily", params={"days": 14}).json()
-    assert len(items) == 14
+    response = real_client.get('/weather/daily', params={'days': 7})
+    if response.status_code == 503:
+        assert isinstance(response.json()['detail'], str)
+        return
+    assert response.status_code == 200
+    items = response.json()
+    assert len(items) == 7
     for it in items:
-        assert 0 <= it["rain_day_probability"] <= 1
-        assert it["precipitation_median"] is not None
+        assert it['source'] in ('observed', 'ai')
+        if it['source'] == 'ai':
+            assert it['rain_day_probability'] is None
+            assert it['precipitation_median'] is None
+        else:
+            assert 0 <= it['rain_day_probability'] <= 1
         assert it["weather_code"] in WMO_CODES
 
 

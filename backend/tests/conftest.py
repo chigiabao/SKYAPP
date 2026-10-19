@@ -158,11 +158,16 @@ def client(syn_db, monkeypatch):
 
 
 @pytest.fixture(scope="module")
-def real_client():
+def real_client(tmp_path_factory):
     if not REAL_DB.exists():
         pytest.skip("real weather.db not found")
+    snapshot = tmp_path_factory.mktemp('real-db-snapshot') / 'weather.db'
+    # Lifespan migrations and seed loading must never write to the developer's live DB.
+    with sqlite3.connect(REAL_DB.resolve().as_uri() + '?mode=ro', uri=True) as source:
+        with sqlite3.connect(snapshot) as target:
+            source.backup(target)
     with pytest.MonkeyPatch.context() as mp:
-        point_app_at(mp, REAL_DB)
+        point_app_at(mp, snapshot)
         weather_router.invalidate_climatology()
         with TestClient(main.app) as c:
             yield c

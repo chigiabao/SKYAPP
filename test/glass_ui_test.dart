@@ -14,10 +14,11 @@ import 'package:sky_weather_app/ui/weather/app_scene.dart';
 import 'package:sky_weather_app/ui/weather/sun_times.dart';
 import 'package:sky_weather_app/ui/weather/weather_background.dart';
 import 'package:sky_weather_app/ui/weather/widgets/aqi_card.dart';
-import 'package:sky_weather_app/ui/weather/widgets/collapsing_header.dart';
 import 'package:sky_weather_app/ui/weather/widgets/glass_card.dart';
+import 'package:sky_weather_app/ui/weather/widgets/home_overview.dart';
 import 'package:sky_weather_app/ui/weather/widgets/hourly_strip.dart';
 import 'package:sky_weather_app/ui/weather/widgets/metric_tile.dart';
+import 'package:sky_weather_app/ui/weather/widgets/rain_timeline_card.dart';
 import 'package:sky_weather_app/ui/weather/widgets/temp_range_bar.dart';
 import 'package:sky_weather_app/ui/weather/widgets/uv_card.dart';
 import 'package:sky_weather_app/utils/theme.dart';
@@ -173,6 +174,48 @@ Future<(WeatherProvider, SceneOverride)> _pumpHome(
 WeatherScene _homeScene(WidgetTester tester) => tester
     .widget<WeatherBackground>(find.byType(WeatherBackground).first)
     .scene;
+
+Future<void> _revealHomeTarget(WidgetTester tester, Finder target) async {
+  final scrollable = find
+      .descendant(
+        of: find.byType(CustomScrollView),
+        matching: find.byType(Scrollable),
+      )
+      .first;
+  await tester.scrollUntilVisible(target, 200, scrollable: scrollable);
+  await tester.pump();
+  await Scrollable.ensureVisible(tester.element(target), alignment: 0.2);
+  await tester.pump();
+  final position = tester.state<ScrollableState>(scrollable).position;
+  // Account for lazy sliver corrections and the persistent navigation overlay.
+  for (
+    var attempt = 0;
+    attempt < 5 && target.hitTestable().evaluate().isEmpty;
+    attempt++
+  ) {
+    position.jumpTo(
+      (position.pixels + tester.getCenter(target).dy - 180).clamp(
+        position.minScrollExtent,
+        position.maxScrollExtent,
+      ),
+    );
+    await tester.pump();
+  }
+  expect(target.hitTestable(), findsOneWidget);
+}
+
+Future<void> _openHomeConditions(WidgetTester tester) async {
+  final target = find.text('Điều kiện');
+  await _revealHomeTarget(tester, target);
+  await tester.tap(target.hitTestable());
+  await tester.pump();
+  expect(
+    tester
+        .widget<SegmentedButton<bool>>(find.byType(SegmentedButton<bool>))
+        .selected,
+    {true},
+  );
+}
 
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
@@ -419,14 +462,40 @@ void main() {
       expect(_homeScene(tester), WeatherScene.rain);
     });
 
-    testWidgets('cuon -> thanh gon "26° | Nhiều mây"', (tester) async {
+    testWidgets('cuon giu navigation dia diem; summary hien dung so lieu', (
+      tester,
+    ) async {
       await _pumpHome(tester);
-      expect(find.text('26° | Nhiều mây'), findsNothing);
-      expect(find.text('Cao 30° · Thấp 24°'), findsOneWidget);
-      expect(find.text('Cảm giác như 33°'), findsOneWidget);
+      final overview = find.byType(HomeWeatherOverview);
+      final info = tester.widget<HomeWeatherOverview>(overview).info;
+      expect(info.temperature, '26°');
+      expect(info.condition, 'Nhiều mây');
+      expect(
+        find.descendant(of: overview, matching: find.text('26°')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: overview, matching: find.text('Nhiều mây')),
+        findsOneWidget,
+      );
+      // Cao / Thap / Cam giac gop mot dong.
+      expect(find.text('Cao 30° · Thấp 24° · Cảm giác 33°'), findsOneWidget);
+      final settingsBefore = tester.getRect(find.byTooltip('Cài đặt'));
       await tester.drag(find.byType(CustomScrollView), const Offset(0, -600));
       await tester.pump();
-      expect(find.text('26° | Nhiều mây'), findsOneWidget);
+      expect(
+        tester.widget<SliverAppBar>(find.byType(SliverAppBar)).pinned,
+        isTrue,
+      );
+      expect(
+        find.descendant(
+          of: find.byType(SliverAppBar),
+          matching: find.text('TP. Hồ Chí Minh'),
+        ),
+        findsOneWidget,
+      );
+      expect(tester.getRect(find.byTooltip('Cài đặt')), settingsBefore);
+      expect(find.byTooltip('Cài đặt').hitTestable(), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
 
@@ -434,6 +503,7 @@ void main() {
       tester,
     ) async {
       await _pumpHome(tester);
+      await _openHomeConditions(tester);
       final seen = <String>{};
       for (var i = 0; i < 10; i++) {
         if (find.text('CHỈ SỐ UV').evaluate().isNotEmpty) seen.add('uv');
@@ -442,6 +512,13 @@ void main() {
         await tester.pump();
       }
       expect(seen, containsAll(['uv', 'nodata']));
+      for (final card in [find.byType(UvCard), find.byType(AqiCard)]) {
+        await _revealHomeTarget(tester, card);
+        expect(
+          find.descendant(of: card, matching: find.text(kNoData)),
+          findsWidgets,
+        );
+      }
     });
 
     for (final scale in [1.0, 1.6]) {
@@ -483,13 +560,32 @@ void main() {
 
     testWidgets('canh bao mua: hien, doc duoc, dong duoc', (tester) async {
       await _pumpHome(tester, hourProb: 0.8);
+      final overview = find.byType(HomeWeatherOverview);
+      final summary = tester.widget<HomeWeatherOverview>(overview).info.today;
+      final alert = find.byType(RainTimelineCard);
       expect(
-        find.text('Khả năng mưa cao · 14:00\u2060–\u206020:00'),
+        find.descendant(
+          of: alert,
+          matching: find.text('Khả năng mưa cao · 14:00\u2060–\u206020:00'),
+        ),
         findsOneWidget,
       );
-      await tester.tap(find.byTooltip('Đóng cảnh báo'));
+      final close = find.descendant(
+        of: alert,
+        matching: find.byTooltip('Đóng cảnh báo'),
+      );
+      await _revealHomeTarget(tester, close);
+      await tester.tap(close.hitTestable());
       await tester.pump();
-      expect(find.textContaining('Khả năng mưa cao'), findsNothing);
+      expect(find.byType(RainTimelineCard), findsNothing);
+      expect(find.byTooltip('Đóng cảnh báo'), findsNothing);
+      expect(summary, isNotNull);
+      final guidance = find.descendant(
+        of: overview,
+        matching: find.text(summary!),
+      );
+      await _revealHomeTarget(tester, guidance);
+      expect(guidance, findsOneWidget);
     });
 
     testWidgets('khong canh bao khi xac suat thap', (tester) async {
@@ -500,14 +596,33 @@ void main() {
 
     testWidgets('nut bam >= 48 dp', (tester) async {
       final handle = tester.ensureSemantics();
-      // Man hinh rat cao: moi the cung hien (khong bi header ghim cat) ->
-      // kiem moi nut bam mot lan.
-      await _pumpHome(tester, size: const Size(390, 5200), hourProb: 0.8);
-      expect(find.text('Lượng mưa'.toUpperCase()), findsOneWidget);
-      await expectLater(tester, meetsGuideline(androidTapTargetGuideline));
-      await _pumpHome(tester, size: const Size(390, 844), hourProb: 0.8);
-      await expectLater(tester, meetsGuideline(androidTapTargetGuideline));
-      handle.dispose();
+      try {
+        // Check both information views, including controls revealed by the tab.
+        for (final size in const [Size(390, 5200), Size(390, 844)]) {
+          await _pumpHome(tester, size: size, hourProb: 0.8);
+          await expectLater(tester, meetsGuideline(androidTapTargetGuideline));
+          await _openHomeConditions(tester);
+          if (size.height > 5000) {
+            expect(find.text('Lượng mưa'.toUpperCase()), findsOneWidget);
+          }
+          // Do not measure controls partially clipped by the scroll viewport.
+          tester
+              .state<ScrollableState>(
+                find
+                    .descendant(
+                      of: find.byType(CustomScrollView),
+                      matching: find.byType(Scrollable),
+                    )
+                    .first,
+              )
+              .position
+              .jumpTo(0);
+          await tester.pump();
+          await expectLater(tester, meetsGuideline(androidTapTargetGuideline));
+        }
+      } finally {
+        handle.dispose();
+      }
     });
 
     for (final dark in [false, true]) {
@@ -549,11 +664,20 @@ void main() {
       });
     }
 
-    testWidgets('khong lap cau tom tat o dau trang; khong pill nguon', (
+    testWidgets('khong lap cau tom tat hanh dong; khong bia nhan nguon', (
       tester,
     ) async {
       await _pumpHome(tester, hourProb: 0.8);
-      expect(find.textContaining('Có khả năng mưa'), findsOneWidget);
+      final overview = find.byType(HomeWeatherOverview);
+      final info = tester.widget<HomeWeatherOverview>(overview).info;
+      expect(info.today, contains('mang áo mưa khi về'));
+      expect(info.todayRain, isTrue);
+      expect(find.text(info.today!), findsOneWidget);
+      expect(info.sourceLabel, isNull);
+      expect(
+        find.descendant(of: overview, matching: find.byType(SourceTag)),
+        findsNothing,
+      );
       expect(find.text('Thực tế'), findsNothing);
     });
 
@@ -562,10 +686,7 @@ void main() {
         tester,
       ) async {
         await _pumpHome(tester, size: Size(w, 800));
-        final buttons = [
-          tester.getRect(find.byTooltip('Làm mới')),
-          tester.getRect(find.byTooltip('Cài đặt')),
-        ];
+        final buttons = [tester.getRect(find.byTooltip('Cài đặt'))];
         double opacityOf(Element e) {
           double o = 1;
           e.visitAncestorElements((a) {
@@ -576,26 +697,20 @@ void main() {
           return o;
         }
 
+        var checkedHeaderTexts = 0;
         for (var step = 0; step < 12; step++) {
-          final clip = find.byKey(CollapsingHeaderDelegate.heroClipKey);
-          final clipRect = clip.evaluate().isEmpty
-              ? null
-              : tester.getRect(clip);
-          final header = find.byType(SliverPersistentHeader);
+          final header = find.byType(SliverAppBar);
+          expect(
+            find.descendant(of: header, matching: find.text('TP. Hồ Chí Minh')),
+            findsOneWidget,
+          );
           for (final e
               in find
                   .descendant(of: header, matching: find.byType(Text))
                   .evaluate()) {
             if (opacityOf(e) <= 0.1) continue;
-            var r = tester.getRect(find.byWidget(e.widget).first);
-            final inHero = find
-                .descendant(of: clip, matching: find.byWidget(e.widget))
-                .evaluate()
-                .isNotEmpty;
-            if (inHero && clipRect != null) {
-              if (!r.overlaps(clipRect)) continue;
-              r = r.intersect(clipRect);
-            }
+            final r = tester.getRect(find.byWidget(e.widget).first);
+            checkedHeaderTexts++;
             for (final b in buttons) {
               expect(
                 b.overlaps(r),
@@ -611,14 +726,43 @@ void main() {
           );
           await tester.pump();
         }
-        // Sau khi cuon het dau trang: thanh gon hien du.
+        expect(checkedHeaderTexts, greaterThanOrEqualTo(12));
+        // After the overview scrolls away, the location and settings stay visible.
         await tester.drag(find.byType(CustomScrollView), const Offset(0, -600));
         await tester.pump();
-        final compact = find.text('26° | Nhiều mây');
-        expect(compact, findsOneWidget);
-        expect(opacityOf(compact.evaluate().first), 1.0);
+        final location = find.descendant(
+          of: find.byType(SliverAppBar),
+          matching: find.text('TP. Hồ Chí Minh'),
+        );
+        expect(location, findsOneWidget);
+        expect(opacityOf(location.evaluate().first), 1.0);
+        expect(
+          tester.widget<SliverAppBar>(find.byType(SliverAppBar)).pinned,
+          isTrue,
+        );
+        expect(find.byTooltip('Cài đặt').hitTestable(), findsOneWidget);
+        expect(tester.takeException(), isNull);
       });
     }
+
+    testWidgets('nen dung ticker khi hero cuon khoi man hinh', (tester) async {
+      await _pumpHome(tester, reduceMotion: false, code: 61);
+      bool active() => tester
+          .widget<WeatherBackground>(find.byType(WeatherBackground))
+          .active;
+      expect(active(), isTrue);
+      await tester.drag(find.byType(CustomScrollView), const Offset(0, -1200));
+      await tester.pump();
+      expect(active(), isFalse);
+      await tester.drag(find.byType(CustomScrollView), const Offset(0, 1200));
+      await tester.pump();
+      expect(active(), isTrue);
+      expect(HomeScreen.backgroundActiveAt(100, 740), isTrue);
+      expect(HomeScreen.backgroundActiveAt(600, 740), isFalse);
+      expect(friendlyRegion('TP.HCM cũ'), 'Khu vực TP.HCM');
+      expect(friendlyRegion('Quận 1'), 'Quận 1');
+      await tester.pumpWidget(const SizedBox());
+    });
 
     testWidgets('pill bar: ban do va danh sach dia diem', (tester) async {
       await _pumpHome(tester);

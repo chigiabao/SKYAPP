@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../models/weather_alerts.dart';
@@ -97,7 +98,21 @@ class _AlertsScreenState extends State<AlertsScreen> {
             title: (label == null ? place.name : '$label · ${place.name}')
                 .toUpperCase(),
             icon: Icons.place_outlined,
-            child: body,
+            child: AnimatedSwitcher(
+              duration: MediaQuery.disableAnimationsOf(context)
+                  ? Duration.zero
+                  : Motion.short,
+              layoutBuilder: (cur, prev) => Stack(
+                alignment: Alignment.topLeft,
+                children: [...prev, ?cur],
+              ),
+              child: KeyedSubtree(
+                key: ValueKey(
+                  events == null ? 'x$err' : events.map((e) => e.key).join(),
+                ),
+                child: body,
+              ),
+            ),
           ),
         ),
       );
@@ -175,15 +190,49 @@ class _AlertsScreenState extends State<AlertsScreen> {
   }
 }
 
-class _HistoryCard extends StatelessWidget {
+class _HistoryCard extends StatefulWidget {
   const _HistoryCard({required this.planner});
 
   final PlannerProvider planner;
 
   @override
+  State<_HistoryCard> createState() => _HistoryCardState();
+}
+
+/// Lich su co hieu ung: muc moi truot + hien dan, muc da doc nhat dan (chu
+/// dam -> thuong, cham "mới" tat dan). Giam chuyen dong -> khong hieu ung.
+class _HistoryCardState extends State<_HistoryCard> {
+  /// Khoa cac muc da ve (muc moi = chua co trong tap nay).
+  Set<String>? _seen;
+  int _unread = 0;
+
+  void _clear() {
+    HapticFeedback.mediumImpact();
+    widget.planner.clearHistory();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final ink = GlassInk.of(context);
-    final items = planner.history;
+    final planner = widget.planner;
+    final items = planner.history.take(20).toList();
+    final still = MediaQuery.disableAnimationsOf(context);
+    final dur = still ? Duration.zero : Motion.medium;
+    final keys = [for (final n in items) noticeKey(n)];
+    final first = _seen == null;
+    final fresh = first ? const <String>{} : {...keys}.difference(_seen!);
+    final unread = planner.unreadCount;
+    // Rung nhe khi co muc moi / khi danh dau da doc (khong rung lan dau).
+    if (!first && (fresh.isNotEmpty || unread < _unread)) {
+      final added = fresh.isNotEmpty;
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => added
+            ? HapticFeedback.lightImpact()
+            : HapticFeedback.selectionClick(),
+      );
+    }
+    _seen = {...keys};
+    _unread = unread;
     return GlassCard(
       title: 'LỊCH SỬ THÔNG BÁO',
       icon: Icons.notifications_none_rounded,
@@ -193,69 +242,142 @@ class _HistoryCard extends StatelessWidget {
       trailing: items.isEmpty
           ? null
           : TextButton(
-              onPressed: planner.clearHistory,
+              onPressed: _clear,
               style: TextButton.styleFrom(
                 foregroundColor: Palette.white,
                 minimumSize: const Size(Touch.min, Touch.min),
               ),
               child: const Text('Xóa'),
             ),
-      child: items.isEmpty
-          ? Text(
-              'Chưa có thông báo.',
-              style: TypeScale.body.copyWith(color: ink.secondary),
-            )
-          : Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                for (final n in items.take(20))
-                  Semantics(
-                    container: true,
-                    excludeSemantics: true,
-                    label: '${n.title}. ${n.body}',
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: Space.s),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Icon(
-                            alertIcon(n.type),
-                            color: levelColor(context, n.level),
-                            size: IconSizes.md,
-                          ),
-                          const SizedBox(width: Space.m),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  n.title,
-                                  style: TypeScale.body.copyWith(
-                                    color: Palette.white,
-                                    fontWeight: n.read
-                                        ? FontWeight.w400
-                                        : FontWeight.w600,
-                                  ),
-                                ),
-                                Text(
-                                  '${n.body} · lúc ${_stamp(n.createdAt)}',
-                                  style: TypeScale.small.copyWith(
-                                    color: ink.secondary,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
+      // AnimatedSize voi thoi luong 0 loi bo cuc -> chi dung khi co hieu ung.
+      child: _MaybeAnimatedSize(
+        duration: dur,
+        child: items.isEmpty
+            ? Text(
+                'Chưa có thông báo.',
+                style: TypeScale.body.copyWith(color: ink.secondary),
+              )
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (var i = 0; i < items.length; i++)
+                    _Enter(
+                      key: ValueKey(keys[i]),
+                      animate: !still && fresh.contains(keys[i]),
+                      child: _row(context, items[i], ink, dur),
                     ),
-                  ),
-              ],
+                ],
+              ),
+      ),
+    );
+  }
+
+  Widget _row(
+    BuildContext context,
+    AlertNotice n,
+    GlassInk ink,
+    Duration dur,
+  ) {
+    return Semantics(
+      container: true,
+      excludeSemantics: true,
+      label: '${n.read ? '' : 'Mới. '}${n.title}. ${n.body}',
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: Space.s),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              alertIcon(n.type),
+              color: levelColor(context, n.level),
+              size: IconSizes.md,
             ),
+            const SizedBox(width: Space.m),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  AnimatedDefaultTextStyle(
+                    duration: dur,
+                    style: TypeScale.body.copyWith(
+                      color: Palette.white,
+                      fontWeight: n.read ? FontWeight.w400 : FontWeight.w600,
+                    ),
+                    child: Text(n.title),
+                  ),
+                  Text(
+                    '${n.body} · lúc ${_stamp(n.createdAt)}',
+                    style: TypeScale.small.copyWith(color: ink.secondary),
+                  ),
+                ],
+              ),
+            ),
+            // Cham "mới" (tin hieu phu; chu dam la tin hieu chinh).
+            AnimatedOpacity(
+              duration: dur,
+              opacity: n.read ? 0 : 1,
+              child: Padding(
+                padding: const EdgeInsets.only(left: Space.s, top: 6),
+                child: Container(
+                  width: 8,
+                  height: 8,
+                  decoration: BoxDecoration(
+                    color: GlassInk.of(context).alert,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
   static String _stamp(DateTime t) =>
       '${t.hour.toString().padLeft(2, '0')}:'
       '${t.minute.toString().padLeft(2, '0')} ${t.day}/${t.month}';
+}
+
+/// Muc moi: truot len + hien dan mot lan.
+class _Enter extends StatelessWidget {
+  const _Enter({super.key, required this.animate, required this.child});
+
+  final bool animate;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    // Luon cung kieu widget: rebuild giua chung khong lam nhay hieu ung.
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: animate ? 0 : 1, end: 1),
+      duration: Motion.medium,
+      curve: Motion.enter,
+      builder: (context, t, c) => Opacity(
+        opacity: t,
+        child: Transform.translate(
+          offset: Offset(0, (1 - t) * Motion.riseOffset),
+          child: c,
+        ),
+      ),
+      child: child,
+    );
+  }
+}
+
+class _MaybeAnimatedSize extends StatelessWidget {
+  const _MaybeAnimatedSize({required this.duration, required this.child});
+
+  final Duration duration;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => duration == Duration.zero
+      ? child
+      : AnimatedSize(
+          duration: duration,
+          curve: Motion.enter,
+          alignment: Alignment.topCenter,
+          child: child,
+        );
 }

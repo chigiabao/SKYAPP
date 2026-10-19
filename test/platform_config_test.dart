@@ -14,9 +14,10 @@ void main() {
     expect(plist, contains('NSLocationWhenInUseUsageDescription'));
     expect(plist, contains('NSLocationAlwaysAndWhenInUseUsageDescription'));
     expect(plist, contains('<string>fetch</string>'));
-    expect(plist, contains('<string>processing</string>'));
-    // iOS bo qua NSAllowsArbitraryLoads neu co NSAllowsLocalNetworking.
-    expect(plist, isNot(contains('NSAllowsLocalNetworking')));
+    expect(plist, contains('<string>location</string>'));
+    expect(plist, isNot(contains('<string>processing</string>')));
+    expect(plist, contains('NSAllowsLocalNetworking'));
+    expect(plist, isNot(contains('NSAllowsArbitraryLoads')));
   });
 
   test('id tac vu nen trung Dart / Info.plist / AppDelegate', () {
@@ -26,14 +27,32 @@ void main() {
   });
 
   test('bundle id iOS = applicationId Android', () {
-    final pbx = File(
-      'ios/Runner.xcodeproj/project.pbxproj',
-    ).readAsStringSync();
+    final pbx = File('ios/Runner.xcodeproj/project.pbxproj').readAsStringSync();
     expect(pbx, contains('PRODUCT_BUNDLE_IDENTIFIER = com.skyweather.app;'));
     expect(pbx, isNot(contains('com.example')));
     final gradle = File('android/app/build.gradle.kts').readAsStringSync();
     expect(gradle, contains('applicationId = "com.skyweather.app"'));
   });
+
+  test(
+    'iOS registers background plugins before an implicit UI engine is needed',
+    () {
+      final delegate = File('ios/Runner/AppDelegate.swift').readAsStringSync();
+      final engine = delegate.indexOf(
+        'func didInitializeImplicitFlutterEngine',
+      );
+      for (final plugin in [
+        'FlutterLocalNotificationsPlugin',
+        'WorkmanagerPlugin',
+      ]) {
+        final callback = delegate.indexOf(
+          '$plugin.setPluginRegistrantCallback',
+        );
+        expect(callback, greaterThanOrEqualTo(0));
+        expect(callback, lessThan(engine));
+      }
+    },
+  );
 
   test('web: GPS chi o https / localhost', () {
     bool ok(String u) => GeolocatorGps.isWebContextAllowed(Uri.parse(u));

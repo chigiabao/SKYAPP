@@ -27,7 +27,7 @@ class WeatherData(BaseModel):
     # /weather/hourly only (forecast/observed: derived; climatology: multi-year stats); null on /current, /history
     rain_probability: Optional[float] = None
     precipitation_median: Optional[float] = None
-    # "observed" | "forecast" | "climatology"
+    # "observed" | "ai" | "forecast" (legacy reference) | "climatology" (replay)
     source: Optional[str] = None
     uv_index: Optional[float] = None
     # Open-Meteo Air Quality (CAMS) at the same hour; null for climatology hours
@@ -50,7 +50,7 @@ class DailySummary(BaseModel):
     rain_day_probability: Optional[float] = None
     precipitation_median: Optional[float] = None
     wind_gusts_max: Optional[float] = None
-    # "observed" | "forecast" | "climatology"
+    # "ai" can include already-known analysis hours today.
     source: Optional[str] = None
     uv_index_max: Optional[float] = None
     us_aqi_max: Optional[float] = None

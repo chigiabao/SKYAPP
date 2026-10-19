@@ -348,7 +348,7 @@ class DailyForecast {
   final double tempMin;
   final double tempMax;
   final WeatherCondition condition;
-  final double precipitationMm; // tong luong mua trong ngay, mm
+  final double? precipitationMm; // null = chua co tong luong mua ca ngay
   final int? humidity;
   final double? windSpeed; // km/h (max)
   final double? windGusts; // km/h (wind_gusts_max)
@@ -405,7 +405,7 @@ class DailyForecast {
       tempMin: _requireDouble(json, 'temperature_min'),
       tempMax: _requireDouble(json, 'temperature_max'),
       condition: conditionFromWmo(_toInt(json['weather_code'])),
-      precipitationMm: _toDouble(json['precipitation_total']) ?? 0,
+      precipitationMm: _toDouble(json['precipitation_total']),
       humidity: _toInt(json['humidity_avg']),
       windSpeed: _toDouble(json['wind_speed_max']),
       windGusts: _toDouble(json['wind_gusts_max']),
@@ -809,12 +809,14 @@ class WeatherData {
   final List<HourlyForecast> hourlyForecast;
   final List<DailyForecast> dailyForecast;
   final AIForecast? aiForecast; // null = chua co du bao AI
+  final String? forecastError;
 
   const WeatherData({
     required this.current,
     required this.hourlyForecast,
     required this.dailyForecast,
     this.aiForecast,
+    this.forecastError,
   });
 
   /// Parse tu goi JSON tong hop {current, hourly, daily, ai} (cung la dinh dang cache).
@@ -839,6 +841,9 @@ class WeatherData {
       hourlyForecast: _parseList(json['hourly'], HourlyForecast.fromJson),
       dailyForecast: _parseList(json['daily'], DailyForecast.fromJson),
       aiForecast: aiForecast,
+      forecastError: json['forecast_error'] is String
+          ? json['forecast_error'] as String
+          : null,
     );
   }
 
@@ -856,6 +861,7 @@ class WeatherData {
           .where((d) => !HcmTime.startOfDay(d.date).isBefore(dayStart))
           .toList(),
       aiForecast: aiForecast,
+      forecastError: forecastError,
     );
   }
 

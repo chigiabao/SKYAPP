@@ -65,3 +65,17 @@ android/.gradle/
 
 # Golden test failure artifacts
 **/failures/
+
+# Local AI tooling and handoff notes (not part of the app)
+.claude/
+.agents/
+.codex/
+AGENTS.md
+CLAUDE.md
+CLAUDE.local.md
+docs/agent_handoff.md
+docs/ui_ux_review.md
+tool/install_claude_skills.ps1
+
+# Nested Android build output
+/android/build/

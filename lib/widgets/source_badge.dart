@@ -22,6 +22,8 @@ Color sourceDotColor(BuildContext context, DataSource source) {
       return dark ? const Color(0xFF81C784) : const Color(0xFF2E7D32);
     case DataSource.forecast:
       return dark ? const Color(0xFF90CAF9) : AppColors.primaryDark;
+    case DataSource.ai:
+      return dark ? const Color(0xFF80CBC4) : const Color(0xFF00695C);
     case DataSource.climatology:
       return dark ? const Color(0xFFFFB74D) : const Color(0xFFB45309);
   }
@@ -81,6 +83,8 @@ class SourceLegend extends StatelessWidget {
         return 'phân tích mô hình';
       case DataSource.forecast:
         return 'Open-Meteo';
+      case DataSource.ai:
+        return 'Sky Weather';
       case DataSource.climatology:
         return 'trung bình nhiều năm';
     }
@@ -93,6 +97,8 @@ class SourceLegend extends StatelessWidget {
         return 'dữ liệu phân tích của mô hình, không phải trạm đo';
       case DataSource.forecast:
         return 'mô hình Open-Meteo';
+      case DataSource.ai:
+        return 'model do Sky Weather huấn luyện';
       case DataSource.climatology:
         return 'trung bình nhiều năm';
     }

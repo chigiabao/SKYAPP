@@ -103,6 +103,7 @@ class GeolocatorTripLocation implements TripLocationSource {
                       'Cảnh báo mưa, dông trên đường. Mở ứng dụng để tạm dừng '
                       'hoặc kết thúc.',
                   notificationChannelName: 'Chuyến đi',
+                  notificationIcon: AndroidResource(name: 'ic_stat_weather'),
                   setOngoing: true,
                 )
               : null,

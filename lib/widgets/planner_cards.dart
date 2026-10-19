@@ -2,11 +2,14 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../models/activities.dart';
 import '../models/weather.dart';
 import '../models/weather_alerts.dart';
+import '../providers/planner_provider.dart';
 import '../providers/preferences_provider.dart';
+import '../providers/weather_provider.dart';
 import '../ui/weather/design_tokens.dart';
 import '../ui/weather/glass_ink.dart';
 import '../ui/weather/widgets/glass_card.dart';
@@ -113,7 +116,7 @@ class AlertsSummaryBanner extends StatelessWidget {
                   onTap: onOpen,
                   semanticsLabel:
                       '${top.level.label}: ${top.title}. ${top.detailFor(PreferencesProvider.unitsOf(context))}$more. '
-                      'Mở màn Cảnh báo',
+                      'Dữ liệu mô hình. Mở màn Cảnh báo',
                   child: ConstrainedBox(
                     constraints: const BoxConstraints(minHeight: Touch.min),
                     child: Row(
@@ -154,15 +157,6 @@ class AlertsSummaryBanner extends StatelessWidget {
                                   overflow: TextOverflow.ellipsis,
                                   style: TypeScale.small.copyWith(
                                     fontSize: 13,
-                                    color: ink.secondary,
-                                  ),
-                                ),
-                                Text(
-                                  'Dữ liệu mô hình, không phải cảnh báo '
-                                  'chính thức',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TypeScale.small.copyWith(
                                     color: ink.secondary,
                                   ),
                                 ),
@@ -295,6 +289,10 @@ class ActivitySuggestionCard extends StatelessWidget {
     final ink = GlassInk.of(context);
     final rows = <Widget>[];
     for (final a in activities) {
+      if (a == Activity.commute) {
+        rows.add(CommuteRows(hours: hours, nowHcm: nowHcm));
+        continue;
+      }
       final w = bestWindows(
         a,
         hours,
@@ -347,11 +345,19 @@ class ActivityWindowRow extends StatelessWidget {
     required this.activity,
     required this.window,
     required this.nowHcm,
+    this.showActivity = true,
+    this.showDay = true,
   });
 
   final Activity activity;
   final ActivityWindow? window;
   final DateTime nowHcm;
+
+  /// false: the da co ten hoat dong (man Hoat dong) -> chi hien gio.
+  final bool showActivity;
+
+  /// false: cung ngay voi dong tren -> bo "Hôm nay" / "Mai".
+  final bool showDay;
 
   @override
   Widget build(BuildContext context) {
@@ -359,7 +365,9 @@ class ActivityWindowRow extends StatelessWidget {
     final w = window;
     final when = w == null
         ? 'Chưa có khung giờ phù hợp'
-        : windowLabel(w.start, w.end, nowHcm);
+        : showDay
+        ? windowLabel(w.start, w.end, nowHcm)
+        : '${_hh(w.start)}⁠–⁠${_hh(w.end)}';
     final rating = w?.rating.label;
     return Semantics(
       container: true,
@@ -373,14 +381,16 @@ class ActivityWindowRow extends StatelessWidget {
           padding: const EdgeInsets.symmetric(vertical: Space.xs),
           child: Row(
             children: [
-              Icon(activityIcon(activity), color: Palette.white),
-              const SizedBox(width: Space.m),
+              if (showActivity) ...[
+                Icon(activityIcon(activity), color: Palette.white),
+                const SizedBox(width: Space.m),
+              ],
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      '${activity.label} · $when',
+                      showActivity ? '${activity.label} · $when' : when,
                       style: TypeScale.body.copyWith(
                         color: Palette.white,
                         fontWeight: FontWeight.w600,
@@ -399,6 +409,101 @@ class ActivityWindowRow extends StatelessWidget {
                 const SizedBox(width: Space.s),
                 GlassPill(label: rating),
               ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Hai dong di / ve cho "Đi làm / đi học" (gio trong [PlannerProvider.commute],
+/// mac dinh 7:30 / 17:30): "Về 17h30: mưa 70% – mang áo mưa". Dung du lieu
+/// cua Nha (luc di) / Noi lam (luc ve) neu da tai, khong thi [hours] cua
+/// trang dang xem.
+class CommuteRows extends StatelessWidget {
+  const CommuteRows({super.key, required this.hours, required this.nowHcm});
+
+  final List<HourlyForecast> hours;
+  final DateTime nowHcm;
+
+  static String Function(double)? _temp(BuildContext context) {
+    try {
+      return Provider.of<WeatherProvider>(
+        context,
+        listen: false,
+      ).formatTemperature;
+    } on ProviderNotFoundException {
+      return null;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ink = GlassInk.of(context);
+    final planner = maybePlanner(context);
+    final c = planner?.commute ?? const CommuteSettings();
+    final temp = _temp(context);
+    List<HourlyForecast> of(String? id) =>
+        (id == null ? null : planner?.hoursFor(id)) ?? hours;
+    final lines = [
+      commuteLine(
+        'Đi',
+        c.leaveHour,
+        c.leaveMinute,
+        of(c.homeId),
+        nowHcm,
+        formatTemp: temp,
+      ),
+      commuteLine(
+        'Về',
+        c.returnHour,
+        c.returnMinute,
+        of(c.workId),
+        nowHcm,
+        formatTemp: temp,
+      ),
+    ]..sort((a, b) => (a?.at ?? nowHcm).compareTo(b?.at ?? nowHcm));
+    final shown = [for (final l in lines) ?l];
+    return Semantics(
+      container: true,
+      excludeSemantics: true,
+      label:
+          '${Activity.commute.label}: '
+          '${shown.isEmpty ? 'chưa có dự báo cho giờ đi, về' : shown.map((l) => l.text).join('. ')}',
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: Touch.min),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: Space.xs),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Padding(
+                padding: EdgeInsets.only(top: 2),
+                child: Icon(Icons.two_wheeler_rounded, color: Palette.white),
+              ),
+              const SizedBox(width: Space.m),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (shown.isEmpty)
+                      Text(
+                        'Đi, về: chưa có dự báo cho giờ này',
+                        style: TypeScale.body.copyWith(color: ink.secondary),
+                      ),
+                    for (final l in shown)
+                      Text(
+                        l.text,
+                        style: TypeScale.body.copyWith(
+                          color: Palette.white,
+                          fontWeight: l.bad ? FontWeight.w600 : FontWeight.w400,
+                          fontFeatures: kTabular,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
             ],
           ),
         ),

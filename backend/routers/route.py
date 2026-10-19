@@ -12,8 +12,9 @@ because the demo server ignores the profile and always routes by car. Route data
 
 Each sample: ETA = depart_at + cumulative OSRM duration; the nearest grid cell (cells table) if the point lies
 inside the new-HCMC boundary (else cell_id null); the weather of that cell at the ETA hour from
-routers.weather._series (observed, then the latest NWP issue, then climatology).
+routers.weather._series (observed or our own AI; unavailable forecasts stay null).
 alert = thunderstorm code 95-99, or >= 5 mm/h, or gusts >= 50 km/h (model-based, not an official warning).
+An alert being false is not a safety conclusion; own AI does not predict storms or gusts.
 """
 import json
 import math
@@ -220,7 +221,13 @@ def _weather_samples(points: List[Tuple[float, float, float]], depart: datetime)
     weather: Dict[Tuple[str, datetime], object] = {}
     for sid, hs in wanted.items():
         times = sorted(hs)
-        for t, item in zip(times, _series(times, _latest_observed(sid), True, sid)):
+        try:
+            items = _series(times, _latest_observed(sid), True, sid)
+        except HTTPException as exc:
+            if exc.status_code != 503:
+                raise
+            items = [None] * len(times)
+        for t, item in zip(times, items):
             weather[(sid, t)] = item
     out = []
     for (lat, lon, _), cell, eta, h in zip(points, located, etas, hours):
@@ -235,6 +242,12 @@ def _weather_samples(points: List[Tuple[float, float, float]], depart: datetime)
             "weather_code": item.weather_code if item is not None else None,
             "wind_gusts": _num(item.wind_gusts, 1) if item is not None else None,
             "source": item.source if item is not None else None,
+            "forecast_available": item is not None and any(getattr(item, field) is not None for field in
+                                                          ("temperature", "precipitation", "rain_probability",
+                                                           "weather_code", "wind_gusts")),
+            "hazard_assessment_complete": item is not None and item.source in {"observed", "forecast"}
+                                          and all(getattr(item, field) is not None for field in
+                                                  ("precipitation", "weather_code", "wind_gusts")),
             "alert": alert, "alert_reason": reason,
         })
     return out

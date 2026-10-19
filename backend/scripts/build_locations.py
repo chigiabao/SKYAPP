@@ -54,7 +54,7 @@ HISTORIC = {  # relation id -> (expected name, region label)
 OFFICIAL_TOTAL = 168
 KIND_PREFIX = [("Đặc khu ", "dac_khu"), ("Phường ", "phuong"), ("Xã ", "xa")]
 
-TSN = {"id": "tsn", "name": "Tân Sơn Nhất (điểm huấn luyện AI)", "kind": "training_point",
+TSN = {"id": "tsn", "name": "Tân Sơn Nhất", "kind": "training_point",
        "lat": 10.7909, "lon": 106.6313, "elevation": 6.0, "osm_relation_id": None}
 
 BOUNDARY_TOLERANCE = 0.002   # degrees, outer HCMC boundary

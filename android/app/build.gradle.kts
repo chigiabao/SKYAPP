@@ -1,7 +1,37 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
+}
+
+val releaseSigningFile = rootProject.file("key.properties")
+val releaseSigning = Properties().apply {
+    if (releaseSigningFile.isFile) {
+        releaseSigningFile.inputStream().use { load(it) }
+    }
+}
+val releaseStoreFile = releaseSigning.getProperty("storeFile")
+    ?.takeIf { it.isNotBlank() }?.let { rootProject.file(it) }
+
+// Check the resolved graph so debug works without release credentials,
+// including when release is requested indirectly through assemble or build.
+gradle.taskGraph.whenReady {
+    if (allTasks.any { it.project == project && it.name.contains("Release", ignoreCase = true) }) {
+        check(releaseSigningFile.isFile) {
+            "Release signing requires android/key.properties. See android/key.properties.example; " +
+                "use the existing app signing/upload key, not a new or debug key."
+        }
+        val missing = listOf("storeFile", "storePassword", "keyAlias", "keyPassword")
+            .filter { releaseSigning.getProperty(it).isNullOrBlank() }
+        check(missing.isEmpty()) {
+            "Release signing: missing ${missing.joinToString()} in android/key.properties."
+        }
+        check(releaseStoreFile?.isFile == true) {
+            "Release signing: storeFile must point to an existing keystore (relative to android/ or absolute)."
+        }
+    }
 }
 
 android {
@@ -17,7 +47,7 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
+        // Preserve the published application ID for existing installs.
         applicationId = "com.skyweather.app"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
@@ -31,11 +61,18 @@ android {
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        create("release") {
+            storeFile = releaseStoreFile
+            storePassword = releaseSigning.getProperty("storePassword")
+            keyAlias = releaseSigning.getProperty("keyAlias")
+            keyPassword = releaseSigning.getProperty("keyPassword")
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("release")
         }
     }
 }

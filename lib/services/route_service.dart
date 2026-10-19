@@ -17,7 +17,7 @@ import '../models/hcm_time.dart';
 
 /// Phuong tien (tham so `profile` cua backend).
 enum TripProfile {
-  driving('Ô tô / xe máy', 'driving'),
+  driving('Xe máy', 'driving'),
   cycling('Xe đạp', 'cycling'),
   foot('Đi bộ', 'foot');
 
@@ -33,10 +33,11 @@ enum TripProfile {
 
 /// Muc nguy hiem cua mot diem mau (de to mau tuyen).
 enum RouteHazard {
-  none('Khô ráo'),
+  none('Chưa có cảnh báo'),
   rain('Có mưa'),
   heavy('Mưa to / gió giật'),
-  storm('Dông');
+  storm('Dông'),
+  unknown('Chưa rõ');
 
   const RouteHazard(this.label);
   final String label;
@@ -57,7 +58,13 @@ class RouteSample {
     this.source,
     this.alert = false,
     this.alertReason,
-  });
+    bool? forecastAvailable,
+    bool? hazardAssessmentComplete,
+  }) : // Keep public named arguments distinct from private nullable overrides.
+       // ignore: prefer_initializing_formals
+       _forecastAvailable = forecastAvailable,
+       // ignore: prefer_initializing_formals
+       _hazardAssessmentComplete = hazardAssessmentComplete;
 
   final LatLng point;
 
@@ -70,6 +77,25 @@ class RouteSample {
   final int? weatherCode;
   final double? windGusts; // km/h
   final String? source;
+  final bool? _forecastAvailable;
+  final bool? _hazardAssessmentComplete;
+
+  bool get forecastAvailable =>
+      _forecastAvailable ??
+      (temperature != null ||
+          precipitation != null ||
+          rainProbability != null ||
+          weatherCode != null ||
+          windGusts != null);
+
+  // Own-AI weather codes are derived from rain/cloud, not a storm prediction.
+  bool get hazardAssessmentComplete =>
+      forecastAvailable &&
+      (_hazardAssessmentComplete ?? true) &&
+      (source == 'observed' || source == 'forecast') &&
+      precipitation != null &&
+      weatherCode != null &&
+      windGusts != null;
 
   /// Backend: dong (95-99), >= 5 mm/h hoac gio giat >= 50 km/h.
   final bool alert;
@@ -90,7 +116,7 @@ class RouteSample {
     if ((precipitation ?? 0) >= 0.5 || (rainProbability ?? 0) >= 0.6) {
       return RouteHazard.rain;
     }
-    return RouteHazard.none;
+    return hazardAssessmentComplete ? RouteHazard.none : RouteHazard.unknown;
   }
 
   factory RouteSample.fromJson(Map<String, dynamic> j) {
@@ -112,6 +138,8 @@ class RouteSample {
       source: j['source']?.toString(),
       alert: j['alert'] == true,
       alertReason: j['alert_reason']?.toString(),
+      forecastAvailable: j['forecast_available'] as bool?,
+      hazardAssessmentComplete: j['hazard_assessment_complete'] as bool?,
     );
   }
 }
@@ -142,6 +170,17 @@ class TripRoute {
   final RouteSample? worst;
   final bool alert;
   final String attribution;
+
+  int get availableSampleCount =>
+      samples.where((s) => s.forecastAvailable).length;
+
+  bool get hasCompleteForecastCoverage =>
+      samples.isNotEmpty && samples.every((s) => s.forecastAvailable);
+
+  bool get hasCompleteHazardCoverage =>
+      samples.isNotEmpty && samples.every((s) => s.hazardAssessmentComplete);
+
+  bool get hasOwnModelForecasts => samples.any((s) => s.source == 'ai');
 
   /// Diem xau nhat co canh bao (null neu tuyen khong co canh bao).
   RouteSample? get worstAlert => worst != null && worst!.alert ? worst : null;

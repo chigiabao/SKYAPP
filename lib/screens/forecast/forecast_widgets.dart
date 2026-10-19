@@ -10,6 +10,9 @@ import '../../widgets/source_badge.dart';
 import 'forecast_format.dart';
 import 'forecast_source.dart';
 import '../../providers/preferences_provider.dart';
+import '../../ui/weather/app_scene.dart';
+import '../../ui/weather/weather_icons.dart';
+import 'forecast_charts.dart' show chartMotionOff;
 
 /// Tieu de muc + dong phu tuy chon.
 class ForecastSectionTitle extends StatelessWidget {
@@ -90,7 +93,9 @@ class _DayPickerState extends State<DayPicker> {
       Scrollable.ensureVisible(
         ctx,
         alignment: 0.5,
-        duration: const Duration(milliseconds: 200),
+        duration: chartMotionOff(ctx)
+            ? Duration.zero
+            : const Duration(milliseconds: 200),
       );
     });
   }
@@ -203,10 +208,11 @@ class _DayChip extends StatelessWidget {
                     style: AppTextStyles.bodySmall.copyWith(color: sub),
                   ),
                   const SizedBox(height: 4),
-                  Icon(
-                    day.condition.icon,
+                  WeatherIcon.fromCode(
+                    day.weatherCode ?? wmoForCondition(day.condition),
+                    isDay: true,
                     size: AppSizes.iconSizeS,
-                    color: selected ? fg : day.condition.color,
+                    color: selected ? fg : null,
                   ),
                   if (sourceTag != null) ...[
                     const SizedBox(height: 2),
@@ -278,7 +284,14 @@ class ForecastSourceInfo extends StatelessWidget {
           spacing: AppSizes.paddingS,
           runSpacing: AppSizes.paddingS,
           children: [
-            chip(_icon(source), 'Nguồn: ${source.label}'),
+            // Tron nguon: chi ghi nhan ngan ("Thực tế + Dự báo"), chu thich
+            // mau ben duoi; khong lap "Nguồn: Nhiều nguồn: ...".
+            chip(
+              _icon(source),
+              source.isMixed
+                  ? 'Nguồn: ${source.summary!.sources.map((s) => s.shortLabel).join(' + ')}'
+                  : 'Nguồn: ${source.label}',
+            ),
             if (isFromCache)
               chip(
                 Icons.cloud_off_rounded,
@@ -288,8 +301,10 @@ class ForecastSourceInfo extends StatelessWidget {
               ),
           ],
         ),
-        const SizedBox(height: AppSizes.paddingXS),
-        Text(source.note, style: theme.textTheme.bodySmall),
+        if (!source.isMixed) ...[
+          const SizedBox(height: AppSizes.paddingXS),
+          Text(source.note, style: theme.textTheme.bodySmall),
+        ],
         if (source.isMixed) ...[
           const SizedBox(height: AppSizes.paddingXS),
           SourceLegend(summary: source.summary!),
@@ -302,6 +317,7 @@ class ForecastSourceInfo extends StatelessWidget {
     if (source.isMixed) return Icons.layers_outlined;
     switch (source.summary?.single) {
       case DataSource.forecast:
+      case DataSource.ai:
         return Icons.insights_rounded;
       case DataSource.observed:
         return Icons.fact_check_outlined;
@@ -315,16 +331,40 @@ class ForecastSourceInfo extends StatelessWidget {
 /// Tom tat ngay: dieu kien, cao/thap, kha nang mua, luong mua thuong gap
 /// (trung vi), gio manh nhat. Thieu so lieu -> "--".
 class DaySummaryCard extends StatelessWidget {
-  const DaySummaryCard({super.key, required this.day, required this.provider});
+  const DaySummaryCard({
+    super.key,
+    required this.day,
+    required this.provider,
+    this.hours = const [],
+  });
 
   final DailyForecast day;
   final WeatherProvider provider;
+
+  /// Cac gio cua ngay [day] (de dem so gio co mua); rong = chua co.
+  final List<HourlyForecast> hours;
+
+  /// Tag Hero dung chung voi danh sach 7 ngay o Home.
+  static String heroTag(DateTime date) =>
+      'day-${DateFormat('yyyy-MM-dd').format(date)}';
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final unit = provider.tempUnit;
-    final rainPct = day.rainDayPercent;
+    final units = PreferencesProvider.unitsOf(context);
+    final dayHours = [
+      for (final h in hours)
+        if (ForecastFormat.sameDay(h.time, day.date) &&
+            (h.precipitationMm ?? h.precipitationMedian) != null)
+          h,
+    ];
+    final rainyHours = dayHours
+        .where((h) => (h.precipitationMm ?? h.precipitationMedian)! >= 0.1)
+        .length;
+    // Trung vi chi co nghia voi so lieu nhieu nam (du bao: trung vi = tong).
+    final showMedian =
+        (day.source ?? SourceSummary.fallback) == DataSource.climatology;
     final stats = <_Stat>[
       _Stat(
         Icons.thermostat_rounded,
@@ -334,17 +374,24 @@ class DaySummaryCard extends StatelessWidget {
             '${provider.formatTempValue(day.tempMax)}$unit',
       ),
       _Stat(
-        Icons.umbrella_rounded,
-        StatTone.water,
-        day.isObserved ? 'Mưa (thực tế, ≥ 1 mm)' : 'Khả năng mưa',
-        day.observedRainText ?? WeatherFormat.percent(rainPct),
-      ),
-      _Stat(
         Icons.water_drop_rounded,
         StatTone.water,
-        'Lượng mưa thường gặp',
-        PreferencesProvider.unitsOf(context).rainText(day.precipitationMedian),
+        day.isObserved ? 'Tổng mưa (thực tế)' : 'Tổng lượng mưa',
+        units.rainText(day.precipitationMm),
       ),
+      _Stat(
+        Icons.schedule_rounded,
+        StatTone.water,
+        'Giờ có mưa',
+        dayHours.isEmpty ? '--' : '$rainyHours/${dayHours.length} giờ',
+      ),
+      if (showMedian)
+        _Stat(
+          Icons.water_drop_outlined,
+          StatTone.water,
+          'Lượng mưa thường gặp',
+          units.rainText(day.precipitationMedian),
+        ),
       _Stat(
         Icons.air_rounded,
         StatTone.air,
@@ -367,8 +414,8 @@ class DaySummaryCard extends StatelessWidget {
         ),
     ];
     final anyMissing =
-        rainPct == null ||
-        day.precipitationMedian == null ||
+        dayHours.isEmpty ||
+        (showMedian && day.precipitationMedian == null) ||
         day.windSpeed == null;
 
     return Card(
@@ -378,32 +425,41 @@ class DaySummaryCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                Icon(
-                  day.condition.icon,
-                  size: AppSizes.iconSizeL,
-                  color: day.condition.color,
-                ),
-                const SizedBox(width: AppSizes.paddingM),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+            HeroMode(
+              enabled: !chartMotionOff(context),
+              child: Hero(
+                tag: heroTag(day.date),
+                child: Material(
+                  type: MaterialType.transparency,
+                  child: Row(
                     children: [
-                      Text(
-                        day.condition.description,
-                        style: AppTextStyles.heading2.copyWith(
-                          color: theme.textTheme.titleLarge?.color,
-                        ),
+                      WeatherIcon.fromCode(
+                        day.weatherCode ?? wmoForCondition(day.condition),
+                        isDay: true,
+                        size: AppSizes.iconSizeL,
                       ),
-                      Text(
-                        ForecastFormat.title(day.date),
-                        style: theme.textTheme.bodySmall,
+                      const SizedBox(width: AppSizes.paddingM),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              day.condition.description,
+                              style: AppTextStyles.heading2.copyWith(
+                                color: theme.textTheme.titleLarge?.color,
+                              ),
+                            ),
+                            Text(
+                              ForecastFormat.title(day.date),
+                              style: theme.textTheme.bodySmall,
+                            ),
+                          ],
+                        ),
                       ),
                     ],
                   ),
                 ),
-              ],
+              ),
             ),
             const SizedBox(height: AppSizes.paddingM),
             LayoutBuilder(
@@ -425,8 +481,12 @@ class DaySummaryCard extends StatelessWidget {
             ),
             const SizedBox(height: AppSizes.paddingM),
             Text(
-              'Lượng mưa thường gặp: giá trị trung vị trong ngày.'
-              '${anyMissing ? ' "--": chưa có số liệu.' : ''}',
+              [
+                'Giờ có mưa: giờ có từ 0,1 mm trở lên.',
+                if (showMedian)
+                  'Lượng mưa thường gặp: giá trị trung vị trong ngày.',
+                if (anyMissing) '"--": chưa có số liệu.',
+              ].join(' '),
               style: theme.textTheme.bodySmall,
             ),
           ],
@@ -606,9 +666,10 @@ class _HourRow extends StatelessWidget {
         : hour.rainProbability == null
         ? 'Mưa: --'
         : 'Mưa ${hour.rainPercent}%';
-    final amount = hour.isObserved || hour.precipitationMedian == null
+    final mm = hour.precipitationMm ?? hour.precipitationMedian;
+    final amount = hour.isObserved || mm == null
         ? ''
-        : ' · ${PreferencesProvider.unitsOf(context).rainText(hour.precipitationMedian)}';
+        : ' · ${PreferencesProvider.unitsOf(context).rainText(mm)}';
     final hasWind = hour.windSpeed != null || hour.windGusts != null;
     final wind = !hasWind
         ? null
@@ -651,7 +712,11 @@ class _HourRow extends StatelessWidget {
             ),
           ),
           const SizedBox(width: AppSizes.paddingS),
-          Icon(hour.condition.icon, color: hour.condition.color),
+          WeatherIcon.fromCode(
+            hour.weatherCode ?? wmoForCondition(hour.condition),
+            isDay: isDayAt(hour.time),
+            size: AppSizes.iconSizeM,
+          ),
           const SizedBox(width: AppSizes.paddingS),
           Text(
             '${provider.formatTempValue(hour.temperature)}${provider.tempUnit}',

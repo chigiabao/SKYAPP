@@ -11,6 +11,7 @@ import 'providers/preferences_provider.dart';
 import 'providers/trip_provider.dart';
 import 'providers/weather_provider.dart';
 import 'screens/home_screen.dart';
+import 'screens/onboarding_screen.dart';
 import 'services/app_version.dart';
 import 'services/background_check.dart';
 import 'services/home_widget_service.dart';
@@ -47,7 +48,16 @@ class SkyWeatherApp extends StatelessWidget {
               WeatherProvider(initialSettings: initialSettings),
         ),
         // Dia diem da luu, vi tri hien tai, du lieu ban do.
-        ChangeNotifierProvider(create: (context) => LocationProvider()),
+        // WeatherProvider tai truoc trang ke ben theo thu tu trang Home.
+        ChangeNotifierProvider(
+          create: (context) {
+            final lp = LocationProvider();
+            context.read<WeatherProvider>().pageIds = () => [
+              for (final p in lp.pages) p.locationId,
+            ];
+            return lp;
+          },
+        ),
         // Canh bao + goi y hoat dong (tinh tren thiet bi).
         // Thong bao he thong chi tren Android; xin quyen khi nguoi dung bat.
         ChangeNotifierProvider(
@@ -135,7 +145,10 @@ class SkyWeatherApp extends StatelessWidget {
             },
 
             // Home screen
-            home: HomeScreen(locations: context.read<LocationProvider>()),
+            // Lan dau: huong dan 3 buoc phu len man chinh (bo qua duoc).
+            home: OnboardingGate(
+              child: HomeScreen(locations: context.read<LocationProvider>()),
+            ),
           );
         },
       ),

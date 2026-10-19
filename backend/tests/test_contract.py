@@ -66,8 +66,8 @@ def test_history_zeros_survive(client):
 
 
 @pytest.mark.parametrize("hours", [1, 24, 168])
-def test_hourly_contract(client, hours):
-    r = client.get("/weather/hourly", params={"hours": hours})
+def test_reference_hourly_contract(client, hours):
+    r = client.get('/weather/hourly', params={'hours': hours, 'at': FROZEN_NOW.isoformat()})
     assert r.status_code == 200
     items = r.json()
     assert len(items) == hours
@@ -84,13 +84,13 @@ def test_hourly_contract(client, hours):
 
 
 def test_hourly_default_is_24(client):
-    assert len(client.get("/weather/hourly").json()) == 24
+    assert len(client.get('/weather/hourly', params={'at': FROZEN_NOW.isoformat()}).json()) == 24
 
 
 def test_hourly_starts_at_current_hour_across_midnight(client, monkeypatch):
     now = datetime(2024, 6, 12, 23, 59, 59, tzinfo=LOCAL_TZ)
     freeze_now(monkeypatch, now)
-    items = client.get("/weather/hourly", params={"hours": 3}).json()
+    items = client.get('/weather/hourly', params={'hours': 3, 'at': now.isoformat()}).json()
     assert [_ts(x["timestamp"]) for x in items] == [
         datetime(2024, 6, 12, 23, tzinfo=LOCAL_TZ),
         datetime(2024, 6, 13, 0, tzinfo=LOCAL_TZ),
@@ -99,8 +99,8 @@ def test_hourly_starts_at_current_hour_across_midnight(client, monkeypatch):
 
 
 @pytest.mark.parametrize("days", [1, 7, 14])
-def test_daily_contract(client, days):
-    r = client.get("/weather/daily", params={"days": days})
+def test_reference_daily_contract(client, days):
+    r = client.get('/weather/daily', params={'days': days, 'at': FROZEN_NOW.isoformat()})
     assert r.status_code == 200
     items = r.json()
     assert len(items) == days
@@ -128,7 +128,7 @@ def test_history_contract(client):
         assert item["weather_code"] in WMO_CODES
 
 
-def test_hourly_outside_climatology_is_404(client, monkeypatch):
+def test_live_stale_input_is_503_without_climatology_fallback(client, monkeypatch):
     freeze_now(monkeypatch, datetime(2024, 1, 15, 12, tzinfo=LOCAL_TZ))  # January: no synthetic data
-    assert client.get("/weather/hourly").status_code == 404
-    assert client.get("/weather/daily").status_code == 404
+    assert client.get('/weather/hourly').status_code == 503
+    assert client.get('/weather/daily').status_code == 503

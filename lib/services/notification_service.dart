@@ -89,8 +89,9 @@ class LocalNotificationService implements NotificationService {
   static const NotificationDetails _reminderDetails = NotificationDetails(
     android: AndroidNotificationDetails(
       _reminderChannel,
-      'Nhắc hoạt động',
-      channelDescription: 'Nhắc trước giờ hoạt động kèm điểm thời tiết',
+      'Nhắc hoạt động và tóm tắt buổi sáng',
+      channelDescription:
+          'Nhắc trước giờ hoạt động, tóm tắt mưa buổi sáng cho Nhà và Nơi làm',
       styleInformation: BigTextStyleInformation(''),
     ),
     iOS: DarwinNotificationDetails(),
@@ -115,7 +116,9 @@ class LocalNotificationService implements NotificationService {
       _ready =
           await _plugin.initialize(
             settings: const InitializationSettings(
-              android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+              android: AndroidInitializationSettings(
+                '@drawable/ic_stat_weather',
+              ),
               // Khong xin quyen luc khoi tao; chi xin khi nguoi dung bat
               // thong bao (requestPermission).
               iOS: DarwinInitializationSettings(

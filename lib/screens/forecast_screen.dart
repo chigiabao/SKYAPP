@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../config/api_config.dart';
+import '../models/units.dart';
 import '../models/weather.dart';
 import '../providers/planner_provider.dart';
 import '../providers/preferences_provider.dart';
@@ -43,12 +44,31 @@ class ForecastScreen extends StatefulWidget {
     this.source,
   });
 
+  /// Cac gio thuoc dung ngay [date] (gio TP.HCM), giu thu tu.
+  static List<HourlyForecast> hoursOfDay(
+    List<HourlyForecast> hours,
+    DateTime date,
+  ) => [
+    for (final h in hours)
+      if (ForecastFormat.sameDay(h.time, date)) h,
+  ];
+
   @override
   State<ForecastScreen> createState() => _ForecastScreenState();
 }
 
 class _ForecastScreenState extends State<ForecastScreen> {
   late DateTime _selectedDate = HcmTime.startOfDay(widget.selectedDay.date);
+
+  /// Hieu ung so le chi chay luc mo man; muc cuon toi sau do hien ngay.
+  bool _entranceDone = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Chi cac muc dung o khung hinh dau moi chay hieu ung so le.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _entranceDone = true);
+  }
 
   void _select(List<DailyForecast> days, int index) {
     if (index < 0 || index >= days.length) return;
@@ -98,12 +118,12 @@ class _ForecastScreenState extends State<ForecastScreen> {
     final now = provider.nowHcm;
 
     final days = [
-      ...(provider.dailyForecast.isNotEmpty
+      ...(provider.weatherData != null
           ? provider.dailyForecast
           : widget.allDays),
     ]..sort((a, b) => a.date.compareTo(b.date));
     final hours = [
-      ...(provider.hourlyForecast.isNotEmpty
+      ...(provider.weatherData != null
           ? provider.hourlyForecast
           : widget.hourlyData),
     ]..sort((a, b) => a.time.compareTo(b.time));
@@ -132,7 +152,7 @@ class _ForecastScreenState extends State<ForecastScreen> {
             hPad,
             AppSizes.paddingXL,
           ),
-          children: [
+          children: _stagger([
             if (provider.error != null) ...[
               ForecastMessageCard(
                 icon: Icons.cloud_off_rounded,
@@ -164,11 +184,11 @@ class _ForecastScreenState extends State<ForecastScreen> {
               cachedAt: provider.cachedAt,
             ),
             const SizedBox(height: AppSizes.paddingM),
-            DaySummaryCard(day: day, provider: provider),
+            DaySummaryCard(day: day, provider: provider, hours: hours),
             ..._activitySection(context, day, hours, now),
             ..._hourlySection(day, hours, now, provider),
             ..._dailySection(context, days, selectedIndex, now, provider),
-          ],
+          ]),
         ),
       );
     }
@@ -203,6 +223,12 @@ class _ForecastScreenState extends State<ForecastScreen> {
     );
   }
 
+  /// Boc tung muc trong [_Entrance] (fade + truot nhe, tre 45 ms moi muc).
+  List<Widget> _stagger(List<Widget> items) => [
+    for (var i = 0; i < items.length; i++)
+      _Entrance(index: _entranceDone ? null : i, child: items[i]),
+  ];
+
   /// Mo man Gop y voi loai "Dự báo sai" + du bao gio hien tai dinh kem.
   void _openWrongForecast(
     BuildContext context,
@@ -231,27 +257,14 @@ class _ForecastScreenState extends State<ForecastScreen> {
     DateTime now,
     WeatherProvider provider,
   ) {
-    final isToday = ForecastFormat.sameDay(day.date, now);
-    final List<HourlyForecast> shown;
-    final String subtitle;
-
-    if (isToday && hours.any((h) => ForecastFormat.sameDay(h.time, now))) {
-      // Hom nay: hien du cua so 24 gio toi (co the sang ngay mai).
-      shown = hours;
-      subtitle =
-          '${hours.length} giờ tới · từ ${ForecastFormat.hourMinute(hours.first.time)} '
-          '${ForecastFormat.relativeDay(hours.first.time, now).toLowerCase()}';
-    } else {
-      shown = [
-        for (final h in hours)
-          if (ForecastFormat.sameDay(h.time, day.date)) h,
-      ];
-      subtitle = shown.isEmpty
-          ? ''
-          : 'Có số liệu ${ForecastFormat.hourMinute(shown.first.time)}–'
-                '${ForecastFormat.hourMinute(shown.last.time)}'
-                '${shown.length < 24 ? ' (các giờ còn lại chưa có)' : ''}';
-    }
+    // Moi ngay (ke ca hom nay) chi hien cac gio cua chinh ngay do: du lieu
+    // 48 gio -> phan sau nua dem thuoc ve "Ngày mai".
+    final shown = ForecastScreen.hoursOfDay(hours, day.date);
+    final String subtitle = shown.isEmpty
+        ? ''
+        : 'Có số liệu ${ForecastFormat.hourMinute(shown.first.time)}–'
+              '${ForecastFormat.hourMinute(shown.last.time)}'
+              '${shown.length < 24 ? ' (các giờ còn lại chưa có)' : ''}';
 
     if (shown.isEmpty) {
       final String message;
@@ -282,12 +295,7 @@ class _ForecastScreenState extends State<ForecastScreen> {
         nowIndex: nowIndex,
         provider: provider,
       ),
-      ForecastSectionTitle(
-        'Khả năng mưa (%)',
-        subtitle: shown.any((h) => h.isObserved)
-            ? 'Giờ "Thực tế": 100% = có mưa, 0% = không mưa.'
-            : null,
-      ),
+      ForecastSectionTitle('Lượng mưa theo giờ', subtitle: _rainSummary(shown)),
       HourlyRainChart(hours: shown, nowIndex: nowIndex),
       ForecastSectionTitle(
         'Gió theo giờ (${PreferencesProvider.unitsOf(context).windAxisUnit.label})',
@@ -305,6 +313,24 @@ class _ForecastScreenState extends State<ForecastScreen> {
     ];
   }
 
+  /// "5 giờ có mưa · tổng 12 mm" (gio co >= 0,1 mm); chua co so lieu -> null.
+  String? _rainSummary(List<HourlyForecast> shown) {
+    final mms = [for (final h in shown) ?HourlyRainChart.mmOf(h)];
+    if (mms.isEmpty) return null;
+    final rainy = mms.where((v) => v >= 0.1).length;
+    final total = mms.fold<double>(0, (a, b) => a + b);
+    final coverage = mms.length < shown.length
+        ? 'Chỉ có lượng mưa cho ${mms.length}/${shown.length} giờ. '
+        : '';
+    if (rainy == 0) {
+      return '${coverage}Không có giờ nào mưa đáng kể (≥ 0,1 mm)'
+          '${coverage.isEmpty ? '.' : ' trong các giờ có số liệu.'}';
+    }
+    return '$coverage$rainy giờ có mưa · tổng '
+        '${PreferencesProvider.unitsOf(context).rainText(total)}. '
+        'Chạm cột để xem chi tiết.';
+  }
+
   List<Widget> _dailySection(
     BuildContext context,
     List<DailyForecast> days,
@@ -313,17 +339,13 @@ class _ForecastScreenState extends State<ForecastScreen> {
     WeatherProvider provider,
   ) {
     final p = ChartPalette(context);
-    final rainMissing = days.any((d) => d.rainDayProbability == null);
+    final units = PreferencesProvider.unitsOf(context);
+    final inch = units.precip == PrecipUnit.inch;
     final windMissing = days.any((d) => d.windSpeed == null);
     final hasGusts = days.any((d) => d.windGusts != null);
     final gustColor = p.isDark
         ? const Color(0xFFFFCC80)
         : const Color(0xFFB45309);
-    final rainNotes = [
-      if (days.any((d) => d.isObserved))
-        'Ngày "Thực tế": 100% = có mưa ≥ 1 mm, 0% = không mưa.',
-      if (rainMissing) 'Ngày không có cột: chưa có số liệu.',
-    ].join(' ');
     final hint = 'Chạm vào một ngày để xem chi tiết.';
     return [
       ForecastSectionTitle('Nhiệt độ ${days.length} ngày', subtitle: hint),
@@ -334,18 +356,19 @@ class _ForecastScreenState extends State<ForecastScreen> {
         onSelect: (i) => _select(days, i),
       ),
       ForecastSectionTitle(
-        'Khả năng mưa theo ngày (%)',
-        subtitle: rainNotes.isEmpty ? null : rainNotes,
+        'Tổng lượng mưa theo ngày (${units.precip.label})',
+        subtitle: 'Cộng dồn lượng mưa cả ngày.',
       ),
       DailyBarChart(
         days: days,
-        values: [for (final d in days) d.rainDayPercent?.toDouble()],
+        values: [for (final d in days) d.precipitationMm],
         selectedIndex: selectedIndex,
         nowHcm: now,
         color: p.rain,
-        unitSuffix: '%',
-        fixedMaxY: 100,
-        semanticsLabel: 'Biểu đồ khả năng mưa ${days.length} ngày',
+        unitSuffix: ' ${units.precip.label}',
+        toAxis: (mm) => inch ? UnitConvert.mmToInch(mm) : mm,
+        format: units.rainText,
+        semanticsLabel: 'Biểu đồ tổng lượng mưa ${days.length} ngày',
         onSelect: (i) => _select(days, i),
       ),
       ForecastSectionTitle(
@@ -467,6 +490,9 @@ class _StateView extends StatelessWidget {
     } else if (provider.error != null) {
       icon = Icons.cloud_off_rounded;
       message = provider.error!;
+    } else if (provider.weatherData?.forecastError != null) {
+      icon = Icons.model_training_rounded;
+      message = provider.weatherData!.forecastError!;
     } else if (hasDays) {
       icon = Icons.event_busy_rounded;
       message =
@@ -505,6 +531,37 @@ class _StateView extends StatelessWidget {
               ),
             ],
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Hien so le khi mo man: fade + truot len 12 px. Giam chuyen dong ->
+/// hien ngay. [index] null = da mo xong, hien ngay (khong doi cau truc cay).
+class _Entrance extends StatelessWidget {
+  const _Entrance({required this.index, required this.child});
+
+  final int? index;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (chartMotionOff(context)) return child;
+    final i = index;
+    final delay = i == null ? 0 : 45 * i.clamp(0, 8);
+    const run = 320;
+    final total = run + delay;
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: i == null ? 1 : 0, end: 1),
+      duration: Duration(milliseconds: total),
+      curve: Interval(delay / total, 1, curve: Curves.easeOutCubic),
+      child: child,
+      builder: (context, t, child) => Opacity(
+        opacity: t,
+        child: Transform.translate(
+          offset: Offset(0, (1 - t) * 12),
+          child: child,
         ),
       ),
     );

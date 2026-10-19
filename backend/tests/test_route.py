@@ -79,8 +79,10 @@ def test_route_samples_weather_and_cache(client, osrm, syn_db):
     assert len(s) == 5   # 0, 2, 4, 6 km + destination
     assert s[0]["eta"] == FROZEN_NOW.isoformat(timespec="seconds")
     assert [x["eta"] for x in s] == sorted(x["eta"] for x in s)
-    assert all(x["cell_id"] is not None and x["temperature"] is not None for x in s)
-    assert {x["source"] for x in s} == {"climatology"}   # synthetic DB: no observation / NWP at that time
+    assert all(x['cell_id'] is not None for x in s)
+    # Geometry remains usable, but stale/missing own forecasts never become climatology.
+    assert all(x['temperature'] is None and x['source'] is None for x in s)
+    assert all(not x['forecast_available'] and not x['hazard_assessment_complete'] for x in s)
     assert set(s[0]) >= {"lat", "lon", "eta", "cell_id", "temperature", "precipitation", "rain_probability",
                          "weather_code", "wind_gusts", "alert", "alert_reason"}
     assert body["worst"] in s
@@ -118,6 +120,34 @@ def test_route_alert_and_worst(client, osrm, monkeypatch):
     w = body["worst"]
     assert w["alert"] is True and w["weather_code"] == 95 and "Dông" in w["alert_reason"] and "Mưa to" in w["alert_reason"]
     assert any(not s["alert"] and s["alert_reason"] is None for s in body["samples"])
+    assert all(s['forecast_available'] and s['hazard_assessment_complete'] for s in body['samples'])
+
+
+def test_unavailable_forecast_keeps_geometry_without_hazard_assessment(client, osrm, monkeypatch):
+    def unavailable(*args):
+        raise route.HTTPException(status_code=503, detail="own forecast unavailable")
+
+    monkeypatch.setattr(route, "_series", unavailable)
+    body = _get(client, TSN, BEN_THANH).json()
+    assert len(body['geometry']) >= 2 and body['distance_km'] > 0
+    assert body['samples'] and not body['alert']
+    assert all(not s['forecast_available'] and not s['hazard_assessment_complete'] for s in body['samples'])
+    refreshed = client.post('/route/along-weather', json={'geometry': body['geometry'], 'duration_min': 20})
+    assert refreshed.status_code == 200
+    assert refreshed.json()['geometry'] == body['geometry']
+    assert all(not s['forecast_available'] for s in refreshed.json()['samples'])
+
+
+@pytest.mark.parametrize('code,gusts,amount', [(None, None, 0.0), (1, 0.0, 0.0), (None, None, 12.0)])
+def test_own_ai_never_claims_full_hazard_assessment(client, osrm, monkeypatch, code, gusts, amount):
+    def own_ai(times, *args):
+        return [SimpleNamespace(temperature=30.0, precipitation=amount, rain_probability=0.1,
+                                weather_code=code, wind_gusts=gusts, source='ai') for _ in times]
+
+    monkeypatch.setattr(route, '_series', own_ai)
+    body = _get(client, TSN, BEN_THANH).json()
+    assert all(s['forecast_available'] and not s['hazard_assessment_complete'] for s in body['samples'])
+    assert body['alert'] == (amount >= route.ALERT_RAIN_MM_H)
 
 
 @pytest.mark.parametrize("exc", [httpx.ConnectTimeout("timeout"), httpx.ConnectError("down")])

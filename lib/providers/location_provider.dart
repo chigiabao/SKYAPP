@@ -168,11 +168,15 @@ class LocationProvider extends ChangeNotifier {
 
   /// Trang cua Home: [Vị trí hiện tại], dia diem da luu...; rong -> diem
   /// mac dinh.
+  /// Dia diem nhan "Nhà" (dau tien) la trang DAU TIEN, roi "Vị trí hiện
+  /// tại", roi cac dia diem luu con lai theo thu tu.
   List<HomePageEntry> get pages {
+    final h = _saved.indexWhere((s) => s.label == PlaceLabel.home);
     final out = <HomePageEntry>[
+      if (h >= 0) HomePageEntry(_saved[h].locationId, savedIndex: h),
       if (_gpsId != null) HomePageEntry(_gpsId!, isCurrentLocation: true),
       for (var i = 0; i < _saved.length; i++)
-        HomePageEntry(_saved[i].locationId, savedIndex: i),
+        if (i != h) HomePageEntry(_saved[i].locationId, savedIndex: i),
     ];
     if (out.isEmpty) out.add(const HomePageEntry(Place.defaultId));
     return out;
@@ -340,13 +344,21 @@ class LocationProvider extends ChangeNotifier {
     try {
       final cells = await _api.fetchMapCells(at: at, offsetHours: off);
       if (token != _mapToken) return;
+      final max = cells.isEmpty ? null : cells.first.maxOffsetHours;
+      if (max != null && max >= 0) {
+        if (max < _mapMaxOffset) _frames.clear();
+        _mapMaxOffset = max;
+        if (at == null && off > max) {
+          // Fetch the allowed frame; clamping the label alone misstates its time.
+          await refreshMap(offset: max);
+          return;
+        }
+      }
       _cells = cells;
       _cellsAt = at;
       _cellsOffset = off;
       _cellsFromCache = false;
       _mapError = null;
-      final max = cells.isEmpty ? null : cells.first.maxOffsetHours;
-      if (max != null && max >= 0) _mapMaxOffset = max;
       if (at == null) _frames[off] = cells;
       if (at == null && off == 0) {
         _cellsSavedAt = HcmTime.now(_clock);
@@ -466,10 +478,12 @@ class LocationProvider extends ChangeNotifier {
   }) {
     if (isSaved(locationId)) return false;
     final before = selectedPage;
-    _saved = [
-      ..._saved,
-      SavedPlace(locationId: locationId, label: label, customName: customName),
-    ];
+    final item = SavedPlace(
+      locationId: locationId,
+      label: label,
+      customName: customName,
+    );
+    _saved = [..._saved, item];
     _keepSelection(before);
     _saveSaved();
     notifyListeners();
@@ -529,6 +543,7 @@ class LocationProvider extends ChangeNotifier {
   }
 
   void setLabel(int index, PlaceLabel label, {String? customName}) {
+    final before = selectedPage;
     final list = [..._saved];
     list[index] = SavedPlace(
       locationId: list[index].locationId,
@@ -536,6 +551,7 @@ class LocationProvider extends ChangeNotifier {
       customName: label == PlaceLabel.custom ? customName?.trim() : null,
     );
     _saved = list;
+    _keepSelection(before);
     _saveSaved();
     notifyListeners();
   }

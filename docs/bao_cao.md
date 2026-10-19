@@ -1,5 +1,70 @@
 # Báo cáo đồ án: Sky Weather – Ứng dụng thời tiết TP. Hồ Chí Minh có dự báo AI ngắn hạn
 
+## Bản sửa đổi 19/10/2026: Dự báo riêng 1–168 giờ
+
+**Phần này cập nhật trạng thái mới nhất; các mục v2/v3 và kết quả kiểm thử
+bên dưới được giữ làm lịch sử, không phải xác minh hoàn tất đợt nâng cấp.**
+Yêu cầu hiện tại: tương lai live do mô hình nhóm huấn luyện sinh, không fallback
+NWP/khí hậu; hoàn thiện Home responsive và minh bạch nguồn/lỗi. Sau review,
+daily AI phải để xác suất sự kiện ngày `null`, map replay phải có guard chống
+rò rỉ; route đã phân biệt coverage dự báo và coverage nguy cơ. Backend lượt này
+**290 test đạt**; chưa xác minh đầy đủ trên thiết bị thật.
+
+- Đã có `backend/long_range_model.py`, `backend/scripts/train_long_range.py`
+  và artifact `backend/models/long_range/{metadata,evaluation}.json` cùng
+  sáu model text cho nhiệt độ, độ ẩm, lượng mưa, gió, mây, xác suất mưa giờ.
+  Train thật **67 ô, 6 mục tiêu, direct 1–168h**, không lặp dự báo ngắn hạn.
+  Phiên bản `lgbm-direct-168h-20261019T105854Z`; metadata ghi **39,16 giây,
+  259,9 MiB peak RSS, 2 luồng**; `trained_through=2024-12-24T16:00:00+07:00`.
+- Nguồn nhãn `historical-forecast-api` là **đầu ra mô hình ngoài, không đo trạm**.
+  Train/validation/test theo thời gian rời nhau; issue và issue+168h luôn trong
+  cùng split, gap 168h, không refit validation/test. Không có issue-vintage nên
+  kết quả held-out không đồng nghĩa backtest vận hành hoặc độ đúng quan trắc.
+- Live hourly/daily/map/route dùng AI riêng cho tương lai, không fallback
+  NWP/khí hậu; current analysis và đầu vào/AQ ngoài vẫn có chủ đích. Bundle
+  giữ current nếu có, phần dự báo không sẵn sàng trả `[]` và `forecast_error`.
+  `/weather/forecast-status` công bố `experimental=true` và evaluation summary.
+- Replay `historical_reference` **không phải backtest**. Map replay gọi
+  `long_range_model.predict` có guard; issue không sau `trained_through` không
+  có AI outlook thay vì dùng dự đoán legacy bị rò rỉ. Cache replay theo revision
+  model/DB; route thiếu dữ liệu không kết luận an toàn. Test phần mềm không
+  phải bằng chứng an toàn ngoài thực tế.
+- Mưa giờ chưa hiệu chuẩn. Daily AI trả **`rain_day_probability=null`**, không
+  lấy max xác suất giờ làm phần trăm ngày; cần train/hiệu chuẩn sự kiện ngày
+  riêng. Tổng mưa ngày vẫn cộng lượng mưa giờ. UV/AQI/gió giật tương lai chưa
+  được hỗ trợ, trả `null`; không hứa thời hạn lưu dữ liệu/vintage.
+
+Tóm tắt `evaluation.json`, nhánh test (11.256 mẫu/mục tiêu; ngày 7 gồm
+1.608 mẫu horizon 145–168h; thấp hơn tốt hơn):
+
+| Metric | Overall AI / khí hậu | Ngày 7 AI / khí hậu |
+| --- | --- | --- |
+| Nhiệt độ MAE (°C) | 0,9418 / 0,9941 | 0,9719 / 1,0062 |
+| Độ ẩm MAE (điểm %) | 5,7469 / 6,0827 | 6,0456 / 6,1314 |
+| Lượng mưa MAE (mm/giờ) | 0,3441 / 0,3725 | 0,3267 / 0,3478 |
+| Gió MAE (km/h) | 3,2065 / 3,3081 | **3,2723 / 3,2267 (AI kém)** |
+| Mây MAE (điểm %) | 21,5011 / 24,8836 | 22,0875 / 25,2079 |
+| Mưa giờ Brier | 0,129114 / 0,130392 | **0,126045 / 0,124295 (AI kém)** |
+
+Cả sáu mục tiêu overall thắng persistence và khí hậu theo metric chính,
+không phải mọi horizon/ô/metric. Nhiệt độ ngày 7 chỉ hơn khí hậu nhẹ; Brier
+mưa ngày 7 kém dù log-loss tốt hơn (0,396307 / 0,431203). Mây overall RMSE
+33,003293 kém khí hậu 31,017369. Không chuyển các số này thành phần trăm chính xác.
+
+`EXTERNAL_FORECAST_ENABLED=0` mặc định chỉ tắt tải dự báo ngoài, vẫn cập nhật
+đầu vào/AQ; bật `1` chỉ thu thập tham chiếu, không làm nguồn fallback live.
+Theo bằng chứng leader bàn giao, đã chạy thật `ingest.py --location tsn`
+khoảng **18:06 ngày 19/10/2026 (+07)**: input đến 18h; bundle **48 giờ + 7 ngày**,
+nguồn `observed` + `ai`, `forecast_error=None`. Không suy ra mọi ô đã mới:
+các ô khác vẫn có thể cũ đến khi ingest. `observed` là nhãn API cho đầu vào,
+không phải tuyên bố đo trạm.
+
+Home đã có overview/focus responsive, mobile navigation có nhãn, desktop
+rail, tab **Dự báo / Điều kiện**, trạng thái nguồn/lỗi và reduced motion.
+Luồng chính không gắn nguồn fallback giả. Test đang tiếp tục; leader bổ sung
+verification cuối, không lấy số test cũ làm kết luận nâng cấp hoàn tất.
+Chi tiết, split và baseline: [self_forecast_upgrade.md](self_forecast_upgrade.md).
+
 ## 1. Giới thiệu và mục tiêu
 
 Đề bài (`Chuc nang/1.docx`) mô tả một ứng dụng thời tiết cho TP.HCM gồm 11 nhóm chức năng, từ hiển thị thời tiết, dự báo AI đến thông báo, bản đồ và quản trị mô hình. Nhóm làm theo hai giai đoạn:
@@ -576,7 +641,7 @@ Code: `backend/routers/monitor.py`.
 
 - **Nhật ký dự báo:** sau mỗi lần ingest thành công, backend ghi vào bảng `ai_forecast_log` dự báo AI 1/3/6 giờ của mọi chuỗi và cảnh báo bản đồ (mã dông hoặc ≥ 10 mm trong 3 giờ). Chỉ ghi lần phát hành đầu tiên, để chấm điểm đúng thứ đã công bố.
 - **`GET /admin/monitor`** (mặc định 7 ngày): MAE nhiệt độ và F1 mưa của các dự báo đã phát hành so với thực tế, số cảnh báo nhầm và bỏ sót của bản đồ, lỗi ingest, số lần gọi Open-Meteo và OSRM, phản hồi mới.
-- **`POST /admin/retrain`:** chạy nền **tuần tự** `train_global_v3.py` rồi `train_global_v3_ext.py`, cả hai ghi vào `models/v3_candidate/`. Ứng viên chỉ thay `models/v3` khi MAE nhiệt độ trung bình thấp hơn và F1 mưa trung bình không thấp hơn; mô hình cũ được giữ ở `models/v3_prev/`. Nếu đang có một lần huấn luyện chạy, trả 409.
+- **`POST /admin/retrain`:** chạy nền **tuần tự** `train_global_v3.py`, `train_global_v3_ext.py`, rồi `train_global_v3_interval.py`, cả ba ghi vào `models/v3_candidate/`. Bước cuối hiệu chỉnh khoảng nhiệt độ 90%; chỉ xét thay mô hình khi cả ba bước thành công. Ứng viên chỉ thay `models/v3` khi MAE nhiệt độ trung bình thấp hơn và F1 mưa trung bình không thấp hơn; mô hình cũ được giữ ở `models/v3_prev/`. Nếu đang có một lần huấn luyện chạy, trả 409. Luồng này và việc không thay mô hình khi bước hiệu chỉnh khoảng lỗi được mô tả trong `backend/routers/monitor.py` và các ca kiểm thử trong `backend/tests/test_monitor.py`.
 - **`POST /admin/rollback`:** hoán đổi `v3` và `v3_prev` (gọi lần nữa để quay lại bản mới).
 - Huấn luyện lại chạy khi quản trị gọi; chưa có lịch tự động.
 
@@ -622,7 +687,7 @@ Code: `backend/routers/monitor.py`.
 13. **Không có push từ server:** Apple ID miễn phí không dùng được push notification; cảnh báo dựa trên thông báo cục bộ và tác vụ nền, nên có thể đến muộn (iOS tự quyết định lúc chạy nền). App ký bằng Apple ID miễn phí hết hạn sau 7 ngày.
 14. **Dịch vụ OSRM công cộng bị giới hạn:** máy chủ demo và FOSSGIS chỉ cho khoảng 1 yêu cầu/giây, dành cho dùng nhẹ và không cam kết hoạt động liên tục. Khi chúng lỗi, chế độ có tuyến không dùng được (chế độ không có tuyến vẫn chạy). Tọa độ điểm đi/đến được gửi tới máy chủ bên thứ ba này.
 15. Token đăng nhập trên web nằm trong localStorage, có thể bị đọc nếu trang bị chèn mã độc (XSS).
-16. Huấn luyện lại chỉ chạy khi quản trị gọi `/admin/retrain`, chưa có lịch tự động; giám sát chưa tự gửi cảnh báo khi chất lượng giảm. `/admin/retrain` chưa chạy `train_global_v3_interval.py`, nên sau khi huấn luyện lại qua API, khoảng nhiệt độ quay về p10–p90 cũ cho đến khi chạy script này.
+16. Huấn luyện lại chỉ chạy khi quản trị gọi `/admin/retrain`, chưa có lịch tự động; giám sát chưa tự gửi cảnh báo khi chất lượng giảm.
 
 ## 10. Hướng phát triển
 

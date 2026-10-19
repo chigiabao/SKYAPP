@@ -309,7 +309,8 @@ void main() {
       expect(p.nowHcm, _replayAt);
       expect(p.realNowHcm, DateTime.utc(2026, 10, 15, 21, 30));
       expect(p.isStale, isFalse);
-      expect(backend.requests, hasLength(4));
+      // /weather/bundle (404 o backend gia) + 4 API le.
+      expect(backend.requests, hasLength(5));
       for (final u in backend.requests) {
         expect(u.queryParameters['at'], '2026-10-07T12:00:00+07:00');
       }
@@ -458,10 +459,22 @@ void main() {
         expect(req.url.queryParameters['at'], '2026-10-07T12:00:00+07:00');
         return http.Response(jsonEncode(_verifyFull), 200);
       });
-      await pumpApp(tester, const AIVerifyScreen(), verifyClient: client);
+      await pumpApp(
+        tester,
+        AIVerifyScreen(intervalLoader: _noBand),
+        verifyClient: client,
+      );
       await tester.pumpAndSettle();
+      // Cau ket luan dau man.
+      expect(find.textContaining('Mốc 3h: AI dự báo'), findsOneWidget);
+      final dry = find.text('Không mưa (0 mm)');
+      await tester.scrollUntilVisible(
+        dry,
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
       expect(find.text('Có mưa (0,1 mm)'), findsOneWidget);
-      expect(find.text('Không mưa (0 mm)'), findsOneWidget);
+      expect(dry, findsOneWidget);
       expect(find.text('Sai số nhiệt độ: 0,2°C'), findsOneWidget);
       // The danh gia o luoi day ghi chu xuong duoi: cuon toi.
       final note = find.textContaining('không phải số đo từ trạm');
@@ -498,8 +511,13 @@ void main() {
       final client = MockClient(
         (req) async => http.Response(jsonEncode(body), 200),
       );
-      await pumpApp(tester, const AIVerifyScreen(), verifyClient: client);
+      await pumpApp(
+        tester,
+        AIVerifyScreen(intervalLoader: _noBand),
+        verifyClient: client,
+      );
       await tester.pumpAndSettle();
+      await _openTechDetails(tester);
       expect(find.text('Sai số độ ẩm: ±2,1% (1h)'), findsOneWidget);
       expect(find.text('Sai số gió: ±1,5 km/h (1h)'), findsOneWidget);
       expect(find.text('Sai số lượng mưa: ±0,26 mm (1h)'), findsOneWidget);
@@ -538,8 +556,13 @@ void main() {
       final client = MockClient(
         (req) async => http.Response(jsonEncode(body), 200),
       );
-      await pumpApp(tester, const AIVerifyScreen(), verifyClient: client);
+      await pumpApp(
+        tester,
+        AIVerifyScreen(intervalLoader: _noBand),
+        verifyClient: client,
+      );
       await tester.pumpAndSettle();
+      await _openTechDetails(tester);
       expect(find.text('Sai số độ ẩm: ±2,1% (1h)'), findsOneWidget);
       expect(find.text('Sai số gió: ±1,5 km/h (1h)'), findsOneWidget);
       expect(find.text('Sai số lượng mưa: ±0,26 mm (1h)'), findsOneWidget);
@@ -554,20 +577,62 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
+    testWidgets('AI verify: dai 90% tu ban goc, textScale 2.0 khong tran', (
+      tester,
+    ) async {
+      final client = MockClient(
+        (req) async => http.Response(jsonEncode(_verifyFull), 200),
+      );
+      Map<String, dynamic> pr(double t) => {
+        'temperature': t,
+        'rain_probability': 0.2,
+        'temperature_low': t - 0.8,
+        'temperature_high': t + 0.8,
+        'interval_level': 0.9,
+      };
+      final issued = AIForecast.fromJson({
+        'issued_at': _verifyFull['issued_at'],
+        'model_version': _verifyFull['model_version'],
+        'predictions': {'1h': pr(32.1), '3h': pr(30.7)},
+      });
+      await pumpApp(
+        tester,
+        AIVerifyScreen(intervalLoader: (_) async => issued),
+        verifyClient: client,
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Dải khoảng 90%'), findsOneWidget);
+      tester.platformDispatcher.textScaleFactorTestValue = 2.0;
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      await tester.pumpAndSettle();
+      for (var i = 0; i < 10; i++) {
+        await tester.drag(find.byType(ListView).first, const Offset(0, -400));
+        await tester.pump();
+        expect(tester.takeException(), isNull);
+      }
+    });
+
     testWidgets('AI verify: target not yet available', (tester) async {
       final client = MockClient(
         (req) async => http.Response(jsonEncode(_verifyPartial), 200),
       );
       await pumpApp(
         tester,
-        const AIVerifyScreen(),
+        AIVerifyScreen(intervalLoader: _noBand),
         replay: false,
         verifyClient: client,
       );
       await tester.pumpAndSettle();
-      expect(find.text('Chưa tới giờ'), findsOneWidget);
-      expect(find.textContaining('chưa tới — chưa có số liệu'), findsOneWidget);
-      expect(find.textContaining('Chế độ xem lại'), findsOneWidget);
+      final scrollable = find.byType(Scrollable).first;
+      for (final content in [
+        find.text('Chưa tới giờ'),
+        find.textContaining('chưa tới — chưa có số liệu'),
+        find.textContaining('Chế độ xem lại'),
+      ]) {
+        await tester.scrollUntilVisible(content, 200, scrollable: scrollable);
+        expect(content, findsOneWidget);
+        expect(tester.takeException(), isNull);
+      }
       expect(tester.takeException(), isNull);
     });
 
@@ -577,7 +642,7 @@ void main() {
       );
       await pumpApp(
         tester,
-        const AIVerifyScreen(),
+        AIVerifyScreen(intervalLoader: _noBand),
         replay: false,
         verifyClient: client,
       );
@@ -586,4 +651,19 @@ void main() {
       expect(find.text('Thử lại'), findsOneWidget);
     });
   });
+}
+
+/// Test: khong tai ban du bao goc (khong co dai khoang).
+Future<AIForecast?> _noBand(DateTime _) async => null;
+
+/// Mo "Chi tiết kỹ thuật" (MAE, F1, do phu) o cuoi man kiem chung.
+Future<void> _openTechDetails(WidgetTester tester) async {
+  final tile = find.text('Chi tiết kỹ thuật');
+  await tester.scrollUntilVisible(
+    tile,
+    300,
+    scrollable: find.byType(Scrollable).first,
+  );
+  await tester.tap(tile);
+  await tester.pumpAndSettle();
 }

@@ -2,7 +2,8 @@
 import json
 import sqlite3
 import threading
-from datetime import datetime
+from datetime import datetime, timedelta
+from unittest.mock import Mock
 
 import pytest
 from fastapi.testclient import TestClient
@@ -35,6 +36,7 @@ def _exec(db, sql, rows):
 @pytest.fixture
 def ingest_db(tmp_path, monkeypatch):
     monkeypatch.setattr(ingest, "_get_json", FakeAPI())
+    monkeypatch.setenv("LONG_RANGE_MODEL_DIR", str(tmp_path / "absent-model"))
     monitor._retention_day.clear()
     return write_db(tmp_path / "w.db", synthetic_rows(), locations=False)
 
@@ -52,10 +54,143 @@ def test_ingest_logs_published_forecasts_once(ingest_db):
         assert prob == ref["predictions"][f"{h}h"]["rain_probability"]
     alert = _q(ingest_db, "SELECT issued_at, horizon_h, alert, precipitation FROM ai_forecast_log "
                           "WHERE source = 'map_alert'")
-    assert len(alert) == 1 and alert[0][:3] == (NOW_HOUR, 3, 0) and alert[0][3] is not None
+    assert alert == []   # no own-model artifact: external forecasts are not published
+    assert _q(ingest_db, "SELECT * FROM ai_forecast_log WHERE source = 'ai_long_range'") == []
     n = _q(ingest_db, "SELECT COUNT(*) FROM ai_forecast_log")[0][0]
     ingest.run_ingest(db_path=ingest_db, now=NOW)   # same hour again: first publication kept, no duplicates
     assert _q(ingest_db, "SELECT COUNT(*) FROM ai_forecast_log")[0][0] == n
+
+
+@pytest.fixture
+def map_log_db(tmp_path, monkeypatch):
+    path = write_db(tmp_path / "map.db", synthetic_rows()[-72:], locations=False)
+    ingest.connect(path).close()   # migrate, without ingest or network
+    _exec(path, "INSERT INTO nwp_forecast (location_id, issued_at, timestamp, precipitation, "
+                "precipitation_probability, weather_code) VALUES ('tsn', ?, ?, 20, 99, 95)",
+          [("2023-06-24 23:00:00", "2023-06-25 00:00:00")])
+    monkeypatch.setattr(monitor, "_predict_all", lambda items: {})
+    return path
+
+
+def _own_result(issued):
+    return {"issued_at": issued.replace(tzinfo=LOCAL_TZ).isoformat(), "model_version": "own-test",
+            "predictions": {f"{h}h": {"temperature": 30.0, "precipitation_mm": 0.0, "rain_probability": 0.0}
+                            for h in range(1, 169)}}
+
+
+@pytest.mark.parametrize("amounts,probs,total,prob,alert", [
+    ([2.0, 3.0, 5.0], [0.2, 0.876, 0.4], 10.0, 0.88, 1),
+    ([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], 0.0, 0.0, 0),
+])
+@pytest.mark.parametrize("age", [timedelta(minutes=30), timedelta(hours=3)])
+def test_map_alert_logs_own_model(map_log_db, monkeypatch, amounts, probs, total, prob, alert, age):
+    issued = datetime(2023, 6, 24, 20)
+    now = issued.replace(tzinfo=LOCAL_TZ) + age
+    _exec(map_log_db, "DELETE FROM hourly_weather WHERE timestamp > ? AND timestamp <= ?",
+          [(issued.strftime(monitor.TS_FMT), monitor._naive_now(now).strftime(monitor.TS_FMT))])
+    result = _own_result(issued)
+    offset = int(age.total_seconds() // 3600)
+    for h in (1, 2, 3):
+        result["predictions"][f"{offset + h}h"].update(
+            precipitation_mm=amounts[h - 1], rain_probability=probs[h - 1])
+    result["predictions"][f"{offset + 4}h"].update(precipitation_mm=100, rain_probability=1)
+    predict = Mock(return_value=result)
+    load = Mock(wraps=ai_model.load_history_from_db)
+    monkeypatch.setattr(monitor.long_range_model, "predict", predict)
+    monkeypatch.setattr(monitor.ai_model, "load_history_from_db", load)
+    assert monitor.log_published_forecasts(map_log_db, now) == 12
+    predict.assert_called_once()
+    load.assert_called_once_with(db_path=str(map_log_db), location_id="tsn", until=monitor._naive_now(now))
+    history, cid = predict.call_args.args
+    assert cid == ai_model.canonical_cell_id("tsn")
+    assert history.timestamp.max() == issued.strftime(monitor.TS_FMT)
+    assert _q(map_log_db, "SELECT series_id, source, issued_at, horizon_h, target_time, rain_probability, "
+                        "precipitation, alert, model_version FROM ai_forecast_log WHERE source = 'map_alert'") == [
+        ("tsn", "map_alert", monitor._naive_now(now).replace(minute=0).strftime(monitor.TS_FMT), 3,
+         (monitor._naive_now(now).replace(minute=0) + timedelta(hours=3)).strftime(monitor.TS_FMT),
+         prob, total, alert, "own-test")]
+    logged = _q(map_log_db, "SELECT horizon_h, issued_at, target_time, temperature, rain_probability, "
+                           "precipitation, model_version FROM ai_forecast_log WHERE source = 'ai_long_range' "
+                           "ORDER BY horizon_h")
+    assert [r[0] for r in logged] == list(monitor.LONG_RANGE_HORIZONS)
+    for h, issue, target, temp, rain_prob, precip, version in logged:
+        assert issue == issued.strftime(monitor.TS_FMT)
+        assert target == (issued + timedelta(hours=h)).strftime(monitor.TS_FMT)
+        assert (temp, rain_prob, precip, version) == (
+            30.0, result["predictions"][f"{h}h"]["rain_probability"],
+            result["predictions"][f"{h}h"]["precipitation_mm"], "own-test")
+    assert monitor.log_published_forecasts(map_log_db, now) == 0
+
+
+@pytest.mark.parametrize("missing", ["one", "all", "record"])
+def test_map_alert_missing_precipitation_is_not_a_quiet_sample(map_log_db, monkeypatch, missing):
+    result = _own_result(datetime(2023, 6, 24, 23))
+    for h in ((1, 2, 3) if missing == "all" else (2,)):
+        if missing == "record":
+            del result["predictions"][f"{h}h"]
+        else:
+            result["predictions"][f"{h}h"]["precipitation_mm"] = None
+    monkeypatch.setattr(monitor.long_range_model, "predict", Mock(return_value=result))
+    assert monitor.log_published_forecasts(map_log_db, MON_NOW) == 11
+    assert _q(map_log_db, "SELECT * FROM ai_forecast_log WHERE source = 'map_alert'") == []
+    with monitor._connect(map_log_db) as conn:
+        assert monitor._alert_quality(conn, "2023-06-01")["total"]["evaluated"] == 0
+
+
+@pytest.mark.parametrize("delay", [1, 2, 3])
+def test_delayed_map_alert_scores_now_window_not_issue_window(map_log_db, monkeypatch, delay):
+    issued = datetime(2023, 6, 24, 20)
+    now = issued.replace(tzinfo=LOCAL_TZ) + timedelta(hours=delay)
+    _exec(map_log_db, "DELETE FROM hourly_weather WHERE timestamp > ?", [(issued.strftime(monitor.TS_FMT),)])
+    result = _own_result(issued)
+    for h in (1, 2, 3):
+        result["predictions"][f"{h}h"]["precipitation_mm"] = 20
+    for h in range(delay + 1, delay + 4):
+        result["predictions"][f"{h}h"]["precipitation_mm"] = 1
+    monkeypatch.setattr(monitor.long_range_model, "predict", Mock(return_value=result))
+    assert monitor.log_published_forecasts(map_log_db, now) == 12
+    assert _q(map_log_db, "SELECT issued_at, target_time, precipitation, alert FROM ai_forecast_log "
+                        "WHERE source = 'map_alert'") == [
+        (monitor._naive_now(now).strftime(monitor.TS_FMT),
+         (monitor._naive_now(now) + timedelta(hours=3)).strftime(monitor.TS_FMT), 3.0, 0)]
+    _exec(map_log_db, "INSERT INTO hourly_weather (location_id, timestamp, precipitation, weather_code) "
+                    "VALUES ('tsn', ?, ?, 95)",
+          [((issued + timedelta(hours=h)).strftime(monitor.TS_FMT), 20 if h <= delay else 1)
+           for h in range(1, delay + 4)])
+    with monitor._connect(map_log_db) as conn:
+        quality = monitor._alert_quality(conn, "2023-06-01")
+    assert quality["total"] == {"evaluated": 1, "predicted": 0, "observed": 0, "false_alarms": 0, "missed": 0}
+    assert "rainfall only" in quality["rule"]   # lightning truth is unsupported by this model
+    _exec(map_log_db, "UPDATE hourly_weather SET precipitation = NULL WHERE timestamp = ?",
+          [((monitor._naive_now(now) + timedelta(hours=2)).strftime(monitor.TS_FMT),)])
+    with monitor._connect(map_log_db) as conn:
+        assert monitor._alert_quality(conn, "2023-06-01")["total"]["evaluated"] == 0
+
+
+@pytest.mark.parametrize("error", [ValueError("untrained: missing metadata.json"),
+                                  ValueError("unsupported_cell: unknown"), OSError("broken artifact")])
+def test_map_alert_unavailable_has_no_external_fallback(map_log_db, monkeypatch, error):
+    predict = Mock(side_effect=error)
+    monkeypatch.setattr(monitor.long_range_model, "predict", predict)
+    assert monitor.log_published_forecasts(map_log_db, MON_NOW) == 0
+    predict.assert_called_once()
+    assert _q(map_log_db, "SELECT * FROM ai_forecast_log") == []
+
+
+@pytest.mark.parametrize("history_kind", ["stale", "empty", "future-only"])
+def test_map_alert_without_fresh_history_has_no_external_fallback(map_log_db, monkeypatch, history_kind):
+    if history_kind == "stale":
+        now = datetime(2023, 6, 25, 2, 0, 1, tzinfo=LOCAL_TZ)
+    else:
+        sql = ("DELETE FROM hourly_weather" if history_kind == "empty" else
+               "UPDATE hourly_weather SET timestamp = datetime(timestamp, '+4 days')")
+        _exec(map_log_db, sql, [()])
+        now = MON_NOW
+    predict = Mock()
+    monkeypatch.setattr(monitor.long_range_model, "predict", predict)
+    assert monitor.log_published_forecasts(map_log_db, now) == 0
+    predict.assert_not_called()
+    assert _q(map_log_db, "SELECT * FROM ai_forecast_log") == []
 
 
 def test_post_ingest_failure_never_fails_ingest(ingest_db, monkeypatch):
@@ -125,13 +260,73 @@ def test_monitor_scores_published_forecasts(admin, syn_db, monkeypatch):
     assert q["overall"]["rain_f1"] == round(2 * tp / (2 * tp + (6 - tp)), 3)
     assert [d["day"] for d in q["by_day"]] == ["2023-06-20", "2023-06-21"]
     assert q["by_horizon"]["6h"]["n"] == 2
-    a = m["alerts"]["total"]
+    assert m["alerts"]["total"]["evaluated"] == 0   # historical NWP rules are not own-model samples
+    a = m["legacy_alerts"]["total"]
     assert a == {"evaluated": 3, "predicted": 1, "observed": 1, "false_alarms": 1, "missed": 1}
     assert m["ingest"]["by_day"] == [{"day": "2023-06-24", "runs": 2, "errors": 1, "partial": 0, "api_calls": 11,
                                       "cells_failed": 0}]
     assert m["ingest"]["recent_errors"][0]["message"] == "boom"
     assert m["api_calls"] == [{"day": "2023-06-24", "open_meteo": 11, "osrm": 5, "osrm_errors": 1}]
     assert m["feedback"]["total"] == 1 and m["feedback"]["latest"][0]["verified"] is False
+
+
+@pytest.mark.parametrize('amount', [0.0, 0.099, 0.1, 0.101, 0.2])
+def test_long_range_rain_event_matches_training_without_changing_legacy(monkeypatch, amount):
+    monkeypatch.setattr(monitor, '_rain_thresholds', lambda: {1: 0.5})
+    # The direct-horizon artifact targets >0.1 mm; legacy monitoring uses >=0.1 mm.
+    own_event = amount > monitor.long_range_model.RAIN_THRESHOLD_MM
+    probability = 1.0 if own_event else 0.0
+    with sqlite3.connect(':memory:') as conn:
+        conn.row_factory = sqlite3.Row
+        conn.execute('CREATE TABLE hourly_weather (location_id TEXT, timestamp TEXT, '
+                     'temperature REAL, precipitation REAL)')
+        conn.execute('CREATE TABLE ai_forecast_log (series_id TEXT, source TEXT, issued_at TEXT, '
+                     'horizon_h INTEGER, target_time TEXT, temperature REAL, rain_probability REAL, '
+                     'model_version TEXT)')
+        conn.executemany('INSERT INTO hourly_weather VALUES (?, ?, 30, ?)', [
+            ('tsn', '2023-06-24 12:00:00', amount), ('tsn', '2023-06-24 13:00:00', 1.0)])
+        for source in ('ai', 'ai_long_range'):
+            conn.executemany('INSERT INTO ai_forecast_log VALUES (?, ?, ?, 1, ?, 30, ?, ?)', [
+                ('tsn', source, '2023-06-24 11:00:00', '2023-06-24 12:00:00', probability, 'test'),
+                ('tsn', source, '2023-06-24 12:00:00', '2023-06-24 13:00:00', 1.0, 'test')])
+        own = monitor._ai_quality(conn, '2023-06-01', source='ai_long_range')
+        legacy = monitor._ai_quality(conn, '2023-06-01')
+    for scores in (own['overall'], own['by_horizon']['1h'], own['by_day'][0],
+                   own['by_model_version']['test']):
+        assert scores['rain_f1'] == 1.0
+        assert scores['temperature_mae'] == 0.0
+    assert legacy['overall']['rain_f1'] == (0.667 if amount == 0.1 else 1.0)
+
+
+def test_own_long_range_quality_is_separate_with_actual_horizons_and_versions(admin, syn_db, monkeypatch):
+    monkeypatch.setattr(monitor, "_rain_thresholds", lambda: {1: 0.9, 3: 0.9, 6: 0.9})
+    target = datetime(2023, 6, 24, 12)
+    _exec(syn_db, "UPDATE hourly_weather SET temperature = 30, precipitation = 1 WHERE timestamp = ?",
+          [(target.strftime(monitor.TS_FMT),)])
+    rows = []
+    for i, h in enumerate(monitor.LONG_RANGE_HORIZONS):
+        issue = (target - timedelta(hours=h)).strftime(monitor.TS_FMT)
+        rows.append(("tsn", "ai_long_range", issue, h, target.strftime(monitor.TS_FMT), 32, 0.6,
+                     1, None, "own-v1" if i < 5 else "own-v2", issue))
+    rows.append(("tsn", "ai", "2023-06-24 11:00:00", 1, target.strftime(monitor.TS_FMT),
+                 31, 0.6, None, None, "legacy-v3", "x"))
+    _exec(syn_db, "INSERT INTO ai_forecast_log VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", rows)
+    response = admin.get("/admin/monitor", headers=ADMIN, params={"days": 14})
+    assert response.status_code == 200
+    data = response.json()
+    own = data["own_long_range_quality"]
+    assert own["source"] == "ai_long_range"
+    assert own["overall"] == {"n": 11, "temperature_mae": 2.0, "rain_f1": 1.0}
+    assert set(own["by_horizon"]) == {f"{h}h" for h in monitor.LONG_RANGE_HORIZONS}
+    assert all(v == {"n": 1, "temperature_mae": 2.0, "rain_f1": 1.0} for v in own["by_horizon"].values())
+    assert set(own["rain_thresholds"].values()) == {0.5}
+    assert own["by_model_version"] == {
+        "own-v1": {"n": 5, "temperature_mae": 2.0, "rain_f1": 1.0},
+        "own-v2": {"n": 6, "temperature_mae": 2.0, "rain_f1": 1.0}}
+    legacy = data["ai_quality"]
+    assert legacy["overall"] == {"n": 1, "temperature_mae": 1.0, "rain_f1": 0.0}
+    assert set(legacy["by_horizon"]) == {"1h", "3h", "6h"}
+    assert set(legacy["rain_thresholds"].values()) == {0.9}
 
 
 # --- retrain / rollback ---------------------------------------------------------------------------------

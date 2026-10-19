@@ -183,6 +183,24 @@ void main() {
       }
     });
 
+    test('Nha la trang dau, ke ca khi co GPS / gan nhan sau', () async {
+      final lp = LocationProvider(
+        apiService: _api([]),
+        gps: _FakeGps(const GpsFix.at(10.7721, 106.6983)),
+      );
+      await lp.loadLocal();
+      await lp.useCurrentLocation();
+      lp.addSaved('x_can_gio');
+      expect(lp.pages.first.isCurrentLocation, isTrue);
+      lp.setLabel(
+        lp.saved.indexWhere((s) => s.locationId == 'x_can_gio'),
+        PlaceLabel.home,
+      );
+      expect(lp.pages.first.locationId, 'x_can_gio');
+      expect(lp.labelFor(lp.pages.first), 'Nhà');
+      expect(lp.pages[1].isCurrentLocation, isTrue);
+    });
+
     test('GPS ngoai TP.HCM', () async {
       final lp = LocationProvider(
         apiService: _api([]),
@@ -219,7 +237,8 @@ void main() {
         'p_ben_thanh',
         'x_can_gio',
       ]);
-      expect(lp.labelFor(lp.pages[1]), 'Nhà');
+      // "Nhà" la trang dau tien o Home.
+      expect(lp.labelFor(lp.pages[0]), 'Nhà');
       lp.moveSaved(2, 0);
       expect(lp.saved.first.locationId, 'x_can_gio');
       final removed = lp.removeSavedAt(0);

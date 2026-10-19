@@ -58,6 +58,23 @@ class WeatherProvider extends ChangeNotifier {
   /// che do xem lai khi request truoc chua xong).
   int _requestId = 0;
 
+  /// Thu tu trang Home (`location_id`); dat o main.dart de tai truoc trang
+  /// ke ben sau khi trang hien tai tai xong. null = khong tai truoc.
+  List<String> Function()? pageIds;
+
+  /// Dia diem dang tai truoc (toi da [maxPrefetch] request song song).
+  final Set<String> _prefetching = {};
+  static const int maxPrefetch = 2;
+
+  /// Du lieu mang moi hon nguong nay thi doi trang khong tai lai.
+  static const Duration freshFor = Duration(minutes: 2);
+
+  /// Thoi diem tai xong tu mang cua du lieu dang hien thi.
+  DateTime? _fetchedAt;
+
+  /// Tang khi bo du lieu (doi che do xem lai): ket qua tai truoc cu bi bo.
+  int _generation = 0;
+
   // Getters
   WeatherData? get weatherData => _weatherData;
 
@@ -73,6 +90,7 @@ class WeatherProvider extends ChangeNotifier {
         _weatherData!,
         _isFromCache,
         _cachedAt,
+        _fetchedAt,
       );
     }
     _locationId = id;
@@ -80,12 +98,59 @@ class WeatherProvider extends ChangeNotifier {
     _weatherData = s?.data;
     _isFromCache = s?.fromCache ?? false;
     _cachedAt = s?.cachedAt;
+    _fetchedAt = s?.fetchedAt;
     _error = null;
     _errorKind = null;
     _requestId++;
     _isLoading = false;
     notifyListeners();
-    if (fetch) fetchWeatherData();
+    if (!fetch) return;
+    if (_isFresh(s)) {
+      _prefetchNeighbors();
+    } else {
+      fetchWeatherData();
+    }
+  }
+
+  bool _isFresh(_Snapshot? s) =>
+      s != null &&
+      !s.fromCache &&
+      s.fetchedAt != null &&
+      _clock().difference(s.fetchedAt!) < freshFor;
+
+  /// Tai truoc trang lien truoc / lien sau trang dang xem (chi che do truc
+  /// tiep); ket qua vao [_snapshots] va cache.
+  void _prefetchNeighbors() {
+    final ids = pageIds?.call();
+    if (ids == null || isReplay) return;
+    final i = ids.indexOf(_locationId);
+    if (i < 0) return;
+    for (final j in [i + 1, i - 1]) {
+      if (j >= 0 && j < ids.length) prefetch(ids[j]);
+    }
+  }
+
+  /// Tai truoc du lieu cua [id] (bo qua neu dang xem, da moi, dang tai hoac
+  /// da du [maxPrefetch] request song song). Loi bi bo qua.
+  Future<void> prefetch(String id) async {
+    if (isReplay ||
+        id == _locationId ||
+        _prefetching.contains(id) ||
+        _prefetching.length >= maxPrefetch ||
+        _isFresh(_snapshots[id])) {
+      return;
+    }
+    _prefetching.add(id);
+    final generation = _generation;
+    try {
+      final data = await _apiService.fetchWeatherDataFor(id);
+      if (generation != _generation || isReplay || id == _locationId) return;
+      _snapshots[id] = _Snapshot(data, false, null, _clock());
+    } catch (e) {
+      debugPrint('WeatherProvider: prefetch $id failed: $e');
+    } finally {
+      _prefetching.remove(id);
+    }
   }
 
   /// Du lieu cua dia diem [id] (so sanh): mang truoc; loi -> du lieu da tai
@@ -123,6 +188,10 @@ class WeatherProvider extends ChangeNotifier {
 
   bool get isLoading => _isLoading;
 
+  /// Dang tai moi o nen trong khi van hien du lieu (cache hoac lan truoc).
+  /// UI nen giu noi dung, chi hien chi bao nho (vd. "Cập nhật lúc HH:mm").
+  bool get isRefreshing => _isLoading && _weatherData != null;
+
   /// Thong bao loi tieng Viet de hien thi (null = khong loi).
   String? get error => _error;
 
@@ -135,6 +204,7 @@ class WeatherProvider extends ChangeNotifier {
   bool get isFromCache => _isFromCache;
 
   /// Thoi diem luu cache dang hien thi (gio TP.HCM); null neu du lieu tu mang.
+  /// UI: "Cập nhật lúc HH:mm" khi [isFromCache] (ke ca luc [isRefreshing]).
   DateTime? get cachedAt => _cachedAt;
 
   /// Giao dien toi dang ap dung (che do "Theo hệ thống" dua vao do sang
@@ -246,9 +316,11 @@ class WeatherProvider extends ChangeNotifier {
 
   void _resetData() {
     _snapshots.clear();
+    _generation++;
     _weatherData = null;
     _isFromCache = false;
     _cachedAt = null;
+    _fetchedAt = null;
     _error = null;
     _errorKind = null;
   }
@@ -275,14 +347,26 @@ class WeatherProvider extends ChangeNotifier {
   Future<AIVerification> fetchAIVerification() => _apiService
       .fetchAIVerificationFor(_locationId, at: isReplay ? _replayAt : null);
 
-  /// Tai du lieu: mang truoc; loi thi giu du lieu dang co, neu chua co gi
-  /// thi dung cache (chi o che do truc tiep). Dung chung cho lan dau va
-  /// keo-de-lam-moi. Che do xem lai: moi request gui `at`, khong ghi cache.
+  /// Tai du lieu (stale-while-revalidate): chua co gi thi hien ngay cache
+  /// cua dia diem (chi che do truc tiep, [isFromCache] + [isRefreshing]),
+  /// dong thoi tai mang; xong thi thay du lieu mot lan. Loi thi giu du lieu
+  /// dang co ("Dữ liệu cũ"). Dung chung cho lan dau va keo-de-lam-moi.
+  /// Che do xem lai: moi request gui `at`, khong doc/ghi cache.
   Future<void> fetchWeatherData() async {
     final token = ++_requestId;
     final at = isReplay ? _replayAt : null;
     _isLoading = true;
     notifyListeners();
+    if (at == null && _weatherData == null) {
+      final cached = await _apiService.loadCachedResultFor(_locationId);
+      if (token != _requestId) return;
+      if (cached != null && _weatherData == null) {
+        _weatherData = cached.data;
+        _isFromCache = true;
+        _cachedAt = cached.savedAt;
+        notifyListeners();
+      }
+    }
     try {
       final data = await _apiService.fetchWeatherDataFor(_locationId, at: at);
       if (token != _requestId) return;
@@ -294,6 +378,7 @@ class WeatherProvider extends ChangeNotifier {
       _weatherData = data;
       _isFromCache = false;
       _cachedAt = null;
+      _fetchedAt = _clock();
       _error = null;
       _errorKind = null;
     } catch (error) {
@@ -311,13 +396,6 @@ class WeatherProvider extends ChangeNotifier {
       _errorKind = e.kind;
       if (at != null) {
         // Xem lai: khong dung cache (cache la du lieu truc tiep)
-      } else if (_weatherData == null) {
-        final cached = await _apiService.loadCachedResultFor(_locationId);
-        if (cached != null) {
-          _weatherData = cached.data;
-          _isFromCache = true;
-          _cachedAt = cached.savedAt;
-        }
       } else if (_isFromCache) {
         // Cache dang hien thi co the da qua them vai gio
         _weatherData = _weatherData!.withoutPastItems(nowHcm);
@@ -331,6 +409,7 @@ class WeatherProvider extends ChangeNotifier {
       if (token == _requestId) {
         _isLoading = false;
         notifyListeners();
+        if (_error == null) _prefetchNeighbors();
       }
     }
   }
@@ -343,7 +422,8 @@ class WeatherProvider extends ChangeNotifier {
   bool get isStale {
     final current = currentWeather;
     if (current == null) return false;
-    if (_isFromCache) return true;
+    // Cache dang duoc lam moi o nen: chua coi la cu (tranh nhay badge).
+    if (_isFromCache && !_isLoading) return true;
     return nowHcm.difference(current.lastUpdated) > ApiConfig.staleThreshold;
   }
 
@@ -396,9 +476,12 @@ class WeatherProvider extends ChangeNotifier {
 
 /// Du lieu da tai cua mot dia diem.
 class _Snapshot {
-  const _Snapshot(this.data, this.fromCache, this.cachedAt);
+  const _Snapshot(this.data, this.fromCache, this.cachedAt, this.fetchedAt);
 
   final WeatherData data;
   final bool fromCache;
   final DateTime? cachedAt;
+
+  /// Thoi diem tai xong tu mang (dong ho that); null neu chua.
+  final DateTime? fetchedAt;
 }

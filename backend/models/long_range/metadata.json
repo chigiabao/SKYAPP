@@ -1,0 +1,1014 @@
+{
+  "schema_version": 1,
+  "model_version": "lgbm-direct-168h-20261019T105854Z",
+  "source": "ai",
+  "trained_at": "2026-10-19T10:58:54.877773+00:00",
+  "trained_through": "2024-12-24T16:00:00+07:00",
+  "fit_labels_through": "2024-06-30T21:00:00+07:00",
+  "selection_labels_through": "2024-12-24T16:00:00+07:00",
+  "max_horizon_hours": 168,
+  "feature_columns": [
+    "temperature",
+    "temperature_lag_1",
+    "temperature_lag_6",
+    "temperature_lag_24",
+    "temperature_mean_24",
+    "temperature_std_24",
+    "humidity",
+    "humidity_lag_1",
+    "humidity_lag_6",
+    "humidity_lag_24",
+    "humidity_mean_24",
+    "humidity_std_24",
+    "precipitation",
+    "precipitation_lag_1",
+    "precipitation_lag_6",
+    "precipitation_lag_24",
+    "precipitation_mean_24",
+    "precipitation_std_24",
+    "wind_speed",
+    "wind_speed_lag_1",
+    "wind_speed_lag_6",
+    "wind_speed_lag_24",
+    "wind_speed_mean_24",
+    "wind_speed_std_24",
+    "cloud_cover",
+    "cloud_cover_lag_1",
+    "cloud_cover_lag_6",
+    "cloud_cover_lag_24",
+    "cloud_cover_mean_24",
+    "cloud_cover_std_24",
+    "pressure_msl",
+    "pressure_msl_lag_1",
+    "pressure_msl_lag_6",
+    "pressure_msl_lag_24",
+    "pressure_msl_mean_24",
+    "pressure_msl_std_24",
+    "lat",
+    "lon",
+    "elevation",
+    "issue_hour_sin",
+    "issue_hour_cos",
+    "issue_year_sin",
+    "issue_year_cos",
+    "horizon_hours",
+    "valid_hour_sin",
+    "valid_hour_cos",
+    "valid_year_sin",
+    "valid_year_cos"
+  ],
+  "cell_static": {
+    "om-10.3691-107.0976": {
+      "lat": 10.369068,
+      "lon": 107.09763,
+      "elevation": 10.0
+    },
+    "om-10.4394-106.8750": {
+      "lat": 10.439367,
+      "lon": 106.875,
+      "elevation": 4.0
+    },
+    "om-10.4394-107.1127": {
+      "lat": 10.439367,
+      "lon": 107.11268,
+      "elevation": 2.0
+    },
+    "om-10.4394-107.1919": {
+      "lat": 10.439367,
+      "lon": 107.1919,
+      "elevation": 7.0
+    },
+    "om-10.4394-107.2711": {
+      "lat": 10.439367,
+      "lon": 107.271126,
+      "elevation": 5.0
+    },
+    "om-10.5097-106.8106": {
+      "lat": 10.509666,
+      "lon": 106.81057,
+      "elevation": 13.0
+    },
+    "om-10.5097-106.9692": {
+      "lat": 10.509666,
+      "lon": 106.96916,
+      "elevation": 7.0
+    },
+    "om-10.5097-107.1278": {
+      "lat": 10.509666,
+      "lon": 107.12775,
+      "elevation": 6.0
+    },
+    "om-10.5097-107.2070": {
+      "lat": 10.509666,
+      "lon": 107.20705,
+      "elevation": 15.5
+    },
+    "om-10.5097-107.2863": {
+      "lat": 10.509666,
+      "lon": 107.28634,
+      "elevation": 40.0
+    },
+    "om-10.5097-107.3656": {
+      "lat": 10.509666,
+      "lon": 107.36563,
+      "elevation": 19.0
+    },
+    "om-10.5800-107.0635": {
+      "lat": 10.579965,
+      "lon": 107.0635,
+      "elevation": 7.0
+    },
+    "om-10.5800-107.1429": {
+      "lat": 10.579965,
+      "lon": 107.14286,
+      "elevation": 39.0
+    },
+    "om-10.5800-107.3016": {
+      "lat": 10.579965,
+      "lon": 107.30159,
+      "elevation": 71.0
+    },
+    "om-10.5800-107.4603": {
+      "lat": 10.579965,
+      "lon": 107.46032,
+      "elevation": 26.0
+    },
+    "om-10.5800-107.5397": {
+      "lat": 10.579965,
+      "lon": 107.53969,
+      "elevation": 57.0
+    },
+    "om-10.6503-106.6019": {
+      "lat": 10.650264,
+      "lon": 106.60194,
+      "elevation": 5.0
+    },
+    "om-10.6503-106.7608": {
+      "lat": 10.650264,
+      "lon": 106.76081,
+      "elevation": 4.0
+    },
+    "om-10.6503-107.0786": {
+      "lat": 10.650264,
+      "lon": 107.07855,
+      "elevation": 8.0
+    },
+    "om-10.6503-107.1580": {
+      "lat": 10.650264,
+      "lon": 107.15798,
+      "elevation": 56.0
+    },
+    "om-10.6503-107.2374": {
+      "lat": 10.650264,
+      "lon": 107.23742,
+      "elevation": 103.5
+    },
+    "om-10.6503-107.3169": {
+      "lat": 10.650264,
+      "lon": 107.31686,
+      "elevation": 115.0
+    },
+    "om-10.6503-107.3963": {
+      "lat": 10.650264,
+      "lon": 107.396286,
+      "elevation": 60.0
+    },
+    "om-10.7206-106.5371": {
+      "lat": 10.720562,
+      "lon": 106.5371,
+      "elevation": 4.0
+    },
+    "om-10.7206-106.6166": {
+      "lat": 10.720562,
+      "lon": 106.61661,
+      "elevation": 6.2
+    },
+    "om-10.7206-106.6961": {
+      "lat": 10.720562,
+      "lon": 106.69611,
+      "elevation": 7.0
+    },
+    "om-10.7206-107.2527": {
+      "lat": 10.720562,
+      "lon": 107.252655,
+      "elevation": 162.0
+    },
+    "om-10.7206-107.4117": {
+      "lat": 10.720562,
+      "lon": 107.41166,
+      "elevation": 107.0
+    },
+    "om-10.7206-107.4912": {
+      "lat": 10.720562,
+      "lon": 107.491165,
+      "elevation": 78.0
+    },
+    "om-10.7909-106.5517": {
+      "lat": 10.790861,
+      "lon": 106.55173,
+      "elevation": 4.7
+    },
+    "om-10.7909-106.6313": {
+      "lat": 10.790861,
+      "lon": 106.6313,
+      "elevation": 6.0
+    },
+    "om-10.7909-106.7109": {
+      "lat": 10.790861,
+      "lon": 106.71088,
+      "elevation": 10.5
+    },
+    "om-10.7909-106.7905": {
+      "lat": 10.790861,
+      "lon": 106.79045,
+      "elevation": 5.8
+    },
+    "om-10.7909-106.8700": {
+      "lat": 10.790861,
+      "lon": 106.870026,
+      "elevation": 5.0
+    },
+    "om-10.8612-106.5664": {
+      "lat": 10.86116,
+      "lon": 106.566376,
+      "elevation": 5.5
+    },
+    "om-10.8612-106.6460": {
+      "lat": 10.86116,
+      "lon": 106.64602,
+      "elevation": 10.6
+    },
+    "om-10.8612-106.7257": {
+      "lat": 10.86116,
+      "lon": 106.72567,
+      "elevation": 11.8
+    },
+    "om-10.8612-106.8053": {
+      "lat": 10.86116,
+      "lon": 106.80531,
+      "elevation": 25.3
+    },
+    "om-10.9315-106.5811": {
+      "lat": 10.931458,
+      "lon": 106.58105,
+      "elevation": 9.0
+    },
+    "om-10.9315-106.6608": {
+      "lat": 10.931458,
+      "lon": 106.66076,
+      "elevation": 10.0
+    },
+    "om-10.9315-106.7405": {
+      "lat": 10.931458,
+      "lon": 106.74048,
+      "elevation": 28.4
+    },
+    "om-11.0018-106.4362": {
+      "lat": 11.001758,
+      "lon": 106.436165,
+      "elevation": 8.0
+    },
+    "om-11.0018-106.5160": {
+      "lat": 11.001758,
+      "lon": 106.51595,
+      "elevation": 12.0
+    },
+    "om-11.0018-106.5957": {
+      "lat": 11.001758,
+      "lon": 106.59574,
+      "elevation": 5.0
+    },
+    "om-11.0018-106.6755": {
+      "lat": 11.001758,
+      "lon": 106.67553,
+      "elevation": 14.7
+    },
+    "om-11.0018-106.7553": {
+      "lat": 11.001758,
+      "lon": 106.75532,
+      "elevation": 26.0
+    },
+    "om-11.0721-106.5306": {
+      "lat": 11.072056,
+      "lon": 106.53061,
+      "elevation": 24.0
+    },
+    "om-11.0721-106.6105": {
+      "lat": 11.072056,
+      "lon": 106.610466,
+      "elevation": 20.0
+    },
+    "om-11.0721-106.6903": {
+      "lat": 11.072056,
+      "lon": 106.69032,
+      "elevation": 34.0
+    },
+    "om-11.0721-106.7702": {
+      "lat": 11.072056,
+      "lon": 106.77018,
+      "elevation": 25.0
+    },
+    "om-11.0721-106.9299": {
+      "lat": 11.072056,
+      "lon": 106.9299,
+      "elevation": 22.0
+    },
+    "om-11.1424-106.5453": {
+      "lat": 11.142355,
+      "lon": 106.54529,
+      "elevation": 13.5
+    },
+    "om-11.1424-106.6252": {
+      "lat": 11.142355,
+      "lon": 106.62522,
+      "elevation": 16.0
+    },
+    "om-11.1424-106.7052": {
+      "lat": 11.142355,
+      "lon": 106.70515,
+      "elevation": 39.5
+    },
+    "om-11.1424-106.7851": {
+      "lat": 11.142355,
+      "lon": 106.78508,
+      "elevation": 52.0
+    },
+    "om-11.1424-106.8650": {
+      "lat": 11.142355,
+      "lon": 106.865005,
+      "elevation": 70.0
+    },
+    "om-11.2830-106.4146": {
+      "lat": 11.282952,
+      "lon": 106.41459,
+      "elevation": 31.0
+    },
+    "om-11.2830-106.5747": {
+      "lat": 11.282952,
+      "lon": 106.57473,
+      "elevation": 32.0
+    },
+    "om-11.2830-106.7349": {
+      "lat": 11.282952,
+      "lon": 106.73487,
+      "elevation": 65.0
+    },
+    "om-11.2830-106.8950": {
+      "lat": 11.282952,
+      "lon": 106.89502,
+      "elevation": 81.0
+    },
+    "om-11.3533-106.4292": {
+      "lat": 11.353251,
+      "lon": 106.42921,
+      "elevation": 41.0
+    },
+    "om-11.3533-106.5093": {
+      "lat": 11.353251,
+      "lon": 106.50935,
+      "elevation": 39.0
+    },
+    "om-11.3533-106.5895": {
+      "lat": 11.353251,
+      "lon": 106.58949,
+      "elevation": 54.0
+    },
+    "om-11.3533-106.6696": {
+      "lat": 11.353251,
+      "lon": 106.66963,
+      "elevation": 51.0
+    },
+    "om-11.3533-106.7498": {
+      "lat": 11.353251,
+      "lon": 106.74978,
+      "elevation": 56.0
+    },
+    "om-11.4236-106.4438": {
+      "lat": 11.42355,
+      "lon": 106.44385,
+      "elevation": 75.0
+    },
+    "om-8.6819-106.5892": {
+      "lat": 8.681898,
+      "lon": 106.58915,
+      "elevation": 7.0
+    }
+  },
+  "capabilities": {
+    "temperature": {
+      "status": "available",
+      "horizons": [
+        1,
+        168
+      ],
+      "rows": {
+        "train": 45024,
+        "validation": 11256,
+        "test": 11256
+      },
+      "best_iteration": 68
+    },
+    "humidity": {
+      "status": "available",
+      "horizons": [
+        1,
+        168
+      ],
+      "rows": {
+        "train": 45024,
+        "validation": 11256,
+        "test": 11256
+      },
+      "best_iteration": 98
+    },
+    "precipitation_mm": {
+      "status": "available",
+      "horizons": [
+        1,
+        168
+      ],
+      "rows": {
+        "train": 45024,
+        "validation": 11256,
+        "test": 11256
+      },
+      "best_iteration": 94
+    },
+    "wind_speed": {
+      "status": "available",
+      "horizons": [
+        1,
+        168
+      ],
+      "rows": {
+        "train": 45024,
+        "validation": 11256,
+        "test": 11256
+      },
+      "best_iteration": 100
+    },
+    "cloud_cover": {
+      "status": "available",
+      "horizons": [
+        1,
+        168
+      ],
+      "rows": {
+        "train": 45024,
+        "validation": 11256,
+        "test": 11256
+      },
+      "best_iteration": 65
+    },
+    "rain_probability": {
+      "status": "available",
+      "horizons": [
+        1,
+        168
+      ],
+      "rows": {
+        "train": 45024,
+        "validation": 11256,
+        "test": 11256
+      },
+      "best_iteration": 45
+    }
+  },
+  "data_snapshot": {
+    "om-10.3691-107.0976": {
+      "cell_id": "om-10.3691-107.0976",
+      "first_hour": "2021-01-01 00:00:00",
+      "last_hour": "2026-10-16 23:00:00",
+      "rows": 50760,
+      "source": "historical-forecast-api"
+    },
+    "om-10.4394-106.8750": {
+      "cell_id": "om-10.4394-106.8750",
+      "first_hour": "2021-01-01 00:00:00",
+      "last_hour": "2026-10-16 23:00:00",
+      "rows": 50760,
+      "source": "historical-forecast-api"
+    },
+    "om-10.4394-107.1127": {
+      "cell_id": "om-10.4394-107.1127",
+      "first_hour": "2021-01-01 00:00:00",
+      "last_hour": "2026-10-16 23:00:00",
+      "rows": 50760,
+      "source": "historical-forecast-api"
+    },
+    "om-10.4394-107.1919": {
+      "cell_id": "om-10.4394-107.1919",
+      "first_hour": "2021-01-01 00:00:00",
+      "last_hour": "2026-10-16 23:00:00",
+      "rows": 50760,
+      "source": "historical-forecast-api"
+    },
+    "om-10.4394-107.2711": {
+      "cell_id": "om-10.4394-107.2711",
+      "first_hour": "2021-01-01 00:00:00",
+      "last_hour": "2026-10-16 23:00:00",
+      "rows": 50760,
+      "source": "historical-forecast-api"
+    },
+    "om-10.5097-106.8106": {
+      "cell_id": "om-10.5097-106.8106",
+      "first_hour": "2021-01-01 00:00:00",
+      "last_hour": "2026-10-16 23:00:00",
+      "rows": 50760,
+      "source": "historical-forecast-api"
+    },
+    "om-10.5097-106.9692": {
+      "cell_id": "om-10.5097-106.9692",
+      "first_hour": "2021-01-01 00:00:00",
+      "last_hour": "2026-10-16 23:00:00",
+      "rows": 50760,
+      "source": "historical-forecast-api"
+    },
+    "om-10.5097-107.1278": {
+      "cell_id": "om-10.5097-107.1278",
+      "first_hour": "2021-01-01 00:00:00",
+      "last_hour": "2026-10-16 23:00:00",
+      "rows": 50760,
+      "source": "historical-forecast-api"
+    },
+    "om-10.5097-107.2070": {
+      "cell_id": "om-10.5097-107.2070",
+      "first_hour": "2021-01-01 00:00:00",
+      "last_hour": "2026-10-16 23:00:00",
+      "rows": 50760,
+      "source": "historical-forecast-api"
+    },
+    "om-10.5097-107.2863": {
+      "cell_id": "om-10.5097-107.2863",
+      "first_hour": "2021-01-01 00:00:00",
+      "last_hour": "2026-10-16 23:00:00",
+      "rows": 50760,
+      "source": "historical-forecast-api"
+    },
+    "om-10.5097-107.3656": {
+      "cell_id": "om-10.5097-107.3656",
+      "first_hour": "2021-01-01 00:00:00",
+      "last_hour": "2026-10-16 23:00:00",
+      "rows": 50760,
+      "source": "historical-forecast-api"
+    },
+    "om-10.5800-107.0635": {
+      "cell_id": "om-10.5800-107.0635",
+      "first_hour": "2021-01-01 00:00:00",
+      "last_hour": "2026-10-16 23:00:00",
+      "rows": 50760,
+      "source": "historical-forecast-api"
+    },
+    "om-10.5800-107.1429": {
+      "cell_id": "om-10.5800-107.1429",
+      "first_hour": "2021-01-01 00:00:00",
+      "last_hour": "2026-10-16 23:00:00",
+      "rows": 50760,
+      "source": "historical-forecast-api"
+    },
+    "om-10.5800-107.3016": {
+      "cell_id": "om-10.5800-107.3016",
+      "first_hour": "2021-01-01 00:00:00",
+      "last_hour": "2026-10-16 23:00:00",
+      "rows": 50760,
+      "source": "historical-forecast-api"
+    },
+    "om-10.5800-107.4603": {
+      "cell_id": "om-10.5800-107.4603",
+      "first_hour": "2021-01-01 00:00:00",
+      "last_hour": "2026-10-16 23:00:00",
+      "rows": 50760,
+      "source": "historical-forecast-api"
+    },
+    "om-10.5800-107.5397": {
+      "cell_id": "om-10.5800-107.5397",
+      "first_hour": "2021-01-01 00:00:00",
+      "last_hour": "2026-10-16 23:00:00",
+      "rows": 50760,
+      "source": "historical-forecast-api"
+    },
+    "om-10.6503-106.6019": {
+      "cell_id": "om-10.6503-106.6019",
+      "first_hour": "2021-01-01 00:00:00",
+      "last_hour": "2026-10-16 23:00:00",
+      "rows": 50760,
+      "source": "historical-forecast-api"
+    },
+    "om-10.6503-106.7608": {
+      "cell_id": "om-10.6503-106.7608",
+      "first_hour": "2021-01-01 00:00:00",
+      "last_hour": "2026-10-16 23:00:00",
+      "rows": 50760,
+      "source": "historical-forecast-api"
+    },
+    "om-10.6503-107.0786": {
+      "cell_id": "om-10.6503-107.0786",
+      "first_hour": "2021-01-01 00:00:00",
+      "last_hour": "2026-10-16 23:00:00",
+      "rows": 50760,
+      "source": "historical-forecast-api"
+    },
+    "om-10.6503-107.1580": {
+      "cell_id": "om-10.6503-107.1580",
+      "first_hour": "2021-01-01 00:00:00",
+      "last_hour": "2026-10-16 23:00:00",
+      "rows": 50760,
+      "source": "historical-forecast-api"
+    },
+    "om-10.6503-107.2374": {
+      "cell_id": "om-10.6503-107.2374",
+      "first_hour": "2021-01-01 00:00:00",
+      "last_hour": "2026-10-16 23:00:00",
+      "rows": 50760,
+      "source": "historical-forecast-api"
+    },
+    "om-10.6503-107.3169": {
+      "cell_id": "om-10.6503-107.3169",
+      "first_hour": "2021-01-01 00:00:00",
+      "last_hour": "2026-10-16 23:00:00",
+      "rows": 50760,
+      "source": "historical-forecast-api"
+    },
+    "om-10.6503-107.3963": {
+      "cell_id": "om-10.6503-107.3963",
+      "first_hour": "2021-01-01 00:00:00",
+      "last_hour": "2026-10-16 23:00:00",
+      "rows": 50760,
+      "source": "historical-forecast-api"
+    },
+    "om-10.7206-106.5371": {
+      "cell_id": "om-10.7206-106.5371",
+      "first_hour": "2021-01-01 00:00:00",
+      "last_hour": "2026-10-16 23:00:00",
+      "rows": 50760,
+      "source": "historical-forecast-api"
+    },
+    "om-10.7206-106.6166": {
+      "cell_id": "om-10.7206-106.6166",
+      "first_hour": "2021-01-01 00:00:00",
+      "last_hour": "2026-10-16 23:00:00",
+      "rows": 50760,
+      "source": "historical-forecast-api"
+    },
+    "om-10.7206-106.6961": {
+      "cell_id": "om-10.7206-106.6961",
+      "first_hour": "2021-01-01 00:00:00",
+      "last_hour": "2026-10-16 23:00:00",
+      "rows": 50760,
+      "source": "historical-forecast-api"
+    },
+    "om-10.7206-107.2527": {
+      "cell_id": "om-10.7206-107.2527",
+      "first_hour": "2021-01-01 00:00:00",
+      "last_hour": "2026-10-16 23:00:00",
+      "rows": 50760,
+      "source": "historical-forecast-api"
+    },
+    "om-10.7206-107.4117": {
+      "cell_id": "om-10.7206-107.4117",
+      "first_hour": "2021-01-01 00:00:00",
+      "last_hour": "2026-10-16 23:00:00",
+      "rows": 50760,
+      "source": "historical-forecast-api"
+    },
+    "om-10.7206-107.4912": {
+      "cell_id": "om-10.7206-107.4912",
+      "first_hour": "2021-01-01 00:00:00",
+      "last_hour": "2026-10-16 23:00:00",
+      "rows": 50760,
+      "source": "historical-forecast-api"
+    },
+    "om-10.7909-106.5517": {
+      "cell_id": "om-10.7909-106.5517",
+      "first_hour": "2021-01-01 00:00:00",
+      "last_hour": "2026-10-16 23:00:00",
+      "rows": 50760,
+      "source": "historical-forecast-api"
+    },
+    "om-10.7909-106.6313": {
+      "cell_id": "om-10.7909-106.6313",
+      "first_hour": "2017-01-01 07:00:00",
+      "last_hour": "2026-10-16 23:00:00",
+      "rows": 85817,
+      "source": "weather.db:tsn"
+    },
+    "om-10.7909-106.7109": {
+      "cell_id": "om-10.7909-106.7109",
+      "first_hour": "2021-01-01 00:00:00",
+      "last_hour": "2026-10-16 23:00:00",
+      "rows": 50760,
+      "source": "historical-forecast-api"
+    },
+    "om-10.7909-106.7905": {
+      "cell_id": "om-10.7909-106.7905",
+      "first_hour": "2021-01-01 00:00:00",
+      "last_hour": "2026-10-16 23:00:00",
+      "rows": 50760,
+      "source": "historical-forecast-api"
+    },
+    "om-10.7909-106.8700": {
+      "cell_id": "om-10.7909-106.8700",
+      "first_hour": "2021-01-01 00:00:00",
+      "last_hour": "2026-10-16 23:00:00",
+      "rows": 50760,
+      "source": "historical-forecast-api"
+    },
+    "om-10.8612-106.5664": {
+      "cell_id": "om-10.8612-106.5664",
+      "first_hour": "2021-01-01 00:00:00",
+      "last_hour": "2026-10-16 23:00:00",
+      "rows": 50760,
+      "source": "historical-forecast-api"
+    },
+    "om-10.8612-106.6460": {
+      "cell_id": "om-10.8612-106.6460",
+      "first_hour": "2021-01-01 00:00:00",
+      "last_hour": "2026-10-16 23:00:00",
+      "rows": 50760,
+      "source": "historical-forecast-api"
+    },
+    "om-10.8612-106.7257": {
+      "cell_id": "om-10.8612-106.7257",
+      "first_hour": "2021-01-01 00:00:00",
+      "last_hour": "2026-10-16 23:00:00",
+      "rows": 50760,
+      "source": "historical-forecast-api"
+    },
+    "om-10.8612-106.8053": {
+      "cell_id": "om-10.8612-106.8053",
+      "first_hour": "2021-01-01 00:00:00",
+      "last_hour": "2026-10-16 23:00:00",
+      "rows": 50760,
+      "source": "historical-forecast-api"
+    },
+    "om-10.9315-106.5811": {
+      "cell_id": "om-10.9315-106.5811",
+      "first_hour": "2021-01-01 00:00:00",
+      "last_hour": "2026-10-16 23:00:00",
+      "rows": 50760,
+      "source": "historical-forecast-api"
+    },
+    "om-10.9315-106.6608": {
+      "cell_id": "om-10.9315-106.6608",
+      "first_hour": "2021-01-01 00:00:00",
+      "last_hour": "2026-10-16 23:00:00",
+      "rows": 50760,
+      "source": "historical-forecast-api"
+    },
+    "om-10.9315-106.7405": {
+      "cell_id": "om-10.9315-106.7405",
+      "first_hour": "2021-01-01 00:00:00",
+      "last_hour": "2026-10-16 23:00:00",
+      "rows": 50760,
+      "source": "historical-forecast-api"
+    },
+    "om-11.0018-106.4362": {
+      "cell_id": "om-11.0018-106.4362",
+      "first_hour": "2021-01-01 00:00:00",
+      "last_hour": "2026-10-16 23:00:00",
+      "rows": 50760,
+      "source": "historical-forecast-api"
+    },
+    "om-11.0018-106.5160": {
+      "cell_id": "om-11.0018-106.5160",
+      "first_hour": "2021-01-01 00:00:00",
+      "last_hour": "2026-10-16 23:00:00",
+      "rows": 50760,
+      "source": "historical-forecast-api"
+    },
+    "om-11.0018-106.5957": {
+      "cell_id": "om-11.0018-106.5957",
+      "first_hour": "2021-01-01 00:00:00",
+      "last_hour": "2026-10-16 23:00:00",
+      "rows": 50760,
+      "source": "historical-forecast-api"
+    },
+    "om-11.0018-106.6755": {
+      "cell_id": "om-11.0018-106.6755",
+      "first_hour": "2021-01-01 00:00:00",
+      "last_hour": "2026-10-16 23:00:00",
+      "rows": 50760,
+      "source": "historical-forecast-api"
+    },
+    "om-11.0018-106.7553": {
+      "cell_id": "om-11.0018-106.7553",
+      "first_hour": "2021-01-01 00:00:00",
+      "last_hour": "2026-10-16 23:00:00",
+      "rows": 50760,
+      "source": "historical-forecast-api"
+    },
+    "om-11.0721-106.5306": {
+      "cell_id": "om-11.0721-106.5306",
+      "first_hour": "2021-01-01 00:00:00",
+      "last_hour": "2026-10-16 23:00:00",
+      "rows": 50760,
+      "source": "historical-forecast-api"
+    },
+    "om-11.0721-106.6105": {
+      "cell_id": "om-11.0721-106.6105",
+      "first_hour": "2021-01-01 00:00:00",
+      "last_hour": "2026-10-16 23:00:00",
+      "rows": 50760,
+      "source": "historical-forecast-api"
+    },
+    "om-11.0721-106.6903": {
+      "cell_id": "om-11.0721-106.6903",
+      "first_hour": "2021-01-01 00:00:00",
+      "last_hour": "2026-10-16 23:00:00",
+      "rows": 50760,
+      "source": "historical-forecast-api"
+    },
+    "om-11.0721-106.7702": {
+      "cell_id": "om-11.0721-106.7702",
+      "first_hour": "2021-01-01 00:00:00",
+      "last_hour": "2026-10-16 23:00:00",
+      "rows": 50760,
+      "source": "historical-forecast-api"
+    },
+    "om-11.0721-106.9299": {
+      "cell_id": "om-11.0721-106.9299",
+      "first_hour": "2021-01-01 00:00:00",
+      "last_hour": "2026-10-16 23:00:00",
+      "rows": 50760,
+      "source": "historical-forecast-api"
+    },
+    "om-11.1424-106.5453": {
+      "cell_id": "om-11.1424-106.5453",
+      "first_hour": "2021-01-01 00:00:00",
+      "last_hour": "2026-10-16 23:00:00",
+      "rows": 50760,
+      "source": "historical-forecast-api"
+    },
+    "om-11.1424-106.6252": {
+      "cell_id": "om-11.1424-106.6252",
+      "first_hour": "2021-01-01 00:00:00",
+      "last_hour": "2026-10-16 23:00:00",
+      "rows": 50760,
+      "source": "historical-forecast-api"
+    },
+    "om-11.1424-106.7052": {
+      "cell_id": "om-11.1424-106.7052",
+      "first_hour": "2021-01-01 00:00:00",
+      "last_hour": "2026-10-16 23:00:00",
+      "rows": 50760,
+      "source": "historical-forecast-api"
+    },
+    "om-11.1424-106.7851": {
+      "cell_id": "om-11.1424-106.7851",
+      "first_hour": "2021-01-01 00:00:00",
+      "last_hour": "2026-10-16 23:00:00",
+      "rows": 50760,
+      "source": "historical-forecast-api"
+    },
+    "om-11.1424-106.8650": {
+      "cell_id": "om-11.1424-106.8650",
+      "first_hour": "2021-01-01 00:00:00",
+      "last_hour": "2026-10-16 23:00:00",
+      "rows": 50760,
+      "source": "historical-forecast-api"
+    },
+    "om-11.2830-106.4146": {
+      "cell_id": "om-11.2830-106.4146",
+      "first_hour": "2021-01-01 00:00:00",
+      "last_hour": "2026-10-16 23:00:00",
+      "rows": 50760,
+      "source": "historical-forecast-api"
+    },
+    "om-11.2830-106.5747": {
+      "cell_id": "om-11.2830-106.5747",
+      "first_hour": "2021-01-01 00:00:00",
+      "last_hour": "2026-10-16 23:00:00",
+      "rows": 50760,
+      "source": "historical-forecast-api"
+    },
+    "om-11.2830-106.7349": {
+      "cell_id": "om-11.2830-106.7349",
+      "first_hour": "2021-01-01 00:00:00",
+      "last_hour": "2026-10-16 23:00:00",
+      "rows": 50760,
+      "source": "historical-forecast-api"
+    },
+    "om-11.2830-106.8950": {
+      "cell_id": "om-11.2830-106.8950",
+      "first_hour": "2021-01-01 00:00:00",
+      "last_hour": "2026-10-16 23:00:00",
+      "rows": 50760,
+      "source": "historical-forecast-api"
+    },
+    "om-11.3533-106.4292": {
+      "cell_id": "om-11.3533-106.4292",
+      "first_hour": "2022-01-01 00:00:00",
+      "last_hour": "2026-10-16 23:00:00",
+      "rows": 42000,
+      "source": "historical-forecast-api"
+    },
+    "om-11.3533-106.5093": {
+      "cell_id": "om-11.3533-106.5093",
+      "first_hour": "2022-01-01 00:00:00",
+      "last_hour": "2026-10-16 23:00:00",
+      "rows": 42000,
+      "source": "historical-forecast-api"
+    },
+    "om-11.3533-106.5895": {
+      "cell_id": "om-11.3533-106.5895",
+      "first_hour": "2022-01-01 00:00:00",
+      "last_hour": "2026-10-16 23:00:00",
+      "rows": 42000,
+      "source": "historical-forecast-api"
+    },
+    "om-11.3533-106.6696": {
+      "cell_id": "om-11.3533-106.6696",
+      "first_hour": "2022-01-01 00:00:00",
+      "last_hour": "2026-10-16 23:00:00",
+      "rows": 42000,
+      "source": "historical-forecast-api"
+    },
+    "om-11.3533-106.7498": {
+      "cell_id": "om-11.3533-106.7498",
+      "first_hour": "2022-01-01 00:00:00",
+      "last_hour": "2026-10-16 23:00:00",
+      "rows": 42000,
+      "source": "historical-forecast-api"
+    },
+    "om-11.4236-106.4438": {
+      "cell_id": "om-11.4236-106.4438",
+      "first_hour": "2022-01-01 00:00:00",
+      "last_hour": "2026-10-16 23:00:00",
+      "rows": 42000,
+      "source": "historical-forecast-api"
+    },
+    "om-8.6819-106.5892": {
+      "cell_id": "om-8.6819-106.5892",
+      "first_hour": "2021-01-01 00:00:00",
+      "last_hour": "2026-10-16 23:00:00",
+      "rows": 50760,
+      "source": "historical-forecast-api"
+    }
+  },
+  "data": "D:\\wether_app\\sky_weather_app\\backend\\data\\history\\cells_history.db",
+  "data_timezone": "Asia/Ho_Chi_Minh",
+  "units": {
+    "temperature": "celsius",
+    "humidity": "%",
+    "precipitation_mm": "mm/hour",
+    "wind_speed": "km/h",
+    "cloud_cover": "%",
+    "rain_probability": "0..1"
+  },
+  "rain_threshold_mm": 0.1,
+  "limitations": [
+    "Experimental sampled direct-horizon model; not demonstrated superior at every horizon/cell.",
+    "Labels are historical weather-model output, not station observations.",
+    "The DB has no issue-vintage/availability timestamps: temporal hindcast is not an operational skill claim.",
+    "No future NWP inputs, recursive pseudo-labels, serving climatology, or prediction intervals.",
+    "Rain probability is uncalibrated; reported Brier/log-loss are held-out, not accuracy percentages.",
+    "Spatial scope is trained cells only; no independent spatial holdout in this bounded run."
+  ],
+  "split": {
+    "train": [
+      "2021-01-01 00:00:00",
+      "2024-06-30 23:00:00"
+    ],
+    "validation": [
+      "2024-07-08 00:00:00",
+      "2024-12-24 23:00:00"
+    ],
+    "test": [
+      "2025-01-01 00:00:00",
+      "2026-10-16 23:00:00"
+    ],
+    "gap_hours": 168,
+    "rule": "issue and issue+168h inside split; no refit on validation/test",
+    "sample_rows": {
+      "train": 45024,
+      "validation": 11256,
+      "test": 11256
+    }
+  },
+  "sampling": {
+    "method": "random issues without replacement; balanced independently shuffled real horizons",
+    "issue_stride": 5,
+    "per_cell": {
+      "train": 672,
+      "validation": 168,
+      "test": 168
+    },
+    "seed": 42
+  },
+  "params": {
+    "num_threads": 2,
+    "num_leaves": 15,
+    "min_data_in_leaf": 60,
+    "learning_rate": 0.07,
+    "max_bin": 63,
+    "verbosity": -1,
+    "seed": 42,
+    "deterministic": true,
+    "force_col_wise": true
+  },
+  "max_rounds": 100,
+  "resources": {
+    "elapsed_seconds": 39.16,
+    "peak_rss_mib": 259.9
+  }
+}

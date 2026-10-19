@@ -7,6 +7,7 @@ library;
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show HapticFeedback;
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
@@ -27,6 +28,16 @@ import 'compare_screen.dart';
 /// So dia diem toi da khi so sanh.
 const int kMaxCompare = 3;
 
+/// Goi y khi o tim kiem trong (cac noi hay tim).
+const List<String> kPopularPlaces = [
+  'Bến Thành',
+  'Thủ Đức',
+  'Tân Sơn Nhất',
+  'Thủ Dầu Một',
+  'Vũng Tàu',
+  'Bình Thạnh',
+];
+
 class LocationsScreen extends StatefulWidget {
   const LocationsScreen({super.key, required this.locations});
 
@@ -44,6 +55,10 @@ class _LocationsScreenState extends State<LocationsScreen> {
   int _searchToken = 0;
   bool _compare = false;
   final List<String> _picked = [];
+
+  /// Dong vua them (hien dan vao) / dang an (truoc khi xoa).
+  String? _appearing;
+  final Set<String> _hiding = {};
 
   LocationProvider get _lp => widget.locations;
 
@@ -99,6 +114,9 @@ class _LocationsScreenState extends State<LocationsScreen> {
 
   void _add(Place p) {
     if (_lp.addSaved(p.id)) {
+      HapticFeedback.lightImpact();
+      _appearing = p.id;
+      FocusScope.of(context).unfocus();
       _clearSearch();
       _snack(
         'Đã lưu ${p.name}',
@@ -109,7 +127,16 @@ class _LocationsScreenState extends State<LocationsScreen> {
     }
   }
 
+  /// Xoa tu menu: thu gon dong truoc roi moi xoa.
+  void _removeAnimated(int index) {
+    final id = _lp.saved[index].locationId;
+    if (MediaQuery.of(context).disableAnimations) return _remove(index);
+    setState(() => _hiding.add(id));
+  }
+
   void _remove(int index) {
+    HapticFeedback.lightImpact();
+    _hiding.remove(_lp.saved[index].locationId);
     final name = _lp.placeById(_lp.saved[index].locationId).name;
     final removed = _lp.removeSavedAt(index);
     _picked.remove(removed.locationId);
@@ -117,7 +144,10 @@ class _LocationsScreenState extends State<LocationsScreen> {
       'Đã xóa $name',
       action: SnackBarAction(
         label: 'Hoàn tác',
-        onPressed: () => _lp.insertSaved(index, removed),
+        onPressed: () {
+          _appearing = removed.locationId;
+          _lp.insertSaved(index, removed);
+        },
       ),
     );
   }
@@ -178,16 +208,27 @@ class _LocationsScreenState extends State<LocationsScreen> {
           ),
         ),
         actions: [
-          TextButton.icon(
-            onPressed: () => setState(() {
-              _compare = !_compare;
-              _picked.clear();
-              if (_compare) _clearSearch();
-            }),
-            icon: Icon(
-              _compare ? Icons.close_rounded : Icons.compare_arrows_rounded,
-            ),
-            label: Text(_compare ? 'Xong' : 'So sánh'),
+          // An khi chua du 2 noi de so sanh.
+          ListenableBuilder(
+            listenable: _lp,
+            builder: (context, _) => !_compare && _lp.saved.length < 2
+                ? const SizedBox.shrink()
+                : TextButton.icon(
+                    style: TextButton.styleFrom(
+                      minimumSize: const Size(Touch.min, Touch.min),
+                    ),
+                    onPressed: () => setState(() {
+                      _compare = !_compare;
+                      _picked.clear();
+                      if (_compare) _clearSearch();
+                    }),
+                    icon: Icon(
+                      _compare
+                          ? Icons.close_rounded
+                          : Icons.compare_arrows_rounded,
+                    ),
+                    label: Text(_compare ? 'Xong' : 'So sánh'),
+                  ),
           ),
           const SizedBox(width: Space.xs),
         ],
@@ -288,6 +329,27 @@ class _LocationsScreenState extends State<LocationsScreen> {
         slivers.add(
           SliverToBoxAdapter(
             child: Padding(
+              padding: EdgeInsets.fromLTRB(hPad, 0, hPad, Space.m),
+              child: Wrap(
+                spacing: Space.s,
+                children: [
+                  for (final name in kPopularPlaces)
+                    ActionChip(
+                      avatar: const Icon(Icons.search_rounded, size: 18),
+                      label: Text(name),
+                      onPressed: () {
+                        _search.text = name;
+                        _onQuery(name);
+                      },
+                    ),
+                ],
+              ),
+            ),
+          ),
+        );
+        slivers.add(
+          SliverToBoxAdapter(
+            child: Padding(
               padding: EdgeInsets.fromLTRB(hPad, 0, hPad, Space.l),
               child: _GpsCard(lp: _lp, onUse: _useGps, onOpen: _open),
             ),
@@ -345,20 +407,32 @@ class _LocationsScreenState extends State<LocationsScreen> {
                           Navigator.pop(context, _lp.pageIndexOf(s.locationId)),
                 onLabel: () => _editLabel(i),
                 onMove: (to) => _lp.moveSaved(i, to),
-                onRemove: () => _remove(i),
+                onRemove: () => _removeAnimated(i),
               );
-              return Padding(
+              final appear = _appearing == s.locationId;
+              if (appear) _appearing = null;
+              return _AnimatedRow(
                 key: ValueKey('saved-${s.locationId}'),
-                padding: const EdgeInsets.only(bottom: Space.s),
-                child: _compare
-                    ? row
-                    : Dismissible(
-                        key: ValueKey('dismiss-${s.locationId}'),
-                        direction: DismissDirection.endToStart,
-                        background: const _DeleteBackground(),
-                        onDismissed: (_) => _remove(i),
-                        child: row,
-                      ),
+                appear: appear,
+                visible: !_hiding.contains(s.locationId),
+                onHidden: () {
+                  final j = _lp.saved.indexWhere(
+                    (x) => x.locationId == s.locationId,
+                  );
+                  if (j >= 0) _remove(j);
+                },
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: Space.s),
+                  child: _compare
+                      ? row
+                      : Dismissible(
+                          key: ValueKey('dismiss-${s.locationId}'),
+                          direction: DismissDirection.endToStart,
+                          background: const _DeleteBackground(),
+                          onDismissed: (_) => _remove(i),
+                          child: row,
+                        ),
+                ),
               );
             },
           ),
@@ -372,8 +446,82 @@ class _LocationsScreenState extends State<LocationsScreen> {
       );
     }
 
-    return CustomScrollView(slivers: slivers);
+    return CustomScrollView(
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+      slivers: slivers,
+    );
   }
+}
+
+/// Dong hien dan (them) / thu gon (xoa) 220 ms; tat khi giam chuyen dong.
+class _AnimatedRow extends StatefulWidget {
+  const _AnimatedRow({
+    super.key,
+    required this.appear,
+    required this.visible,
+    required this.onHidden,
+    required this.child,
+  });
+
+  final bool appear;
+  final bool visible;
+  final VoidCallback onHidden;
+  final Widget child;
+
+  @override
+  State<_AnimatedRow> createState() => _AnimatedRowState();
+}
+
+class _AnimatedRowState extends State<_AnimatedRow>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(
+    vsync: this,
+    duration: Motion.short,
+    value: widget.appear ? 0 : 1,
+  );
+  late final Animation<double> _curve = CurvedAnimation(
+    parent: _c,
+    curve: Motion.enter,
+    reverseCurve: Motion.exit,
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.appear) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (MediaQuery.of(context).disableAnimations) {
+          _c.value = 1;
+        } else {
+          _c.forward();
+        }
+      });
+    }
+  }
+
+  @override
+  void didUpdateWidget(_AnimatedRow old) {
+    super.didUpdateWidget(old);
+    if (old.visible && !widget.visible) {
+      _c.reverse().then((_) {
+        if (mounted && !widget.visible) widget.onHidden();
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => SizeTransition(
+    sizeFactor: _curve,
+    alignment: Alignment.topCenter,
+    child: FadeTransition(opacity: _curve, child: widget.child),
+  );
 }
 
 class _SearchField extends StatelessWidget {

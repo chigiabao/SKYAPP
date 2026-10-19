@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/rendering.dart';
 
 import 'painter_math.dart';
+import 'sprite.dart';
 
 /// Trang thai cac dai suong (4 dai, moi dai 6 khoi mo).
 class FogField {
@@ -35,14 +36,43 @@ class FogField {
   final Float32List pw = Float32List(bands * puffs);
   final Float32List py = Float32List(bands * puffs);
 
-  final Paint paint = Paint();
+  final Paint paint = Paint()..filterQuality = FilterQuality.low;
   double _sigma = -1;
+  Size? _size;
+  Color? _color;
 
-  void ensure(Size size) {
-    final double sigma = size.height * 0.022;
-    if (sigma == _sigma) return;
-    _sigma = sigma;
-    paint.maskFilter = MaskFilter.blur(BlurStyle.normal, sigma);
+  /// Sprite moi khoi (oval blur, mau dac); alpha dat qua [paint] moi khung.
+  final List<Sprite?> _sprites = List<Sprite?>.filled(bands * puffs, null);
+
+  void ensure(Size size, Color opaque) {
+    if (size == _size && opaque == _color) return;
+    _size = size;
+    _color = opaque;
+    _sigma = size.height * 0.022;
+    dispose();
+  }
+
+  /// Sprite khoi [k] kich thuoc [w] x [h] (tam o goc toa do).
+  Sprite spriteOf(int k, double w, double h) => _sprites[k] ??= Sprite.record(
+    Rect.fromCenter(
+      center: Offset.zero,
+      width: w,
+      height: h,
+    ).inflate(_sigma * 3),
+    (c) => c.drawOval(
+      Rect.fromCenter(center: Offset.zero, width: w, height: h),
+      Paint()
+        ..color = _color!
+        ..maskFilter = MaskFilter.blur(BlurStyle.normal, _sigma),
+    ),
+  );
+
+  /// Giai phong anh sprite.
+  void dispose() {
+    for (int i = 0; i < _sprites.length; i++) {
+      _sprites[i]?.dispose();
+      _sprites[i] = null;
+    }
   }
 }
 
@@ -71,14 +101,14 @@ class FogPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     if (size.isEmpty) return;
-    field.ensure(size);
+    final Color base =
+        color ?? (warm ? const Color(0x2BECD6B2) : const Color(0x2BE6EBF0));
+    field.ensure(size, base.withValues(alpha: 1));
     final double t = time.value;
     final double w = size.width;
     final double span = w * 2;
     final double windBoost = 1 + windSpeedKmh.clamp(0.0, 60.0) / 30;
     final double inten = intensity.clamp(0.3, 1.5);
-    final Color base =
-        color ?? (warm ? const Color(0x2BECD6B2) : const Color(0x2BE6EBF0));
     for (int band = 0; band < FogField.bands; band++) {
       final double cy = field.y[band] * size.height;
       final double th = field.thickness[band] * size.height;
@@ -88,20 +118,15 @@ class FogPainter extends CustomPainter {
           0.17 *
           math.min(inten, 1.0) *
           (0.85 + 0.15 * math.sin(kTau * t / 14 + field.breath[band]));
-      field.paint.color = base.withValues(alpha: a.clamp(0.0, 1.0));
+      field.paint.color = Color.fromRGBO(0, 0, 0, a.clamp(0.0, 1.0));
       final double shift = field.speed[band] * windBoost * t;
       for (int p = 0; p < FogField.puffs; p++) {
         final int k = band * FogField.puffs + p;
         final double pwPx = field.pw[k] * w;
         final double x = wrapDouble(field.px[k] * span + shift, span) - w * 0.5;
-        canvas.drawOval(
-          Rect.fromCenter(
-            center: Offset(x, cy + field.py[k] * th),
-            width: pwPx,
-            height: th,
-          ),
-          field.paint,
-        );
+        field
+            .spriteOf(k, pwPx, th)
+            .paint(canvas, Offset(x, cy + field.py[k] * th), field.paint);
       }
     }
   }

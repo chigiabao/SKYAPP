@@ -91,3 +91,7 @@ tool/install_claude_skills.ps1
 
 # Nested Android build output
 /android/build/
+
+# Local Windows launchers
+/Start-SkyWeather.cmd
+/Train-v21-Local.cmd

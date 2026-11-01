@@ -212,8 +212,8 @@ Bundle id / applicationId: `com.skyweather.app` (iOS và Android dùng chung). B
 
 ### 4b. Web
 
-Nhấp đúp **Start-SkyWeather.cmd** ở thư mục dự án để khởi động web + API và tự mở
-trình duyệt. Không cần sửa URL trong Cài đặt. Cần Python với các gói trong
+Chạy `python tool/run_web.py --open` ở thư mục dự án để khởi động web + API và
+tự mở trình duyệt. Không cần sửa URL trong Cài đặt. Cần Python với các gói trong
 `backend/requirements.txt`; lần đầu hoặc bundle chưa được xác minh cần Flutter
 để build đúng chế độ cùng origin. Những lần sau dùng lại bundle đã xác minh.
 

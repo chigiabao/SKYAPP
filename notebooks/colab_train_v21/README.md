@@ -114,7 +114,7 @@ import trong router sang `import long_range_model_v21 as long_range_model`.
 
 ## Chạy trên máy của bạn (không dùng Colab)
 
-Từ thư mục `sky_weather_app`, nhấp đúp `Train-v21-Local.cmd`, hoặc chạy:
+Từ thư mục `sky_weather_app`, chạy:
 
 ```
 python backend/scripts/run_v21_local.py --smoke-only   # kiểm tra nhanh 3 ô lưới, khoảng 2–3 phút

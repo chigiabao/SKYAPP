@@ -76,11 +76,14 @@ class GpsOutcome {
 /// cache trong SharedPreferences. Backend chua co cac endpoint -> chi mot
 /// diem mac dinh "tsn", khong bao loi.
 class LocationProvider extends ChangeNotifier {
+  /// [apiService]: nguon du lieu dung chung (main.dart); nguoi truyen vao
+  /// giu quyen dong.
   LocationProvider({
-    ApiService? apiService,
+    WeatherRepository? apiService,
     GpsService? gps,
     DateTime Function()? clock,
   }) : _api = apiService ?? ApiService(clock: clock),
+       _ownsApi = apiService == null,
        _gps = gps ?? const GeolocatorGps(),
        _clock = clock ?? DateTime.now;
 
@@ -90,7 +93,8 @@ class LocationProvider extends ChangeNotifier {
   static const String mapKey = 'map_cache_v1';
   static const String boundaryKey = 'boundary_cache_v1';
 
-  final ApiService _api;
+  final WeatherRepository _api;
+  final bool _ownsApi;
   final GpsService _gps;
   final DateTime Function() _clock;
 
@@ -187,6 +191,9 @@ class LocationProvider extends ChangeNotifier {
   HomePageEntry get selectedPage => pages[selectedIndex];
 
   String get selectedLocationId => selectedPage.locationId;
+
+  /// Dia diem da biet (danh sach backend / da luu); null neu chua co.
+  Place? knownPlace(String id) => _byId[id];
 
   Place placeById(String id) =>
       _byId[id] ??
@@ -431,6 +438,14 @@ class LocationProvider extends ChangeNotifier {
   Future<void> _saveSaved() =>
       _write(savedKey, jsonEncode([for (final s in _saved) s.toJson()]));
 
+  /// Xoa cache thoi tiet cua cac id trong [ids] khong con trang nao dung.
+  void _evictUnused(Iterable<String> ids) {
+    final used = {for (final p in pages) p.locationId};
+    for (final id in ids) {
+      if (!used.contains(id)) unawaited(_api.evictCache(id));
+    }
+  }
+
   // --- Chon trang ------------------------------------------------------------
 
   void select(int index) {
@@ -498,6 +513,7 @@ class LocationProvider extends ChangeNotifier {
     _saved = list;
     _keepSelection(before);
     _saveSaved();
+    _evictUnused([removed.locationId]);
     notifyListeners();
     return removed;
   }
@@ -532,6 +548,7 @@ class LocationProvider extends ChangeNotifier {
   /// Dong bo tai khoan: thay danh sach da luu (giu trang dang xem).
   void importSaved(List<SavedPlace> list) {
     final before = selectedPage;
+    final old = [for (final s in _saved) s.locationId];
     final seen = <String>{};
     _saved = [
       for (final s in list)
@@ -539,6 +556,7 @@ class LocationProvider extends ChangeNotifier {
     ];
     _keepSelection(before);
     _saveSaved();
+    _evictUnused(old);
     notifyListeners();
   }
 
@@ -566,11 +584,13 @@ class LocationProvider extends ChangeNotifier {
 
   /// Tat "Vị trí hiện tại" (xoa id da luu).
   void disableCurrentLocation() {
-    if (_gpsId == null) return;
+    final old = _gpsId;
+    if (old == null) return;
     final before = selectedPage;
     _gpsId = null;
     _keepSelection(before);
     _write(gpsKey, null);
+    _evictUnused([old]);
     notifyListeners();
   }
 
@@ -590,10 +610,12 @@ class LocationProvider extends ChangeNotifier {
     }
     if (result.ok) {
       final place = result.place!;
+      final old = _gpsId;
       _byId.putIfAbsent(place.id, () => place);
       _gpsId = place.id;
       _selected = 0;
       _write(gpsKey, place.id);
+      if (old != null && old != place.id) _evictUnused([old]);
     }
     _gpsOutcome = result;
     _gpsBusy = false;
@@ -667,6 +689,12 @@ class LocationProvider extends ChangeNotifier {
     GpsOutcomeKind.network => ApiException.messageFor(ApiErrorKind.network),
     GpsOutcomeKind.ok => '',
   });
+
+  @override
+  void dispose() {
+    if (_ownsApi) _api.close();
+    super.dispose();
+  }
 
   Future<bool> openSettingsFor(GpsOutcome o) => o.opensLocationSettings
       ? _gps.openLocationSettings()

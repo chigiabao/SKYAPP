@@ -6,7 +6,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const modulePath = process.env.PLAYWRIGHT_MODULE_PATH;
 const { chromium } = await import(modulePath ? pathToFileURL(modulePath).href : 'playwright');
 const base = process.env.WEATHER_WEB_URL ?? 'http://127.0.0.1:8097';
-const output = new URL('../build/self-forecast-ui/', import.meta.url);
+const output = new URL(process.env.WEATHER_UI_OUTPUT ?? '../build/self-forecast-ui/', import.meta.url);
 await mkdir(output, { recursive: true });
 const browser = await chromium.launch({ headless: true });
 const results = [];
@@ -30,7 +30,21 @@ try {
     assert.equal(bundle.daily.length, 7);
     assert(bundle.hourly.some(hour => hour.source === 'ai'));
     assert(bundle.daily.filter(day => day.source === 'ai').length > 0);
-    assert(bundle.daily.filter(day => day.source === 'ai').every(day => day.rain_day_probability === null));
+    let completeDays = 0;
+    for (const day of bundle.daily.filter(day => day.source === 'ai')) {
+      const probability = day.rain_day_probability;
+      assert(probability === null || (Number.isFinite(probability) && probability >= 0 && probability <= 1));
+      const hours = bundle.hourly.filter(hour => hour.timestamp.startsWith(day.date));
+      if (hours.length === 24 && hours.every(hour => Number.isFinite(hour.rain_probability))) {
+        // Existing API contract: max hourly probability, not a calibrated daily event.
+        assert(Number.isFinite(probability));
+        assert(Math.abs(probability - Math.max(...hours.map(hour => hour.rain_probability))) <= 0.011);
+        completeDays++;
+      }
+      assert(['high', 'medium', 'low'].includes(day.confidence));
+      assert(typeof day.skill_note === 'string' && day.skill_note.length > 0);
+    }
+    assert(completeDays > 0);
     await page.locator('flt-semantics-placeholder').evaluateAll(elements => elements.forEach(el => el.click()));
     await page.waitForTimeout(1800);
     await page.screenshot({ path: fileURLToPath(new URL(`${name}.png`, output)) });

@@ -263,7 +263,7 @@ class _CompassPainter extends CustomPainter {
     }
     final TextStyle ls = TextStyle(
       color: secondary,
-      fontSize: 11,
+      fontSize: TypeScale.caption1.fontSize,
       fontWeight: FontWeight.w600,
       fontFamily: TypeScale.family,
     );
@@ -306,9 +306,8 @@ class _CompassPainter extends CustomPainter {
         canvas,
         centerText!,
         c,
-        const TextStyle(
+        TypeScale.subhead.copyWith(
           color: Palette.white,
-          fontSize: 15,
           fontWeight: FontWeight.w600,
           fontFamily: TypeScale.family,
           fontFeatures: TypeScale.tabular,

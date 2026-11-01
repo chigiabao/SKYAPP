@@ -8,12 +8,15 @@ Forecast log: after every successful ingest, post_ingest() writes into ai_foreca
     unavailable own forecasts are skipped, never replaced with external forecasts.
   Rows are INSERT OR IGNORE: the first publication of an issue is what gets scored. Prediction is batched
   (one LightGBM call per model for all series, ~1-2 s for 67 series) so the ingest stays fast.
-Retention (once per day, from the ingest loop): feedback > 365 days, ai_forecast_log > 90 days.
+Retention (once per day, from maintenance or ingest): feedback > 365 days, ai_forecast_log > 90 days,
+plus the existing account expiry/inactivity policy in routers/auth.py.
 
 Endpoints: GET /admin/monitor, POST /admin/retrain, GET /admin/retrain/{job_id}, POST /admin/rollback.
-Model versions: retraining writes models/v3_candidate/; it replaces models/v3 only if its mean test metrics
-are better (lower mean temperature MAE and a mean rain F1 that is not lower); the replaced model is kept in
-models/v3_prev/ and POST /admin/rollback swaps the two back.
+Model versions: retraining writes models/v3_candidate/; it replaces models/v3 only if, on the model-selection
+window val_select (never used for fitting, early stopping, calibration or thresholds; scored for both models on
+the same rows), it beats the baselines and has a lower mean temperature MAE and a mean rain F1 that is not lower.
+Test metrics are reporting only. The replaced model is kept in models/v3_prev/ and POST /admin/rollback swaps
+the two back.
 """
 import json
 import logging
@@ -33,8 +36,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 import ai_model
 import database
-import long_range_model
+import long_range_model_v2 as long_range_model
 from database import DEFAULT_LOCATION_ID, now_local
+from routers import auth
 from routers.admin import require_admin
 
 log = logging.getLogger("monitor")
@@ -47,11 +51,13 @@ TRAIN_SCRIPT = BACKEND / "scripts" / "train_global_v3.py"
 TRAIN_EXT_SCRIPT = BACKEND / "scripts" / "train_global_v3_ext.py"
 # Last step: refits the 90% temperature interval (CQR) on top of the ext keys; must run after TRAIN_EXT_SCRIPT.
 TRAIN_INTERVAL_SCRIPT = BACKEND / "scripts" / "train_global_v3_interval.py"
+MSG_MODELS_READONLY = "Thư mục models/ không ghi được (ví dụ mount chỉ đọc); không thể huấn luyện lại hay quay lại mô hình."
 FEEDBACK_RETENTION_DAYS = 365
 FORECAST_LOG_RETENTION_DAYS = 90
 RAIN_MM = 0.1               # observed rainy hour (same as ai_model.RAIN_THRESHOLD_MM)
 ALERT_RAIN_MM = 10.0        # same rule as /weather/map (MAP_ALERT_RAIN_MM)
 DEFAULT_RAIN_THRESHOLD = 0.5
+SELECTION_SPLIT = "val_select"   # promotion window written by train_global_v3.py (selection_v3.json "split")
 LONG_RANGE_HORIZONS = (1, 3, 6, 12, 24, 48, 72, 96, 120, 144, 168)
 V3_REQUIRED = ["feature_columns.json", "metadata_v3.json", "cell_static.json", "evaluation_v3.json"] + [
     f"{k}_model_{h}h.pkl" for k in ("temperature", "rain") for h in ai_model.HORIZONS]
@@ -60,7 +66,8 @@ router = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends(requir
 
 
 def _connect(db_path=None) -> sqlite3.Connection:
-    conn = sqlite3.connect(db_path or database.DATABASE_PATH, timeout=30)
+    conn = database.configure_connection(
+        sqlite3.connect(db_path or database.DATABASE_PATH, timeout=database.BUSY_TIMEOUT_SECONDS))
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -99,7 +106,9 @@ def _series_cells(conn) -> List[tuple]:
 def _predict_all(items: List[tuple]) -> Dict[str, dict]:
     """{series_id: predict_for_location()-like result} for [(series_id, cell_id, history)]. v3 cells are
     predicted in one batch (same features and post-processing as ai_model.predict_for_location); the others
-    fall back to predict_for_location. Series without enough contiguous history are skipped."""
+    fall back to predict_for_location. Series without enough contiguous history are skipped.
+    Batched v3 results also carry "v3_points": the ai_model.predict_points_v3()-like result incl. the enabled
+    extension targets, so the long-range model can reuse it instead of running V3 again."""
     out, batch = {}, []
     v3 = ai_model._load_v3()
     cols = ai_model.feature_columns_v3()
@@ -111,19 +120,34 @@ def _predict_all(items: List[tuple]) -> Dict[str, dict]:
                 x = ai_model.build_features_v3(h, ai_model._v3["static"][canon])[cols].iloc[[-1]]
                 if x.isna().any(axis=None):
                     continue
-                batch.append((sid, pd.Timestamp(h["timestamp"].iloc[-1]), x.values))
+                batch.append((sid, pd.Timestamp(h["timestamp"].iloc[-1]), x.values, canon))
             else:
                 out[sid] = ai_model.predict_for_location(hist, cid)
+                out[sid]["rain_decision_threshold"] = _rain_thresholds(ai_model._meta, out[sid].get("model_version"))
         except (ValueError, KeyError):
             continue
     if batch:
         X = np.vstack([b[2] for b in batch]).astype(np.float32)
-        preds = {k: m.predict(X) for k, m in ai_model._v3["models"].items()}
+        raw = {k: m.predict(X) for k, m in ai_model._v3["models"].items()}
+        preds = {}
+        for h in ai_model.HORIZONS:   # calibration + per-cell fallback, as served by predict_for_location
+            preds[f"temp_{h}h"], preds[f"rain_{h}h"] = ai_model.postprocess_v3(
+                [b[3] for b in batch], h, raw[f"temp_{h}h"], raw[f"rain_{h}h"], X)
         version = ai_model._v3["meta"].get("model_version", "unknown-v3")
-        for i, (sid, issued, _) in enumerate(batch):
-            out[sid] = {"issued_at": issued.isoformat(), "model_version": version, "predictions": {
+        thresholds = _rain_thresholds(ai_model._v3["meta"], version)
+        for i, (sid, issued, _, _) in enumerate(batch):
+            out[sid] = {"issued_at": issued.isoformat(), "model_version": version,
+                        "rain_decision_threshold": thresholds, "predictions": {
                 f"{h}h": {"temperature": round(float(preds[f"temp_{h}h"][i]), 2),
                           "rain_probability": round(min(max(float(preds[f"rain_{h}h"][i]), 0.0), 1.0), 4)}
+                for h in ai_model.HORIZONS}}
+        ext = ai_model._v3.get("ext")
+        enabled = ext["enabled"] if ext else []
+        extra = {(t, h): ext["models"][f"{t}_{h}h"].predict(X) for t in enabled for h in ai_model.HORIZONS}
+        for i, (sid, _, _, _) in enumerate(batch):
+            out[sid]["v3_points"] = {"issued_at": out[sid]["issued_at"], "model_version": version, "predictions": {
+                f"{h}h": {**out[sid]["predictions"][f"{h}h"],
+                          **{t: ai_model._v3_ext_value(extra[t, h][i], t) for t in enabled}}
                 for h in ai_model.HORIZONS}}
     return out
 
@@ -139,12 +163,15 @@ def log_published_forecasts(db_path=None, now: Optional[datetime] = None) -> int
         items = [(sid, cid, ai_model.load_history_from_db(db_path=path, location_id=sid, until=now))
                  for sid, cid in series]
         rows = []
-        for sid, res in _predict_all(items).items():
+        with _models_lock:   # capture forecasts and thresholds from the same model before promotion
+            published = _predict_all(items)
+        for sid, res in published.items():
             issued = datetime.fromisoformat(str(res["issued_at"])[:19])
             for key, p in res["predictions"].items():
                 h = int(key.rstrip("h"))
                 rows.append((sid, "ai", issued.strftime(TS_FMT), h, (issued + timedelta(hours=h)).strftime(TS_FMT),
-                             p["temperature"], p["rain_probability"], None, None, res.get("model_version"), stamp))
+                             p["temperature"], p["rain_probability"], None, None, res.get("model_version"), stamp,
+                             res.get("rain_decision_threshold", {}).get(h)))
         for sid, cid, hist in items:
             if hist.empty:
                 continue
@@ -152,7 +179,9 @@ def log_published_forecasts(db_path=None, now: Optional[datetime] = None) -> int
             if not timedelta(0) <= now - issued <= timedelta(hours=3):
                 continue
             try:
-                res = long_range_model.predict(hist, ai_model.canonical_cell_id(cid))
+                # the V3 component of the blend is the batch above (same history), not a second V3 run
+                res = long_range_model.predict(hist, ai_model.canonical_cell_id(cid),
+                                               v3_result=published.get(sid, {}).get("v3_points"))
             except (ValueError, OSError, KeyError):
                 continue
             issued = _naive_now(datetime.fromisoformat(res["issued_at"]))
@@ -162,7 +191,8 @@ def log_published_forecasts(db_path=None, now: Optional[datetime] = None) -> int
                 if p is not None:
                     rows.append((sid, "ai_long_range", issued.strftime(TS_FMT), h,
                                  (issued + timedelta(hours=h)).strftime(TS_FMT), p.get("temperature"),
-                                 p.get("rain_probability"), p.get("precipitation_mm"), None, version, stamp))
+                                 p.get("rain_probability"), p.get("precipitation_mm"), None, version, stamp,
+                                 DEFAULT_RAIN_THRESHOLD))
             window = now.replace(minute=0, second=0, microsecond=0)
             offset = int((window - issued).total_seconds() // 3600)
             hrs = [res["predictions"].get(f"{offset + h}h") for h in (1, 2, 3)]
@@ -174,52 +204,70 @@ def log_published_forecasts(db_path=None, now: Optional[datetime] = None) -> int
             alert = total >= ALERT_RAIN_MM
             target = (window + timedelta(hours=3)).strftime(TS_FMT)
             rows.append((sid, "map_alert", window.strftime(TS_FMT), 3, target, None,
-                         round(max(probs), 2) if probs else None, total, int(alert), version, stamp))
+                         round(max(probs), 2) if probs else None, total, int(alert), version, stamp, None))
         with conn:
             before = conn.total_changes
             conn.executemany("INSERT OR IGNORE INTO ai_forecast_log (series_id, source, issued_at, horizon_h, "
                              "target_time, temperature, rain_probability, precipitation, alert, model_version, "
-                             "logged_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", rows)
+                             "logged_at, rain_threshold) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", rows)
             return conn.total_changes - before
     finally:
         conn.close()
 
 
 def run_retention(db_path=None, now: Optional[datetime] = None) -> dict:
-    """Delete feedback older than 365 days and ai_forecast_log rows issued more than 90 days ago."""
+    """Apply the existing feedback, forecast-log and account retention policies atomically."""
     now = _naive_now(now)
     conn = _connect(db_path)
     try:
+        conn.execute("PRAGMA foreign_keys = ON")
         with conn:
             fb = conn.execute("DELETE FROM feedback WHERE created_at < ?",
                               ((now - timedelta(days=FEEDBACK_RETENTION_DAYS)).strftime(TS_FMT),)).rowcount
             fl = conn.execute("DELETE FROM ai_forecast_log WHERE issued_at < ?",
                               ((now - timedelta(days=FORECAST_LOG_RETENTION_DAYS)).strftime(TS_FMT),)).rowcount
+            auth.purge_expired(conn, int(now.replace(tzinfo=database.LOCAL_TZ).timestamp()))
     finally:
         conn.close()
     return {"feedback_deleted": fb, "forecast_log_deleted": fl}
 
 
 _retention_day: Dict[str, str] = {}   # db path -> last day the cleanup ran (in-process; a restart runs it again)
+_retention_lock = threading.Lock()
+
+
+def maybe_run_retention(db_path=None, now: Optional[datetime] = None) -> Optional[dict]:
+    """Share the daily gate across maintenance and ingest; failed transactions can retry."""
+    key = str(Path(db_path or database.DATABASE_PATH).resolve())
+    with _retention_lock:
+        now = _naive_now(now)
+        day = now.strftime("%Y-%m-%d")
+        if _retention_day.get(key) == day:
+            return None
+        result = run_retention(db_path, now)
+        _retention_day[key] = day
+        return result
 
 
 def post_ingest(db_path=None, now: Optional[datetime] = None) -> dict:
     """Ingest hook: log the published forecasts, then run the retention cleanup once per day."""
     out = {"logged": log_published_forecasts(db_path, now)}
-    key, day = str(db_path or database.DATABASE_PATH), _naive_now(now).strftime("%Y-%m-%d")
-    if _retention_day.get(key) != day:
-        out["retention"] = run_retention(db_path, now)
-        _retention_day[key] = day
+    retention = maybe_run_retention(db_path, now)
+    if retention is not None:
+        out["retention"] = retention
     return out
 
 
 # --- GET /admin/monitor -----------------------------------------------------------------------------------
 
-def _rain_thresholds() -> Dict[int, float]:
+def _rain_thresholds(meta: dict, version: Optional[str]) -> Dict[int, float]:
+    """Thresholds of the model that produced an issue; missing provenance stays unknown."""
+    if not version or meta.get("model_version") != version:
+        return {}
     try:
-        meta = json.loads((MODELS_DIR / "v3" / "metadata_v3.json").read_text(encoding="utf-8"))
-        return {int(k.rstrip("h")): float(v) for k, v in meta["rain_decision_threshold"].items()}
-    except (OSError, ValueError, KeyError, TypeError):
+        return {int(k.rstrip("h")): float(v) for k, v in meta["rain_decision_threshold"].items()
+                if v is not None and np.isfinite(float(v)) and 0 <= float(v) <= 1}
+    except (ValueError, KeyError, TypeError):
         return {}
 
 
@@ -227,40 +275,55 @@ def _f1(tp: int, fp: int, fn: int) -> Optional[float]:
     return None if tp + fp + fn == 0 else round(2 * tp / (2 * tp + fp + fn), 3)
 
 
-def _scores(rows: list, thr: Dict[int, float], source: str = "ai") -> dict:
+def _scores(rows: list, source: str = "ai") -> dict:
     errs = [abs(r["temperature"] - r["obs_t"]) for r in rows if r["temperature"] is not None and r["obs_t"] is not None]
-    tp = fp = fn = 0
+    tp = fp = fn = rain_n = missing_threshold = 0
     for r in rows:
         if r["rain_probability"] is None or r["obs_p"] is None:
             continue
-        pred = r["rain_probability"] >= thr.get(r["horizon_h"], DEFAULT_RAIN_THRESHOLD)
+        threshold = DEFAULT_RAIN_THRESHOLD if source == "ai_long_range" else r["rain_threshold"]
+        if threshold is None or not np.isfinite(threshold) or not 0 <= threshold <= 1:
+            missing_threshold += 1
+            continue
+        rain_n += 1
+        pred = r["rain_probability"] >= threshold
         # Direct-horizon training labels use a strict threshold; preserve legacy scoring.
         act = (r["obs_p"] > long_range_model.RAIN_THRESHOLD_MM if source == "ai_long_range"
                else r["obs_p"] >= RAIN_MM)
         tp, fp, fn = tp + (pred and act), fp + (pred and not act), fn + (act and not pred)
     return {"n": len(rows), "temperature_mae": round(sum(errs) / len(errs), 3) if errs else None,
-            "rain_f1": _f1(tp, fp, fn)}
+            "rain_f1": _f1(tp, fp, fn), "rain_n": rain_n, "rain_threshold_missing": missing_threshold}
 
 
 def _ai_quality(conn, since: str, source: str = "ai") -> dict:
+    columns = {r[1] for r in conn.execute("PRAGMA table_info(ai_forecast_log)")}
+    threshold_column = "l.rain_threshold" if "rain_threshold" in columns else "NULL"
     rows = conn.execute(
         "SELECT l.horizon_h, l.model_version, substr(l.target_time, 1, 10) day, l.temperature, l.rain_probability, "
+        f"{threshold_column} rain_threshold, "
         "h.temperature obs_t, h.precipitation obs_p FROM ai_forecast_log l JOIN hourly_weather h "
         "ON h.location_id = l.series_id AND h.timestamp = l.target_time "
         "WHERE l.source = ? AND l.issued_at >= ?", (source, since)).fetchall()
     horizons = ai_model.HORIZONS if source == "ai" else sorted({r["horizon_h"] for r in rows})
-    thr = _rain_thresholds() if source == "ai" else {h: DEFAULT_RAIN_THRESHOLD for h in horizons}
+    thresholds = {}
+    for h in horizons:
+        values = {r["rain_threshold"] for r in rows if r["horizon_h"] == h and r["rain_threshold"] is not None
+                  and np.isfinite(r["rain_threshold"]) and 0 <= r["rain_threshold"] <= 1}
+        thresholds[f"{h}h"] = DEFAULT_RAIN_THRESHOLD if source == "ai_long_range" else (
+            next(iter(values)) if len(values) == 1 else None)
     days: Dict[str, list] = {}
     for r in rows:
         days.setdefault(r["day"], []).append(r)
-    result = {"rain_thresholds": {f"{h}h": v for h, v in thr.items()} or None,
-            "overall": _scores(rows, thr, source),
-            "by_horizon": {f"{h}h": _scores([r for r in rows if r["horizon_h"] == h], thr, source) for h in horizons},
-            "by_day": [{"day": d, **_scores(v, thr, source)} for d, v in sorted(days.items())]}
+    result = {"rain_thresholds": thresholds or None,
+            "rain_threshold_policy": "fixed_0.5" if source == "ai_long_range" else "stored_per_forecast",
+            "legacy_missing_threshold": "excluded_from_rain_f1",
+            "overall": _scores(rows, source),
+            "by_horizon": {f"{h}h": _scores([r for r in rows if r["horizon_h"] == h], source) for h in horizons},
+            "by_day": [{"day": d, **_scores(v, source)} for d, v in sorted(days.items())]}
     if source == "ai_long_range":
         result["source"] = source
         result["by_model_version"] = {
-            version: _scores([r for r in rows if r["model_version"] == version], thr, source)
+            version: _scores([r for r in rows if r["model_version"] == version], source)
             for version in sorted({r["model_version"] for r in rows})}
     return result
 
@@ -341,8 +404,9 @@ def get_monitor(days: int = Query(default=7, ge=1, le=90)):
                 "legacy_alerts": _alert_quality(conn, since, legacy=True),
                 "ingest": ingest_stats, "api_calls": _api_calls(conn, since, ingest_stats["by_day"]),
                 "feedback": _feedback_new(conn, since)}
-    except sqlite3.OperationalError as e:
-        raise HTTPException(status_code=503, detail=f"Cơ sở dữ liệu chưa được nâng cấp: {e}")
+    except sqlite3.OperationalError:
+        log.warning("monitor query failed", exc_info=True)
+        raise HTTPException(status_code=503, detail="Cơ sở dữ liệu chưa được nâng cấp, vui lòng chạy lại máy chủ.") from None
     finally:
         conn.close()
 
@@ -359,7 +423,9 @@ def _model_info(d: Path) -> Optional[dict]:
 
 
 def _test_score(d: Path) -> Optional[dict]:
-    """Mean held-out test metrics over every cell (kind 'test', alias 'tsn' excluded) and horizon."""
+    """Mean held-out test metrics over every cell (kind 'test', alias 'tsn' excluded) and horizon.
+    Reporting only: the test window grows with the data, so two models' test scores are not comparable
+    and never decide a promotion (see _selection)."""
     try:
         ev = json.loads((d / "evaluation_v3.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -379,12 +445,80 @@ def _test_score(d: Path) -> Optional[dict]:
             "cells": sum(1 for c in ev if c != DEFAULT_LOCATION_ID)}
 
 
+def _selection(d: Path) -> Optional[dict]:
+    """selection_v3.json of a candidate: val_select scores of the candidate and of the served model, both
+    computed by train_global_v3.py --compare-with on the same rows. Older files (split 'validation': the window
+    that also drove early stopping and thresholds) are not accepted for promotion."""
+    try:
+        sel = json.loads((d / "selection_v3.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return sel if isinstance(sel, dict) and sel.get("split") == SELECTION_SPLIT and sel.get("candidate") else None
+
+
 def _is_better(cand: Optional[dict], cur: Optional[dict]) -> bool:
-    if cand is None:
+    """Validation scores only (same rows for both models). The candidate must also beat the baselines."""
+    if not _valid_score(cand) or not cand.get("beats_baselines", False):
+        return False
+    if not (cand["temperature_mae"] < min(cand["baseline_persistence_mae"], cand["baseline_climatology_mae"])
+            and cand["rain_f1"] > max(cand["baseline_persistence_f1"], cand["baseline_climatology_f1"])
+            and cand["rain_brier"] < cand["baseline_climatology_brier"]):
         return False
     if cur is None:
         return True
-    return cand["temperature_mae"] < cur["temperature_mae"] and cand["rain_f1"] >= cur["rain_f1"]
+    return (_valid_score(cur) and cand["temperature_mae"] < cur["temperature_mae"]
+            and cand["rain_f1"] >= cur["rain_f1"] and cand["rain_brier"] <= cur["rain_brier"])
+
+
+def _valid_score(score) -> bool:
+    if not isinstance(score, dict):
+        return False
+    keys = ("temperature_mae", "rain_f1", "rain_brier", "baseline_persistence_mae", "baseline_climatology_mae",
+            "baseline_persistence_f1", "baseline_climatology_f1", "baseline_climatology_brier", "cells", "rows")
+    if any(not isinstance(score.get(k), (int, float)) or isinstance(score[k], bool)
+           or not np.isfinite(score[k]) or score[k] < 0 for k in keys):
+        return False
+    return (score["rows"] > 0 and score["cells"] > 0 and score["rain_f1"] <= 1 and score["rain_brier"] <= 1
+            and score["baseline_persistence_f1"] <= 1 and score["baseline_climatology_f1"] <= 1
+            and score["baseline_climatology_brier"] <= 1)
+
+
+def _promotion_check(cand_dir: Path, cur_dir: Path):
+    """(promote?, reason, candidate val score, current val score)."""
+    sel = _selection(cand_dir)
+    if sel is None:
+        return False, f"candidate has no {SELECTION_SPLIT} validation comparison (selection_v3.json)", None, None
+    cand, cur = sel["candidate"], sel.get("current")
+    try:
+        start, end = map(pd.Timestamp, sel["window"])
+        if pd.isna(start) or pd.isna(end) or start >= end:
+            raise ValueError("invalid validation window")
+        if sel.get("comparison_policy") != "rain_calibration_only" or not _valid_score(cand):
+            raise ValueError("missing calibration-only validation comparison or invalid scores")
+        row_hash = cand.get("evaluation_rows_sha256", "")
+        if not isinstance(row_hash, str) or len(row_hash) != 64 or any(c not in "0123456789abcdef" for c in row_hash):
+            raise ValueError("missing evaluation row signature")
+        meta = json.loads((cand_dir / "metadata_v3.json").read_text(encoding="utf-8"))
+        declared = meta.get("split", {}).get("val_select")
+        if declared and not (pd.Timestamp(declared[0]) <= start < end <= pd.Timestamp(declared[1])):
+            raise ValueError("comparison is outside the candidate selection window")
+    except (OSError, KeyError, TypeError, ValueError):
+        return False, "candidate has invalid validation comparison (window, policy or scores)", cand, cur
+    cur_info = _model_info(cur_dir)
+    if cur_info is not None:   # a served model exists: it must have been scored on the same val rows
+        if cur is None or sel.get("current_model_version") != cur_info["model_version"]:
+            return False, (f"served model was not scored on the candidate's {SELECTION_SPLIT} validation rows "
+                           f"({sel.get('current_error') or 'model version changed'})"), cand, cur
+        common = ("cells", "rows", "evaluation_rows_sha256", "baseline_persistence_mae", "baseline_climatology_mae",
+                  "baseline_persistence_f1", "baseline_climatology_f1", "baseline_climatology_brier")
+        if not _valid_score(cur) or any(cand[k] != cur.get(k) for k in common):
+            return False, "models have different validation rows or baselines", cand, cur
+    else:
+        cur = None
+    if not _is_better(cand, cur):
+        why = "does not beat the baselines" if not cand.get("beats_baselines") else "is not better than models/v3"
+        return False, f"candidate {why} on validation ({SELECTION_SPLIT})", cand, cur
+    return True, f"better than models/v3 on the same {SELECTION_SPLIT} validation rows", cand, cur
 
 
 _jobs: Dict[str, dict] = {}
@@ -395,8 +529,8 @@ _models_lock = threading.Lock()   # promote / rollback
 def _reload_models() -> None:
     ai_model.reset_v3_cache()
     try:
-        from routers import weather
-        weather._replay_ai_rain.cache_clear()
+        from routers.weather_map import _replay_ai_rain
+        _replay_ai_rain.cache_clear()
     except Exception:  # noqa: BLE001
         pass
 
@@ -430,10 +564,14 @@ def _finish(job: dict, proc, log_file=None) -> None:
     if missing:
         job.update(status="rejected", reason=f"candidate is missing {missing}")
         return
-    job["candidate_score"] = _test_score(cand)
-    job["current_score"] = _test_score(MODELS_DIR / "v3")
-    if not _is_better(job["candidate_score"], job["current_score"]):
-        job.update(status="rejected", reason="candidate is not better than models/v3 (kept in models/v3_candidate)")
+    ok, why, job["candidate_val_score"], job["current_val_score"] = _promotion_check(cand, MODELS_DIR / "v3")
+    sel = _selection(cand) or {}
+    job["selection_split"], job["selection_window"] = sel.get("split"), sel.get("window")
+    # reporting only: test windows of the two models may differ
+    job["candidate_test_score"] = _test_score(cand)
+    job["current_test_score"] = _test_score(MODELS_DIR / "v3")
+    if not ok:
+        job.update(status="rejected", reason=f"{why} (kept in models/v3_candidate)")
         return
     try:
         _promote(cand)
@@ -466,25 +604,32 @@ def _job_view(job: dict) -> dict:
 def post_retrain(quick: bool = Query(default=False, description="pass --quick to the training script")):
     """Run scripts/train_global_v3.py, train_global_v3_ext.py, then train_global_v3_interval.py (all --out
     models/v3_candidate) one after the other in a background subprocess; the candidate is scored only if all
-    three succeed."""
+    three succeed. Promotion compares candidate and models/v3 on the SAME val_select rows (--compare-with);
+    test scores are only reported."""
     with _jobs_lock:
         if any(j["status"] == "running" for j in _jobs.values()):
             raise HTTPException(status_code=409, detail="Đang có một lần huấn luyện chạy")
         cand = MODELS_DIR / "v3_candidate"
-        if cand.exists():
-            shutil.rmtree(cand)
-        cand.mkdir(parents=True)
         job_id = uuid.uuid4().hex[:12]
         log_path = MODELS_DIR / f"retrain_{job_id}.log"
-        log_file = open(log_path, "w", encoding="utf-8")
-        cmd = [sys.executable, str(TRAIN_SCRIPT), "--out", str(cand)] + (["--quick"] if quick else [])
+        try:   # models/ is mounted read-only in docker-compose: refuse cleanly instead of a 500
+            if cand.exists():
+                shutil.rmtree(cand)
+            cand.mkdir(parents=True)
+            log_file = open(log_path, "w", encoding="utf-8")
+        except OSError:
+            log.warning("models directory is not writable", exc_info=True)
+            raise HTTPException(status_code=409, detail=MSG_MODELS_READONLY) from None
+        cmd = [sys.executable, str(TRAIN_SCRIPT), "--out", str(cand), "--compare-with", str(MODELS_DIR / "v3")] + (
+            ["--quick"] if quick else [])
         ext_cmd = [sys.executable, str(TRAIN_EXT_SCRIPT), "--out", str(cand)]
         interval_cmd = [sys.executable, str(TRAIN_INTERVAL_SCRIPT), "--out", str(cand)]
         try:
             proc = subprocess.Popen(cmd, cwd=str(BACKEND), stdout=log_file, stderr=subprocess.STDOUT)
-        except OSError as e:
+        except OSError:
             log_file.close()
-            raise HTTPException(status_code=500, detail=f"Không khởi chạy được script huấn luyện: {e}")
+            log.exception("could not start the training script")
+            raise HTTPException(status_code=500, detail="Không khởi chạy được script huấn luyện.") from None
         job = {"job_id": job_id, "status": "running", "quick": quick, "out": str(cand), "log": str(log_path),
                "started_at": _naive_now().isoformat(timespec="seconds"), "finished_at": None, "returncode": None,
                "step": TRAIN_SCRIPT.name, "_next": [ext_cmd, interval_cmd]}
@@ -510,12 +655,21 @@ def post_rollback():
     with _models_lock:
         if not prev.exists():
             raise HTTPException(status_code=409, detail="Không có bản mô hình trước (models/v3_prev) để quay lại")
-        if tmp.exists():
-            shutil.rmtree(tmp)
-        if cur.exists():
-            cur.rename(tmp)
-        prev.rename(cur)
-        if tmp.exists():
-            tmp.rename(prev)
+        try:
+            if tmp.exists():
+                shutil.rmtree(tmp)
+            if cur.exists():
+                cur.rename(tmp)
+            try:
+                prev.rename(cur)
+            except OSError:
+                if tmp.exists() and not cur.exists():
+                    tmp.rename(cur)   # undo: keep serving the current model
+                raise
+            if tmp.exists():
+                tmp.rename(prev)
+        except OSError:
+            log.warning("model rollback failed: models directory is not writable", exc_info=True)
+            raise HTTPException(status_code=409, detail=MSG_MODELS_READONLY) from None
         _reload_models()
     return {"status": "rolled_back", "current": _model_info(cur), "previous": _model_info(prev)}

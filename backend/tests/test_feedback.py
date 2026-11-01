@@ -5,13 +5,13 @@ import pytest
 
 from routers import feedback
 
-ADMIN = {"X-Admin-Token": "s3cret"}
+ADMIN = {"X-Admin-Token": "test-admin-token-0123456789abcdef"}
 
 
 @pytest.fixture(autouse=True)
 def _fresh_rate_limit(monkeypatch):
     feedback._hits.clear()
-    monkeypatch.setenv("ADMIN_TOKEN", "s3cret")
+    monkeypatch.setenv("ADMIN_TOKEN", "test-admin-token-0123456789abcdef")
     yield
     feedback._hits.clear()
 

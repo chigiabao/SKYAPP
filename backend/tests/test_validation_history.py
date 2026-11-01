@@ -20,6 +20,15 @@ def test_hourly_non_integer(client):
     assert client.get("/weather/hourly", params={"hours": "abc"}).status_code == 422
 
 
+def test_verification_retrospective_requires_boolean(client):
+    assert client.get("/weather/ai-verify", params={"retrospective": "maybe"}).status_code == 422
+
+
+@pytest.mark.parametrize("at", ["not-a-date", "2023-02-30T12:00", "2099-01-01T00:00"])
+def test_verification_rejects_invalid_issue_even_without_archive(client, at):
+    assert client.get("/weather/ai-verify", params={"at": at}).status_code == 400
+
+
 def test_history_requires_both_dates(client):
     assert client.get("/weather/history", params={"start_date": "2023-06-01"}).status_code == 422
 

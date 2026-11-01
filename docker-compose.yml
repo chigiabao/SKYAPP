@@ -1,0 +1,26 @@
+# Production-style stack for the HCMC Weather API.  Usage: cp .env.example .env && docker compose up -d --build
+# Put an HTTPS reverse proxy (Caddy/nginx) in front; see docs/deploy.md.
+services:
+  api:
+    build:
+      context: ./backend
+      args:
+        APP_UID: ${APP_UID:-10001}   # match the owner of ./backend/data on the host
+    image: sky-weather-api:latest
+    env_file: .env
+    environment:
+      HOST: 0.0.0.0
+      PORT: 8000
+    ports:
+      # Bound to localhost: only the reverse proxy on this host reaches the API.
+      - "127.0.0.1:${API_PORT:-8000}:8000"
+    volumes:
+      - ./backend/data:/app/data          # SQLite DB (WAL), history DB, locations seed
+      # Trained model artifacts, read-only at runtime: POST /admin/retrain and /admin/rollback then answer
+      # 409 (models/ not writable). Drop `:ro` on the single ingest replica to allow them.
+      - ./backend/models:/app/models:ro
+    restart: unless-stopped
+    stop_grace_period: 15s
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "5" }

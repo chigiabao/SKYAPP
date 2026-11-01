@@ -30,10 +30,13 @@ Usage:
 from __future__ import annotations
 
 import argparse
+from contextlib import closing
+import hashlib
 import json
 import logging
 import sqlite3
 import sys
+import tempfile
 import time
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -41,6 +44,8 @@ from pathlib import Path
 import httpx
 
 BACKEND = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(BACKEND))
+from ingest import parse_hourly  # noqa: E402
 CELLS_JSON = BACKEND / "data" / "locations" / "cells.json"
 WEATHER_DB = BACKEND / "data" / "weather.db"
 HIST_DIR = BACKEND / "data" / "history"
@@ -182,9 +187,22 @@ def fetch(con, cells: list[dict], start: date, end: date, deadline: float, eleva
             if status == 200:
                 data = r.json()
                 data = data if isinstance(data, list) else [data]
+                digest = hashlib.sha256(r.content).hexdigest()
+                raw_dir = HIST_DIR / 'raw_requests'
+                raw_dir.mkdir(parents=True, exist_ok=True)
+                raw_path = raw_dir / f'{digest}.json'
+                if not raw_path.exists():
+                    with tempfile.NamedTemporaryFile(dir=raw_dir, suffix='.tmp', delete=False) as raw:
+                        raw.write(r.content)
+                        temporary = Path(raw.name)
+                    temporary.replace(raw_path)
+                provenance = json.dumps({'source_url': URL, 'sha256': digest,
+                                         'raw_file': str(raw_path.relative_to(HIST_DIR)),
+                                         'requested_cells': [c['cell_id'] for c in cells],
+                                         'timezone': TIMEZONE}, ensure_ascii=True)
                 con.execute("INSERT INTO request_log (ts_utc, weight, n_cells, start_date, end_date, http_status,"
                             " seconds, note) VALUES (?,?,?,?,?,?,?,?)",
-                            (t0, w, len(cells), start.isoformat(), end.isoformat(), status, time.time() - t0, ""))
+                            (t0, w, len(cells), start.isoformat(), end.isoformat(), status, time.time() - t0, provenance))
                 con.commit()
                 return data
             note = r.text[:200]
@@ -212,14 +230,23 @@ def fetch(con, cells: list[dict], start: date, end: date, deadline: float, eleva
 
 
 def parse(payload: dict) -> list[tuple]:
-    h = payload["hourly"]
-    times = h["time"]
-    rows = []
-    for i, t in enumerate(times):
-        vals = [h[v][i] for v in VARS.values()]
-        if all(v is None for v in vals):
-            continue
-        rows.append((datetime.fromisoformat(t).strftime(TS_FMT), *[None if v is None else float(v) for v in vals]))
+    rows = parse_hourly(payload, VARS)
+    if not any(row['temperature'] is not None for row in rows):
+        raise ValueError('Historical payload contains no usable temperature')
+    return [(row['timestamp'], *(row[c] for c in COLS)) for row in rows]
+
+
+def validated_rows(payload: dict, start: date, end: date) -> list[tuple]:
+    rows = parse(payload)
+    first = datetime.combine(start, datetime.min.time())
+    count = ((end - start).days + 1) * 24
+    expected = {(first + timedelta(hours=h)).strftime(TS_FMT) for h in range(count)}
+    actual = {row[0] for row in rows}
+    if actual != expected:
+        missing = sorted(expected - actual)
+        extra = sorted(actual - expected)
+        raise ValueError(f'Incomplete historical window: missing={len(missing)} extra={len(extra)}; '
+                         f'first_missing={missing[:3]}')
     return rows
 
 
@@ -283,7 +310,8 @@ def run_check(con, cells: list[dict], deadline: float) -> None:
         data = fetch(con, [alias], date(2025, 1, 1), date(2025, 12, 31), deadline, elevations=[elev])
         if data is None:
             return
-        store(con, "hourly_check", (variant, ALIAS_OF_TSN), parse(data[0]))
+        store(con, "hourly_check", (variant, ALIAS_OF_TSN),
+              validated_rows(data[0], date(2025, 1, 1), date(2025, 12, 31)))
         con.commit()
         log.info("check variant %s (elevation %.1f m) stored", variant, elev)
 
@@ -311,7 +339,11 @@ def main(argv=None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s",
                         handlers=[logging.FileHandler(LOG_FILE, encoding="utf-8"), logging.StreamHandler(sys.stdout)])
     logging.getLogger("httpx").setLevel(logging.WARNING)
-    con = connect()
+    with closing(connect()) as con:
+        return _run(con, a)
+
+
+def _run(con, a):
     if a.status:
         status(con)
         return 0
@@ -338,11 +370,12 @@ def main(argv=None) -> int:
             break
         if len(data) != len(cs):
             raise RuntimeError(f"expected {len(cs)} payloads, got {len(data)}")
+        # Validate the whole batch before any series is stored or marked complete.
+        parsed = [validated_rows(p, start, end) for p in data]
         now = datetime.now(timezone.utc).isoformat(timespec="seconds")
-        for c, p in zip(cs, data):
+        for c, p, rows in zip(cs, data, parsed):
             if abs(p["latitude"] - c["lat"]) > 0.02 or abs(p["longitude"] - c["lon"]) > 0.02:
                 log.warning("%s: API grid point %.4f,%.4f differs from cell", c["cell_id"], p["latitude"], p["longitude"])
-            rows = parse(p)
             store(con, "hourly", (c["cell_id"],), rows)
             nulls = sum(v is None for r in rows for v in r[1:])
             first = con.execute("SELECT MIN(timestamp) FROM hourly WHERE cell_id=? AND timestamp>=?",

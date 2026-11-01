@@ -1,8 +1,10 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import '../models/data_source.dart';
+import '../ui/weather/design_tokens.dart';
 import '../ui/weather/widgets/glass_page.dart';
-import '../utils/constants.dart';
+import '../ui/weather/widgets/ios_sheet.dart';
 
 /// Mau nhan dien nguon (du tuong phan tren nen the sang/toi).
 /// Tren nen kinh (theme co [GlassThemeMarker]) chu luon trang; mau nguon chi
@@ -19,17 +21,17 @@ Color sourceDotColor(BuildContext context, DataSource source) {
       Theme.of(context).brightness == Brightness.dark;
   switch (source) {
     case DataSource.observed:
-      return dark ? const Color(0xFF81C784) : const Color(0xFF2E7D32);
+      return dark ? Tones.successOnDark : Tones.successOnLight;
     case DataSource.forecast:
-      return dark ? const Color(0xFF90CAF9) : AppColors.primaryDark;
+      return dark ? Tones.airOnDark : Tones.brandDeep;
     case DataSource.ai:
-      return dark ? const Color(0xFF80CBC4) : const Color(0xFF00695C);
+      return dark ? Tones.tealOnDark : Tones.tealOnLight;
     case DataSource.climatology:
-      return dark ? const Color(0xFFFFB74D) : const Color(0xFFB45309);
+      return dark ? Tones.amberOnDark : Tones.amberOnLight;
   }
 }
 
-/// Nhan nho cho mot o/hang: cham mau + nhan ngan ("Thực tế"...).
+/// Nhan nho cho mot o/hang: cham mau + nhan ngan ("Đã ghi nhận"...).
 /// [onColor]: ve tren nen dam (o "Bây giờ") -> dung mau nay cho chu.
 class SourceTag extends StatelessWidget {
   const SourceTag({super.key, required this.source, this.onColor});
@@ -56,8 +58,7 @@ class SourceTag extends StatelessWidget {
           Text(
             source.shortLabel,
             maxLines: 1,
-            style: AppTextStyles.caption.copyWith(
-              fontSize: 12,
+            style: TypeScale.caption.copyWith(
               color: onColor ?? color,
               fontWeight: FontWeight.w600,
             ),
@@ -69,7 +70,8 @@ class SourceTag extends StatelessWidget {
 }
 
 /// Chu thich nguon khi danh sach tron nguon: MOT dong (tu xuong dong khi
-/// hep) "● Thực tế (phân tích mô hình) · ● Dự báo (Open-Meteo)" kem nut (i)
+/// hep) "● Đã ghi nhận (ước tính mô hình) · ● AI của nhóm (Sky Weather)" kem
+/// nut (i)
 /// giai thich chi tiet.
 class SourceLegend extends StatelessWidget {
   const SourceLegend({super.key, required this.summary});
@@ -80,9 +82,9 @@ class SourceLegend extends StatelessWidget {
   static String short(DataSource s) {
     switch (s) {
       case DataSource.observed:
-        return 'phân tích mô hình';
+        return 'ước tính mô hình';
       case DataSource.forecast:
-        return 'Open-Meteo';
+        return 'máy chủ cũ';
       case DataSource.ai:
         return 'Sky Weather';
       case DataSource.climatology:
@@ -94,11 +96,11 @@ class SourceLegend extends StatelessWidget {
   static String explain(DataSource s) {
     switch (s) {
       case DataSource.observed:
-        return 'dữ liệu phân tích của mô hình, không phải trạm đo';
+        return DataCopy.observedExplain;
       case DataSource.forecast:
-        return 'mô hình Open-Meteo';
+        return 'dự báo nguồn ngoài từ máy chủ cũ, không phải AI của nhóm';
       case DataSource.ai:
-        return 'model do Sky Weather huấn luyện';
+        return 'mô hình AI do nhóm Sky Weather tự huấn luyện';
       case DataSource.climatology:
         return 'trung bình nhiều năm';
     }
@@ -106,7 +108,7 @@ class SourceLegend extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final style = AppTextStyles.caption.copyWith(
+    final style = TypeScale.caption.copyWith(
       color: Theme.of(context).textTheme.bodySmall?.color,
     );
     final detail = [
@@ -144,15 +146,22 @@ class SourceLegend extends StatelessWidget {
             style: style,
           ),
         ),
-        Tooltip(
-          message: detail,
-          triggerMode: TooltipTriggerMode.tap,
-          showDuration: const Duration(seconds: 6),
-          child: SizedBox.square(
-            dimension: 48,
+        Semantics(
+          button: true,
+          label: 'Giải thích nguồn số liệu',
+          excludeSemantics: true,
+          child: CupertinoButton(
+            key: const ValueKey('source-legend-info'),
+            padding: EdgeInsets.zero,
+            minimumSize: const Size(48, 48),
+            onPressed: () => showIosInfoSheet(
+              context,
+              title: 'Nguồn số liệu',
+              message: detail,
+            ),
             child: Icon(
-              Icons.info_outline_rounded,
-              size: 18,
+              CupertinoIcons.info_circle,
+              size: 20,
               color: style.color,
             ),
           ),
@@ -174,7 +183,7 @@ class SourceSubtitle extends StatelessWidget {
     if (summary.isMixed) return SourceLegend(summary: summary);
     return Text(
       summary.label,
-      style: AppTextStyles.caption.copyWith(
+      style: TypeScale.caption.copyWith(
         color: Theme.of(context).textTheme.bodySmall?.color,
       ),
     );

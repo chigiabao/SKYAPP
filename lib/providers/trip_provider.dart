@@ -26,104 +26,12 @@ import '../services/route_service.dart';
 import '../services/trip_location.dart';
 import '../services/trip_notifier.dart';
 
-enum TripPhase { idle, active, paused, ended }
-
-/// Mot canh bao trong chuyen di.
-@immutable
-class TripAlert {
-  const TripAlert({required this.at, required this.title, required this.body});
-
-  final DateTime at; // gio TP.HCM
-  final String title;
-  final String body;
-
-  Map<String, dynamic> toJson() => {
-    'at': HcmTime.toIso(at),
-    'title': title,
-    'body': body,
-  };
-
-  static TripAlert? tryFromJson(Object? j) {
-    if (j is! Map) return null;
-    final at = HcmTime.tryParse(j['at']?.toString());
-    final t = j['title'];
-    final b = j['body'];
-    if (at == null || t is! String || b is! String) return null;
-    return TripAlert(at: at, title: t, body: b);
-  }
-}
-
-/// Mot chuyen di da xong. Chi id phuong, khong co toa do.
-@immutable
-class TripRecord {
-  const TripRecord({
-    required this.startedAt,
-    required this.endedAt,
-    required this.withRoute,
-    this.fromId,
-    this.toId,
-    this.profile,
-    this.alerts = const [],
-  });
-
-  final DateTime startedAt;
-  final DateTime endedAt;
-  final bool withRoute;
-  final String? fromId;
-  final String? toId;
-  final TripProfile? profile;
-  final List<TripAlert> alerts;
-
-  String get id => HcmTime.toIso(startedAt);
-
-  Map<String, dynamic> toJson() => {
-    'started_at': HcmTime.toIso(startedAt),
-    'ended_at': HcmTime.toIso(endedAt),
-    'with_route': withRoute,
-    'from_id': fromId,
-    'to_id': toId,
-    'profile': profile?.api,
-    'alerts': [for (final a in alerts) a.toJson()],
-  };
-
-  static TripRecord? tryFromJson(Object? j) {
-    if (j is! Map) return null;
-    final s = HcmTime.tryParse(j['started_at']?.toString());
-    final e = HcmTime.tryParse(j['ended_at']?.toString());
-    if (s == null || e == null) return null;
-    final a = j['alerts'];
-    return TripRecord(
-      startedAt: s,
-      endedAt: e,
-      withRoute: j['with_route'] == true,
-      fromId: j['from_id'] as String?,
-      toId: j['to_id'] as String?,
-      profile: j['profile'] == null ? null : TripProfile.parse(j['profile']),
-      alerts: [
-        if (a is List)
-          for (final x in a) ?TripAlert.tryFromJson(x),
-      ],
-    );
-  }
-}
-
-/// Mot phuong an gio khoi hanh khi so sanh (lech [offsetMin] phut).
-@immutable
-class DepartOption {
-  const DepartOption(this.offsetMin, this.route);
-  final int offsetMin;
-  final TripRoute route;
-  int get score => routeHazardScore(route);
-}
-
-/// Diem nguy hiem cua tuyen: tong muc nguy hiem cac diem mau.
-int routeHazardScore(TripRoute r) =>
-    r.samples.fold(0, (s, x) => s + x.hazard.index);
+part 'trip/trip_models.dart';
 
 class TripProvider extends ChangeNotifier {
   TripProvider({
     RouteService? routes,
-    ApiService? api,
+    WeatherRepository? api,
     TripLocationSource? location,
     TripNotifier? notifier,
     DateTime Function()? clock,
@@ -131,7 +39,9 @@ class TripProvider extends ChangeNotifier {
     AlertSettings Function()? alertSettings,
     this.tickEvery = const Duration(minutes: 1),
   }) : _routes = routes ?? RouteService(),
+       _ownsRoutes = routes == null,
        _api = api ?? ApiService(),
+       _ownsApi = api == null,
        _location = location ?? const GeolocatorTripLocation(),
        _notifier = notifier ?? TripNotifier.platform(),
        _clock = clock ?? DateTime.now,
@@ -152,7 +62,9 @@ class TripProvider extends ChangeNotifier {
   static const double sameSegmentKm = 3;
 
   final RouteService _routes;
-  final ApiService _api;
+  final bool _ownsRoutes;
+  final WeatherRepository _api;
+  final bool _ownsApi;
   final TripLocationSource _location;
   final TripNotifier _notifier;
   final DateTime Function() _clock;
@@ -171,12 +83,17 @@ class TripProvider extends ChangeNotifier {
   String? _planError;
   List<DepartOption> _options = const [];
   bool _comparing = false;
+  int _planGeneration = 0;
+  String _planFromLabel = 'Điểm đi';
+  String _planToLabel = 'Điểm đến';
 
   TripRoute? get plan => _plan;
   bool get planning => _planning;
   String? get planError => _planError;
   List<DepartOption> get departOptions => _options;
   bool get comparing => _comparing;
+  String get planFromLabel => _planFromLabel;
+  String get planToLabel => _planToLabel;
 
   /// Phuong an gio di it nguy hiem hon gio da chon (null = gio da chon tot).
   DepartOption? get betterDeparture {
@@ -195,19 +112,27 @@ class TripProvider extends ChangeNotifier {
     required LatLng to,
     required DateTime departAt,
     TripProfile profile = TripProfile.driving,
+    String fromLabel = 'Điểm đi',
+    String toLabel = 'Điểm đến',
   }) async {
+    final generation = ++_planGeneration;
     _planning = true;
     _planError = null;
     _options = const [];
     notifyListeners();
     try {
-      _plan = await _routes.fetchRoute(
+      final plan = await _routes.fetchRoute(
         from: from,
         to: to,
         departAt: departAt,
         profile: profile,
       );
+      if (generation != _planGeneration) return null;
+      _plan = plan;
+      _planFromLabel = fromLabel;
+      _planToLabel = toLabel;
     } on RouteException catch (e) {
+      if (generation != _planGeneration) return null;
       _plan = null;
       _planError = e.message;
     }
@@ -217,6 +142,9 @@ class TripProvider extends ChangeNotifier {
   }
 
   void clearPlan() {
+    _planGeneration++;
+    _planning = false;
+    _comparing = false;
     _plan = null;
     _planError = null;
     _options = const [];
@@ -251,7 +179,8 @@ class TripProvider extends ChangeNotifier {
         debugPrint('TripProvider.compare: $e');
       }
     }
-    if (identical(p, _plan)) _options = out;
+    if (!identical(p, _plan)) return;
+    _options = out;
     _comparing = false;
     notifyListeners();
   }
@@ -262,6 +191,7 @@ class TripProvider extends ChangeNotifier {
   List<HourlyForecast> _nowHours = const [];
   bool _nowLoading = false;
   String? _nowError;
+  DateTime? _nowUpdatedAt;
 
   /// Phuong gan vi tri GPS nhat (null = chua co).
   Place? get nowcastPlace => _nowPlace;
@@ -271,24 +201,52 @@ class TripProvider extends ChangeNotifier {
   bool get nowcastLoading => _nowLoading;
   String? get nowcastError => _nowError;
 
-  /// Lay du bao mua 2 gio toi tai [lat], [lon] (khong luu toa do).
-  Future<void> loadNowcast(double lat, double lon) async {
+  /// Gio TP.HCM (dong ho that) lan tai thanh cong gan nhat; null = chua co.
+  DateTime? get nowcastUpdatedAt => _nowUpdatedAt;
+
+  /// Cau giai thich khi khong lay duoc "mưa 2 giờ tới" - neu ro LY DO thay
+  /// vi "Máy chủ đang gặp lỗi." chung chung (503 = AI chua chay duoc).
+  static String nowcastErrorFor(ApiException e, {required bool replay}) {
+    if (e.statusCode == 503) {
+      return replay
+          ? 'Chế độ xem lại: máy chủ chưa có dữ liệu theo giờ cho thời điểm '
+                'này nên chưa tính được mưa 2 giờ tới.'
+          : 'AI của nhóm chưa có dự báo 2 giờ tới: máy chủ chưa có dữ liệu '
+                'đầu vào mới. Ứng dụng không thay bằng số của nguồn khác.';
+    }
+    if (e.kind == ApiErrorKind.notFound) {
+      return replay
+          ? 'Chế độ xem lại: chưa có dữ liệu theo giờ cho chỗ bạn ở thời '
+                'điểm này.'
+          : 'Chưa có dữ liệu theo giờ cho chỗ bạn.';
+    }
+    return e.message;
+  }
+
+  /// Lay du bao mua 2 gio toi tai [lat], [lon] (khong luu toa do). [at] =
+  /// thoi diem xem lai (che do xem lai): lay du lieu cua dung thoi diem do.
+  Future<void> loadNowcast(double lat, double lon, {DateTime? at}) async {
     _nowLoading = true;
     _nowError = null;
     notifyListeners();
     try {
       final place = await _api.nearestLocation(lat, lon);
-      final raw = await _api.fetchHourlyRaw(hours: 3, locationId: place.id);
-      final from = nowHcm.subtract(const Duration(minutes: 59));
+      final raw = await _api.fetchHourlyRaw(
+        hours: 3,
+        at: at,
+        locationId: place.id,
+      );
+      final from = (at ?? nowHcm).subtract(const Duration(minutes: 59));
       _nowPlace = place;
       _nowHours = [
         for (final h in raw)
           if (h is Map<String, dynamic>) HourlyForecast.fromJson(h),
       ].where((h) => h.time.isAfter(from)).take(3).toList();
+      _nowUpdatedAt = nowHcm;
     } on OutsideAreaException {
       _nowError = 'Bạn đang ở ngoài TP.HCM, chưa có dự báo cho chỗ này.';
     } on ApiException catch (e) {
-      _nowError = e.message;
+      _nowError = nowcastErrorFor(e, replay: at != null);
     } on FormatException {
       _nowError = ApiException.messageFor(ApiErrorKind.invalidData);
     }
@@ -569,7 +527,6 @@ class TripProvider extends ChangeNotifier {
       try {
         final c = CurrentWeather.fromJson(
           await _api.fetchCurrentRaw(locationId: place.id),
-          locationName: place.name,
         );
         nowText = ' · ${c.temperature.round()}°, ${c.condition.description}';
       } catch (_) {}
@@ -580,8 +537,10 @@ class TripProvider extends ChangeNotifier {
         placeId: place.id,
         settings: settings,
       ).where((e) => e.level >= settings.minNotifyLevel);
-      _status = events.isEmpty
-          ? '${place.name}$nowText. Không có cảnh báo trong 3 giờ tới.'
+      _status = !hasAlertHours(hours, now, 3)
+          ? '${place.name}$nowText. Chưa có dữ liệu theo giờ để kiểm tra cảnh báo.'
+          : events.isEmpty
+          ? '${place.name}$nowText. Chưa phát hiện cảnh báo trong dữ liệu hiện có.'
           : '${place.name}$nowText';
       for (final e in events) {
         if (!_notifiedKeys.add('free|${e.key}')) continue;
@@ -758,6 +717,8 @@ class TripProvider extends ChangeNotifier {
   @override
   void dispose() {
     _stopTracking();
+    if (_ownsApi) _api.close();
+    if (_ownsRoutes) _routes.close();
     super.dispose();
   }
 }

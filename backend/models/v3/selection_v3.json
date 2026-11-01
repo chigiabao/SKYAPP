@@ -1,0 +1,44 @@
+{
+ "split": "val_select",
+ "window": [
+  "2025-01-01 00:00:00",
+  "2025-09-23 23:00:00"
+ ],
+ "comparison_policy": "rain_calibration_only",
+ "note": "decides promotion on identical validation rows; calibration parameters and thresholds are fitted on val_es, calibration method chosen on val_select; incumbent fitting/tuning rows and a 7-day gap are excluded; test is reporting only",
+ "candidate": {
+  "temperature_mae": 0.52543,
+  "rain_f1": 0.62421,
+  "rain_brier": 0.09854,
+  "baseline_persistence_mae": 1.87661,
+  "baseline_climatology_mae": 0.93083,
+  "baseline_persistence_f1": 0.49741,
+  "baseline_climatology_f1": 0.52106,
+  "baseline_climatology_brier": 0.12085,
+  "rain_brier_skill": 0.18462,
+  "beats_baselines": true,
+  "cells": 67,
+  "rows": 427326,
+  "evaluation_rows_sha256": "6ff1a7ed59a0ed737f0c2cb3997c6f2dce7a9d96ce85f3d15114fd32e104e2c5"
+ },
+ "current": {
+  "temperature_mae": 0.53319,
+  "rain_f1": 0.61508,
+  "rain_brier": 0.10086,
+  "baseline_persistence_mae": 1.87661,
+  "baseline_climatology_mae": 0.93083,
+  "baseline_persistence_f1": 0.49741,
+  "baseline_climatology_f1": 0.52106,
+  "baseline_climatology_brier": 0.12085,
+  "rain_brier_skill": 0.16545,
+  "beats_baselines": true,
+  "cells": 67,
+  "rows": 427326,
+  "evaluation_rows_sha256": "6ff1a7ed59a0ed737f0c2cb3997c6f2dce7a9d96ce85f3d15114fd32e104e2c5"
+ },
+ "current_dir": "models\\v3",
+ "current_model_version": "lgbm-hcmc-global-v3-20261017",
+ "current_error": null,
+ "current_fit_selection_cutoff": "2024-12-24 23:00:00",
+ "current_calibrated": false
+}

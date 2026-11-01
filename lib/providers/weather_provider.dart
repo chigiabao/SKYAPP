@@ -1,4 +1,4 @@
-import 'dart:ui' show PlatformDispatcher;
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 
@@ -7,23 +7,31 @@ import '../models/app_settings.dart';
 import '../models/place.dart';
 import '../models/weather.dart';
 import '../services/api_service.dart';
+import '../services/app_settings_store.dart';
+import '../utils/forecast_format.dart';
 
 class WeatherProvider extends ChangeNotifier {
-  final ApiService _apiService;
-  final DateTime Function() _clock;
+  final WeatherRepository _apiService;
 
-  /// [initialSettings]: doc truoc runApp (xem main.dart). Neu null,
-  /// [initialize] se tu doc SharedPreferences.
+  /// Tu tao [_apiService] (khong truyen vao) -> dong khi [dispose].
+  final bool _ownsApi;
+  final DateTime Function() _clock;
+  final List<Duration> _retryDelays;
+
+  /// [apiService]: nguon du lieu dung chung (main.dart); nguoi truyen vao
+  /// giu quyen dong. [initialSettings]: doc truoc runApp (xem main.dart).
+  /// Neu null, [initialize] se tu doc SharedPreferences.
   /// [clock]: thoi diem that hien tai (thay duoc khi test).
+  /// [_retryDelays]: cho truoc moi lan thu lai khi loi tam thoi.
   WeatherProvider({
-    ApiService? apiService,
+    WeatherRepository? apiService,
     AppSettings? initialSettings,
     DateTime Function()? clock,
+    this._retryDelays = defaultRetryDelays,
   }) : _clock = clock ?? DateTime.now,
        _apiService = apiService ?? ApiService(clock: clock),
+       _ownsApi = apiService == null,
        _settingsLoaded = initialSettings != null,
-       _themeMode = initialSettings?.themeMode ?? ThemeMode.system,
-       _isCelsius = initialSettings?.isCelsius ?? true,
        _replayEnabled = initialSettings?.replayEnabled ?? false,
        _replayAt = initialSettings?.replayAt;
 
@@ -31,8 +39,13 @@ class WeatherProvider extends ChangeNotifier {
   /// 07:00+07:00).
   static final DateTime replayMin = DateTime.utc(2017, 1, 3, 7);
 
-  /// Moc mau: dot mua lon 07/10/2026 12:00.
-  static final DateTime replayPreset = DateTime.utc(2026, 10, 7, 12);
+  /// Moc mau 21/10/2026 21:00: co ban du bao AI da luu luc phat hanh
+  /// (ai_forecast_log, 1/3/6h + 1..168h) -> man kiem chung co du lieu.
+  static final DateTime replayPreset = DateTime.utc(2026, 10, 21, 21);
+
+  /// Nhan nut mau: "Mốc mẫu Thứ 4, 21/10 · 21:00 (có dự báo AI đã lưu)".
+  static String get replayPresetLabel =>
+      'Mốc mẫu ${ForecastFormat.moment(replayPreset)} (có dự báo AI đã lưu)';
 
   // State
   WeatherData? _weatherData;
@@ -40,8 +53,6 @@ class WeatherProvider extends ChangeNotifier {
   String? _error;
   ApiErrorKind? _errorKind;
   bool _settingsLoaded;
-  ThemeMode _themeMode;
-  bool _isCelsius;
   bool _isFromCache = false;
   DateTime? _cachedAt;
   bool _replayEnabled;
@@ -62,9 +73,22 @@ class WeatherProvider extends ChangeNotifier {
   /// ke ben sau khi trang hien tai tai xong. null = khong tai truoc.
   List<String> Function()? pageIds;
 
+  /// Tra dia diem theo id (main.dart gan tu LocationProvider); null = chua
+  /// biet. Dung cho ten/toa do that cua dia diem dang xem.
+  Place? Function(String id)? placeFor;
+
   /// Dia diem dang tai truoc (toi da [maxPrefetch] request song song).
   final Set<String> _prefetching = {};
   static const int maxPrefetch = 2;
+
+  /// Lan tai tren man hinh gap loi tam thoi ([ApiException.isTransient]):
+  /// thu lai toi da 2 lan, cho 1 s roi 3 s. Rieng het thoi gian cho
+  /// ([ApiErrorKind.timeout]) thi khong thu lai: moi lan da ton toi 20 s
+  /// (bundle) va may chu cham se bi don them request.
+  static const List<Duration> defaultRetryDelays = [
+    Duration(seconds: 1),
+    Duration(seconds: 3),
+  ];
 
   /// Du lieu mang moi hon nguong nay thi doi trang khong tai lai.
   static const Duration freshFor = Duration(minutes: 2);
@@ -74,12 +98,81 @@ class WeatherProvider extends ChangeNotifier {
 
   /// Tang khi bo du lieu (doi che do xem lai): ket qua tai truoc cu bi bo.
   int _generation = 0;
+  AppLifecycleListener? _lifecycle;
+  Timer? _refreshTimer;
+  DateTime? _lastAttemptAt;
+  bool _disposed = false;
+  String? _serverEndpoint;
+
+  void attachLifecycle() {
+    if (_lifecycle != null) return;
+    _serverEndpoint = _apiService.baseUrl;
+    ApiConfig.serverChanges.addListener(reloadServer);
+    _lifecycle = AppLifecycleListener(
+      onResume: () {
+        _startRefreshTimer();
+        unawaited(refreshIfNeeded());
+      },
+      onPause: () => _refreshTimer?.cancel(),
+      onHide: () => _refreshTimer?.cancel(),
+    );
+    _startRefreshTimer();
+  }
+
+  void _startRefreshTimer() {
+    _refreshTimer?.cancel();
+    _refreshTimer = Timer.periodic(freshFor, (_) => refreshIfNeeded());
+  }
+
+  Future<void> refreshIfNeeded() async {
+    if (_disposed || isReplay || _isLoading) return;
+    if (_lastAttemptAt != null &&
+        _clock().difference(_lastAttemptAt!) < freshFor) {
+      return;
+    }
+    await fetchWeatherData();
+  }
+
+  void reloadServer() {
+    if (_disposed) return;
+    if (_serverEndpoint != _apiService.baseUrl) {
+      _serverEndpoint = _apiService.baseUrl;
+      _resetData();
+    }
+    if (!_isLoading) unawaited(fetchWeatherData());
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    _requestId++;
+    _generation++;
+    _refreshTimer?.cancel();
+    _lifecycle?.dispose();
+    ApiConfig.serverChanges.removeListener(reloadServer);
+    if (_ownsApi) _apiService.close();
+    super.dispose();
+  }
 
   // Getters
   WeatherData? get weatherData => _weatherData;
 
   /// Id dia diem dang xem.
   String get locationId => _locationId;
+
+  /// Dia diem dang xem: ten va toa do that (gio mat troi, ngay/dem, ten khi
+  /// chia se / nhac). Chua biet -> diem mac dinh (neu dung id) hoac ten chung.
+  Place get place =>
+      placeFor?.call(_locationId) ??
+      (_locationId == Place.defaultId
+          ? Place.fallback
+          : Place(
+              id: _locationId,
+              name: 'Địa điểm đang xem',
+              kind: PlaceKind.special,
+              lat: ApiConfig.latitude,
+              lon: ApiConfig.longitude,
+            ));
 
   /// Doi dia diem dang xem: hien du lieu da co cua diem do (neu co) roi tai
   /// lai. Ket qua dang tai cua diem cu bi bo qua.
@@ -197,8 +290,6 @@ class WeatherProvider extends ChangeNotifier {
 
   /// Loai loi lan tai gan nhat (null = khong loi).
   ApiErrorKind? get errorKind => _errorKind;
-  ThemeMode get themeMode => _themeMode;
-  bool get isCelsius => _isCelsius;
 
   /// Dang hien thi du lieu cache offline.
   bool get isFromCache => _isFromCache;
@@ -206,20 +297,6 @@ class WeatherProvider extends ChangeNotifier {
   /// Thoi diem luu cache dang hien thi (gio TP.HCM); null neu du lieu tu mang.
   /// UI: "Cập nhật lúc HH:mm" khi [isFromCache] (ke ca luc [isRefreshing]).
   DateTime? get cachedAt => _cachedAt;
-
-  /// Giao dien toi dang ap dung (che do "Theo hệ thống" dua vao do sang
-  /// cua he dieu hanh).
-  bool get isDarkMode {
-    switch (_themeMode) {
-      case ThemeMode.dark:
-        return true;
-      case ThemeMode.light:
-        return false;
-      case ThemeMode.system:
-        return PlatformDispatcher.instance.platformBrightness ==
-            Brightness.dark;
-    }
-  }
 
   /// Gio TP.HCM "hien tai" cua app (cung quy uoc voi cac DateTime trong
   /// model). Che do xem lai: chinh la thoi diem xem lai.
@@ -270,9 +347,7 @@ class WeatherProvider extends ChangeNotifier {
   // Initialize provider
   Future<void> initialize() async {
     if (!_settingsLoaded) {
-      final settings = await AppSettings.load();
-      _themeMode = settings.themeMode;
-      _isCelsius = settings.isCelsius;
+      final settings = await AppSettingsStore.load();
       _replayEnabled = settings.replayEnabled;
       _replayAt = settings.replayAt;
       _settingsLoaded = true;
@@ -281,12 +356,9 @@ class WeatherProvider extends ChangeNotifier {
     await fetchWeatherData();
   }
 
-  Future<void> _savePreferences() => AppSettings(
-    themeMode: _themeMode,
-    isCelsius: _isCelsius,
-    replayEnabled: _replayEnabled,
-    replayAt: _replayAt,
-  ).save();
+  Future<void> _savePreferences() => AppSettingsStore.save(
+    AppSettings(replayEnabled: _replayEnabled, replayAt: _replayAt),
+  );
 
   // --- Che do xem lai ---
 
@@ -315,6 +387,9 @@ class WeatherProvider extends ChangeNotifier {
       enabled ? startReplay(_replayAt ?? replayPreset) : exitReplay();
 
   void _resetData() {
+    _requestId++;
+    _isLoading = false;
+    _lastAttemptAt = null;
     _snapshots.clear();
     _generation++;
     _weatherData = null;
@@ -353,6 +428,8 @@ class WeatherProvider extends ChangeNotifier {
   /// dang co ("Dữ liệu cũ"). Dung chung cho lan dau va keo-de-lam-moi.
   /// Che do xem lai: moi request gui `at`, khong doc/ghi cache.
   Future<void> fetchWeatherData() async {
+    if (_disposed) return;
+    _lastAttemptAt = _clock();
     final token = ++_requestId;
     final at = isReplay ? _replayAt : null;
     _isLoading = true;
@@ -368,7 +445,7 @@ class WeatherProvider extends ChangeNotifier {
       }
     }
     try {
-      final data = await _apiService.fetchWeatherDataFor(_locationId, at: at);
+      final data = await _fetchRetrying(_locationId, at, token);
       if (token != _requestId) return;
       if (at != null && !_honorsReplay(data, at)) {
         debugPrint('WeatherProvider: backend ignored at=$at');
@@ -414,6 +491,26 @@ class WeatherProvider extends ChangeNotifier {
     }
   }
 
+  /// Tai [id]; loi tam thoi thi cho theo [_retryDelays] roi thu lai (dung
+  /// som neu lan tai [token] da bi thay the hoac provider da huy).
+  Future<WeatherData> _fetchRetrying(String id, DateTime? at, int token) async {
+    for (var attempt = 0; ; attempt++) {
+      try {
+        return await _apiService.fetchWeatherDataFor(id, at: at);
+      } on ApiException catch (e) {
+        if (!e.isTransient ||
+            e.kind == ApiErrorKind.timeout ||
+            attempt >= _retryDelays.length ||
+            token != _requestId) {
+          rethrow;
+        }
+        debugPrint('WeatherProvider: retry ${attempt + 1} after ${e.kind}');
+        await Future<void>.delayed(_retryDelays[attempt]);
+        if (token != _requestId) rethrow;
+      }
+    }
+  }
+
   /// Giu ten cu cho UI; cung mot duong xu ly voi [fetchWeatherData].
   Future<void> refreshWeatherData() => fetchWeatherData();
 
@@ -426,52 +523,6 @@ class WeatherProvider extends ChangeNotifier {
     if (_isFromCache && !_isLoading) return true;
     return nowHcm.difference(current.lastUpdated) > ApiConfig.staleThreshold;
   }
-
-  /// Chon che do giao dien: sang / toi / theo he thong.
-  void setThemeMode(ThemeMode mode) {
-    if (_themeMode == mode) return;
-    _themeMode = mode;
-    _savePreferences();
-    notifyListeners();
-  }
-
-  // Toggle dark mode (chuyen sang che do co dinh nguoc voi hien tai)
-  void toggleDarkMode() =>
-      setThemeMode(isDarkMode ? ThemeMode.light : ThemeMode.dark);
-
-  // Set dark mode explicitly
-  void setDarkMode(bool value) =>
-      setThemeMode(value ? ThemeMode.dark : ThemeMode.light);
-
-  // Toggle temperature unit
-  void toggleTemperatureUnit() {
-    _isCelsius = !_isCelsius;
-    _savePreferences();
-    notifyListeners();
-  }
-
-  // Set temperature unit explicitly
-  void setTemperatureUnit(bool celsius) {
-    _isCelsius = celsius;
-    _savePreferences();
-    notifyListeners();
-  }
-
-  // Format temperature with unit
-  String formatTemperature(double celsius) {
-    final temp = _isCelsius ? celsius : (celsius * 9 / 5) + 32;
-    final unit = _isCelsius ? '°C' : '°F';
-    return '${temp.round()}$unit';
-  }
-
-  // Format temperature value only
-  String formatTempValue(double celsius) {
-    final temp = _isCelsius ? celsius : (celsius * 9 / 5) + 32;
-    return '${temp.round()}';
-  }
-
-  // Get temperature unit symbol
-  String get tempUnit => _isCelsius ? '°C' : '°F';
 }
 
 /// Du lieu da tai cua mot dia diem.

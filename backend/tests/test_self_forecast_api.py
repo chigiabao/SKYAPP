@@ -5,9 +5,11 @@ from unittest.mock import Mock
 
 import pytest
 
+import ai_model
+import long_range_model_v2 as long_range_model
 from conftest import freeze_now
-from database import LOCAL_TZ
-from routers import weather
+from database import LOCAL_TZ, weather_data_revision
+from routers import weather, weather_climatology, weather_core
 
 
 NOW = datetime(2023, 6, 20, 12, tzinfo=LOCAL_TZ)
@@ -38,7 +40,7 @@ def _predict(history, cell_id):
     assert cell_id == CELL
     assert len(history) >= 48
     assert history.timestamp.is_monotonic_increasing
-    assert issue <= weather.now_local()
+    assert issue <= weather_core.now_local()
     return {
         "issued_at": issue.isoformat(), "source": "ai", "cell_id": cell_id,
         "model_version": "synthetic-own-168h",
@@ -56,19 +58,19 @@ def _forbidden(*args, **kwargs):
 @pytest.fixture
 def live(client, monkeypatch):
     freeze_now(monkeypatch, NOW)
-    monkeypatch.setattr(weather, "_forecast_rows", _forbidden)
-    monkeypatch.setattr(weather, "_climatology", _forbidden)
+    monkeypatch.setattr(weather_core, "_forecast_rows", _forbidden)
+    monkeypatch.setattr(weather_climatology, "_climatology", _forbidden)
     predictor = Mock(side_effect=_predict)
-    monkeypatch.setattr(weather.long_range_model, "predict", predictor)
-    monkeypatch.setattr(weather.long_range_model, "artifact_revision", lambda: ("synthetic", 1), raising=False)
-    monkeypatch.setattr(weather.long_range_model, "status", lambda: {
+    monkeypatch.setattr(long_range_model, "predict", predictor)
+    monkeypatch.setattr(long_range_model, "artifact_revision", lambda: ("synthetic", 1), raising=False)
+    monkeypatch.setattr(long_range_model, "status", lambda: {
         "status": "available", "cell_ids": [CELL],
         "trained_through": "2023-06-01T00:00:00+07:00",
     })
     # The bundle's separate short-range AI must not load real artifacts either.
     def no_short_model(*args, **kwargs):
         raise ValueError("synthetic short-range unavailable")
-    monkeypatch.setattr(weather.ai_model, "predict_for_location", no_short_model)
+    monkeypatch.setattr(ai_model, "predict_for_location", no_short_model)
     weather.invalidate_climatology()
     yield client, predictor
     weather.invalidate_climatology()
@@ -116,7 +118,7 @@ def test_live_daily_seven_days_aggregate_observed_and_own_ai(live, syn_rows):
         for h in range(24):
             t = date_start + timedelta(hours=h)
             if t <= NOW:
-                row = observed[t.strftime(weather.TS_FMT)]
+                row = observed[t.strftime(weather_core.TS_FMT)]
                 expected.append({**row, "rain_probability": float(row["precipitation"] >= 0.1)})
             else:
                 v = _values(int((t - NOW).total_seconds() / 3600))
@@ -134,7 +136,8 @@ def test_live_daily_seven_days_aggregate_observed_and_own_ai(live, syn_rows):
         ):
             assert day[key] == pytest.approx(round(aggregate([r[field] for r in expected]), digits)), key
         assert day["precipitation_median"] is None
-        assert day['rain_day_probability'] is None
+        assert day['rain_day_probability'] == max(r["rain_probability"] for r in expected)
+        assert day['confidence'] == 'low'  # synthetic artifact has no evaluation report
         assert day["uv_index_max"] is None
         assert day["us_aqi_max"] is None
         if d > 0:
@@ -153,6 +156,29 @@ def test_live_bundle_keeps_current_and_matches_forecast_routes(live):
     predictor.assert_called_once()
 
 
+def test_wal_reads_keep_forecast_cache_but_writes_refresh_it(live, syn_db):
+    client, predictor = live
+    with sqlite3.connect(syn_db) as con:
+        assert con.execute("PRAGMA journal_mode=WAL").fetchone()[0] == "wal"
+    con.close()
+    bundle = _get(client, "bundle", hours=168, days=7)
+    # A concurrent reader (auth/sync) keeps an empty -wal file alive; once it closes the file is gone again.
+    reader = sqlite3.connect(syn_db)
+    reader.execute("SELECT COUNT(*) FROM hourly_weather").fetchone()
+    assert bundle["hourly"] == _get(client, "hourly", hours=168)
+    reader.close()
+    assert bundle["daily"] == _get(client, "daily", days=7)
+    predictor.assert_called_once()   # reads alone, from any number of connections, keep the cache key
+    # An ingest revising an existing hour (same issue time) must still refresh the forecast.
+    con = sqlite3.connect(syn_db)
+    with con:
+        con.execute("UPDATE hourly_weather SET temperature = temperature + 1 WHERE timestamp = ?",
+                    ((NOW - timedelta(hours=2)).strftime(weather_core.TS_FMT),))
+    con.close()
+    _get(client, "hourly", hours=168)
+    assert predictor.call_count == 2
+
+
 @pytest.mark.parametrize("error", ["untrained: no artifact", "unavailable: broken artifact"])
 def test_unavailable_model_fails_closed_but_bundle_retains_current(live, error):
     client, predictor = live
@@ -160,7 +186,8 @@ def test_unavailable_model_fails_closed_but_bundle_retains_current(live, error):
     failures = [client.get(f"/weather/{route}") for route in ("hourly", "daily")]
     for response in failures:
         assert response.status_code == 503
-        assert error in response.json()["detail"]
+        assert error not in response.json()["detail"]   # logged server-side only
+        assert response.json()["detail"].startswith("Dự báo AI riêng chưa sẵn sàng")
     bundle = _get(client, "bundle")
     assert bundle["current"] == _get(client, "current")
     assert bundle["current"]["timestamp"] == NOW.isoformat()
@@ -173,7 +200,7 @@ def test_stale_input_over_three_hours_rejected_even_with_model(live, syn_db):
     client, predictor = live
     with sqlite3.connect(syn_db) as con:
         con.execute("DELETE FROM hourly_weather WHERE timestamp > ? AND timestamp <= ?",
-                    ((NOW - timedelta(hours=4)).strftime(weather.TS_FMT), NOW.strftime(weather.TS_FMT)))
+                    ((NOW - timedelta(hours=4)).strftime(weather_core.TS_FMT), NOW.strftime(weather_core.TS_FMT)))
     for route in ("hourly", "daily"):
         response = client.get(f"/weather/{route}")
         assert response.status_code == 503
@@ -246,7 +273,7 @@ def test_cross_midnight_hourly_and_daily_boundaries(live, monkeypatch, hour):
 def test_exact_168h_model_horizon_is_included_not_extrapolated(live, syn_db):
     client, _ = live
     with sqlite3.connect(syn_db) as con:
-        con.execute("DELETE FROM hourly_weather WHERE timestamp = ?", (NOW.strftime(weather.TS_FMT),))
+        con.execute("DELETE FROM hourly_weather WHERE timestamp = ?", (NOW.strftime(weather_core.TS_FMT),))
     rows = _get(client, "hourly", hours=168)
     assert len(rows) == 168
     assert all(row["source"] == "ai" for row in rows)
@@ -259,7 +286,7 @@ def test_exact_three_hour_input_age_and_remaining_horizon(live, syn_db):
     issue = NOW - timedelta(hours=3)
     with sqlite3.connect(syn_db) as con:
         con.execute("DELETE FROM hourly_weather WHERE timestamp > ? AND timestamp <= ?",
-                    (issue.strftime(weather.TS_FMT), NOW.strftime(weather.TS_FMT)))
+                    (issue.strftime(weather_core.TS_FMT), NOW.strftime(weather_core.TS_FMT)))
     rows = _get(client, "hourly", hours=166)
     assert len(rows) == 166
     assert all(row["source"] == "ai" for row in rows)
@@ -283,7 +310,7 @@ def test_daily_exact_horizon_boundary_and_beyond(live, monkeypatch):
 def test_missing_current_hour_is_consistent_for_one_and_two_hour_requests(live, syn_db):
     client, _ = live
     with sqlite3.connect(syn_db) as con:
-        con.execute('DELETE FROM hourly_weather WHERE timestamp = ?', (NOW.strftime(weather.TS_FMT),))
+        con.execute('DELETE FROM hourly_weather WHERE timestamp = ?', (NOW.strftime(weather_core.TS_FMT),))
     one = _get(client, 'hourly', hours=1)
     two = _get(client, 'hourly', hours=2)
     assert one[0] == two[0]
@@ -295,7 +322,7 @@ def test_replay_map_does_not_bypass_training_cutoff(live, monkeypatch):
     client, predictor = live
     predictor.side_effect = ValueError('replay_leakage: issue is before trained_through')
     legacy = Mock(side_effect=AssertionError('unguarded legacy model must not answer replay'))
-    monkeypatch.setattr(weather.ai_model, 'predict_for_location', legacy)
+    monkeypatch.setattr(ai_model, 'predict_for_location', legacy)
     cells = _get(client, 'map', at=NOW.isoformat())
     row = next(c for c in cells if c['cell_id'] == CELL)
     assert row['rain_probability_next_3h'] is None
@@ -317,7 +344,7 @@ def test_partial_day_targets_are_not_presented_as_full_day_statistics(live):
     for day in days:
         assert day['precipitation_total'] is None
         assert day['humidity_avg'] is None
-        assert day['rain_day_probability'] is None
+        assert day['rain_day_probability'] is not None  # rain_probability is still complete
 
 
 def test_history_revision_at_same_issue_invalidates_prediction_cache(live, syn_db):
@@ -331,8 +358,52 @@ def test_history_revision_at_same_issue_invalidates_prediction_cache(live, syn_d
     assert predictor.call_count == 1
     with sqlite3.connect(syn_db) as con:
         con.execute('UPDATE hourly_weather SET temperature = temperature + 1 WHERE timestamp = ?',
-                    (NOW.strftime(weather.TS_FMT),))
+                    (NOW.strftime(weather_core.TS_FMT),))
     after = _get(client, 'hourly', hours=2)[1]
     assert predictor.call_count == 2
     assert after['timestamp'] == before['timestamp']
     assert after['temperature'] == before['temperature'] + 1
+
+
+def test_unrelated_writes_keep_prediction_cache(live, syn_db, monkeypatch):
+    from routers import auth, monitor
+    client, predictor = live
+    assert weather_data_revision(syn_db)[0] == 'rows'   # counter, not the file-stat fallback
+    before = _get(client, 'hourly', hours=2)
+    assert predictor.call_count == 1
+    monkeypatch.setattr(auth, "BCRYPT_ROUNDS", 4)
+    monkeypatch.setattr(auth, "_dummy_hash", None)
+    assert client.post('/feedback', json={'kind': 'suggestion', 'message': 'ok'}).status_code == 201
+    monitor.record_api_call('osrm')
+    monitor.record_api_call('osrm', ok=False)
+    account = {'email': 'cache@example.com', 'password': 'correct horse battery'}
+    assert client.post('/auth/register', json=account).status_code == 201
+    assert client.post('/auth/login', json=account).status_code == 200
+    assert _get(client, 'hourly', hours=2) == before
+    assert predictor.call_count == 1
+
+
+def test_old_hour_revision_and_ingest_invalidate_prediction_cache(live, syn_db):
+    import ingest
+    client, predictor = live
+    old = (NOW - timedelta(hours=5)).replace(tzinfo=None)
+    def based_on_old_hour(history, cell_id):
+        result = _predict(history, cell_id)
+        row = history[history.timestamp == old.strftime(weather_core.TS_FMT)]
+        result['predictions']['1h']['temperature'] = float(row.temperature.iloc[0])
+        return result
+    predictor.side_effect = based_on_old_hour
+    first = _get(client, 'hourly', hours=2)[1]['temperature']
+    with sqlite3.connect(syn_db) as con:   # a past hour revised in place (same rowid, same issue time)
+        con.execute('UPDATE hourly_weather SET temperature = temperature + 1 WHERE timestamp = ?',
+                    (old.strftime(weather_core.TS_FMT),))
+    second = _get(client, 'hourly', hours=2)[1]['temperature']
+    assert predictor.call_count == 2 and second == first + 1
+    with sqlite3.connect(syn_db) as con:   # the ingest upsert path (ON CONFLICT DO UPDATE)
+        con.row_factory = sqlite3.Row
+        row = dict(con.execute('SELECT * FROM hourly_weather WHERE timestamp = ?',
+                               (old.strftime(weather_core.TS_FMT),)).fetchone())
+        row['temperature'] += 1
+        assert ingest.upsert_hourly(con, row['location_id'], [row]) == (0, 1)
+    third = _get(client, 'hourly', hours=2)[1]['temperature']
+    assert predictor.call_count == 3 and third == first + 2

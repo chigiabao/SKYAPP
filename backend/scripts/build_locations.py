@@ -24,7 +24,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import os
 import sys
 import tempfile
 import time
@@ -32,7 +31,7 @@ import unicodedata
 from pathlib import Path
 
 import requests
-from shapely.geometry import LineString, MultiPolygon, Point, Polygon, mapping, shape
+from shapely.geometry import LineString, MultiPolygon, Point, Polygon, mapping
 from shapely.ops import polygonize_full, unary_union
 from shapely.validation import make_valid
 

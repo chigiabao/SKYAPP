@@ -7,6 +7,7 @@ import pytest
 
 from conftest import FROZEN_NOW, SYN_YEARS, _row, insert_rows
 from routers import weather as weather_router
+from routers.weather_climatology import _climatology
 
 MONTH, DAY, HOUR = 6, 10, 15   # a rainy hour in 1 of 3 years (FROZEN_NOW date)
 
@@ -27,7 +28,7 @@ def test_hourly_climatology_by_hand(client, syn_rows):
     precip_median = statistics.median(r["precipitation"] for r in sample)
     assert 0 < rain_prob < 1, "pick an hour with mixed rain so the check is meaningful"
 
-    hourly, _ = weather_router._climatology()
+    hourly, _ = _climatology()
     row = hourly.loc[(MONTH, DAY, HOUR)]
     assert row["temperature"] == pytest.approx(mean_temp)
     assert row["rain_probability"] == pytest.approx(rain_prob)
@@ -51,7 +52,7 @@ def test_daily_climatology_by_hand(client, syn_rows):
     pooled_min = min(r["temperature"] for d in per_year for r in d)
     assert t_min != pytest.approx(pooled_min)
 
-    _, daily = weather_router._climatology()
+    _, daily = _climatology()
     row = daily.loc[(MONTH, DAY)]
     assert row["temp_min"] == pytest.approx(t_min)
     assert row["temp_max"] == pytest.approx(t_max)

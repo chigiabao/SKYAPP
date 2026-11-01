@@ -7,6 +7,18 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sky_weather_app/models/weather.dart';
 import 'package:sky_weather_app/services/api_service.dart';
 
+void _checkArchivedVerification(AIVerification value) {
+  expect(value.verificationMode, anyOf('archived', 'unavailable'));
+  if (value.verificationMode == 'archived') {
+    expect(value.forecastSource, 'ai_forecast_log');
+    expect(value.archivedAt, isNotNull);
+    expect(value.horizons, isNotEmpty);
+  } else {
+    expect(value.unavailableReason, 'no_archived_forecast');
+    expect(value.horizons, isEmpty);
+  }
+}
+
 void main() {
   final base = Platform.environment['LIVE_BACKEND'];
   final skip = base == null ? 'Set LIVE_BACKEND to run' : false;
@@ -15,7 +27,7 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     final api = ApiService(baseUrl: base!);
     final data = await api.fetchWeatherData();
-    final health = await api.fetchHealth();
+    final health = BackendHealth.fromJson(await api.fetchHealthJson());
     // ignore: avoid_print
     print(
       'current ${data.current.lastUpdated} ${data.current.temperature}°C '
@@ -53,7 +65,7 @@ void main() {
     expect(data.current.lastUpdated, at);
     expect(data.hourlyForecast.first.time, at);
     expect(verify.issuedAt, at);
-    expect(verify.horizons, isNotEmpty);
+    _checkArchivedVerification(verify);
     final prefs = await SharedPreferences.getInstance();
     expect(prefs.getString(ApiService.cacheKey), isNull); // khong ghi cache
   }, skip: skip);
@@ -65,7 +77,7 @@ void main() {
     print(
       'verify now ${v.issuedAt} actuals=${v.horizons.map((h) => h.hasActual).toList()}',
     );
-    expect(v.horizons, isNotEmpty);
+    _checkArchivedVerification(v);
   }, skip: skip);
 
   test('live at before 2017-01-03 07:00 -> badRequest', () async {

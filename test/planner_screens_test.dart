@@ -3,7 +3,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:sky_weather_app/config/api_config.dart';
 import 'package:sky_weather_app/models/activities.dart';
 import 'package:sky_weather_app/models/app_settings.dart';
 import 'package:sky_weather_app/models/weather.dart';
@@ -19,6 +18,7 @@ import 'package:sky_weather_app/ui/weather/widgets/rain_timeline_card.dart';
 import 'package:sky_weather_app/services/api_service.dart';
 import 'package:sky_weather_app/ui/weather/app_scene.dart';
 import 'package:sky_weather_app/utils/theme.dart';
+import 'package:sky_weather_app/ui/weather/widgets/ios_controls.dart';
 
 final DateTime _now = DateTime.utc(2026, 10, 15, 14, 10);
 
@@ -31,11 +31,13 @@ class _FakeApi extends ApiService {
   final bool storm;
 
   @override
-  Future<WeatherData> fetchWeatherData({DateTime? at}) async {
+  Future<WeatherData> fetchWeatherDataFor(
+    String locationId, {
+    DateTime? at,
+  }) async {
     final base = HcmTime.startOfHour(at ?? nowHcm);
     return WeatherData(
       current: CurrentWeather(
-        locationName: ApiConfig.locationName,
         temperature: 30,
         condition: WeatherCondition.cloudy,
         weatherCode: 3,
@@ -292,13 +294,20 @@ void main() {
       size: const Size(390, 4000),
     );
     expect(find.text('CHẠY BỘ'), findsOneWidget);
-    await tester.tap(find.widgetWithText(FilterChip, 'Tưới cây'));
+    // Vien chon iOS co dau tick (thay FilterChip).
+    final pill = find.widgetWithText(IosPill, 'Tưới cây');
+    expect(tester.widget<IosPill>(pill).selected, isFalse);
+    await tester.tap(pill);
     await tester.pump();
     expect(planner.isFavorite(Activity.watering), isTrue);
+    expect(tester.widget<IosPill>(pill).selected, isTrue);
     expect(find.text('TƯỚI CÂY'), findsOneWidget);
 
     await tester.tap(find.text('Thêm lịch'));
     await tester.pumpAndSettle();
+    // Form la sheet iOS: Huy | tieu de | Luu.
+    expect(find.byKey(const ValueKey('glass-sheet')), findsOneWidget);
+    expect(find.byKey(const ValueKey('ios-sheet-cancel')), findsOneWidget);
     await tester.tap(find.text('Lưu'));
     await tester.pumpAndSettle();
     expect(planner.routines, hasLength(1));

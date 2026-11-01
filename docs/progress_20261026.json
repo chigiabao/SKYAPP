@@ -1,0 +1,206 @@
+{
+  "updated": "26/10/2026 21:10 (+07)",
+  "scope": [
+    "Ưu tiên sửa lỗi độ tin cậy AI, phục hồi tài khoản, tinh gọn UX/UI và kiểm thử hồi quy. Giữ nguyên dữ liệu, mô hình và các thay đổi có sẵn.",
+    "Không huấn luyện lại, không ingestion, không gửi email thật, không commit/push hay tự triển khai production.",
+    "Phân biệt hoàn thành code với kiểm chứng thiết bị/cấu hình bên ngoài. Nghiên cứu AI không có cam kết đạt chỉ số."
+  ],
+  "tasks": [
+    {
+      "id": "WEB-01",
+      "priority": "P1",
+      "title": "Mở web dùng ngay, không chỉnh đường dẫn máy chủ",
+      "status": "done",
+      "acceptance": "Web tự dùng cùng origin; web/API khởi động một lệnh; bỏ URL preview cũ một lần; test browser không đặt URL.",
+      "evidence": "Web/API cùng origin, launcher kiểm tra SHA256 bundle; giữ URL custom. Backend 807 passed, Flutter 753 passed/7 skipped, Chrome config 4 passed, Playwright 4 tình huống/2 port không lỗi JS hoặc asset. Preview không ingestion nên dữ liệu vẫn cũ; chưa có hosting public cho điện thoại."
+    },
+    {
+      "id": "APP-01",
+      "priority": "P2",
+      "title": "Địa chỉ backend public đóng gói sẵn cho điện thoại",
+      "status": "external",
+      "acceptance": "Có hosting HTTPS đang hoạt động; Android/iOS build sẵn URL đó và kiểm tra trên thiết bị thật.",
+      "evidence": "Chưa có domain/hosting public được cung cấp. Không thay bằng URL localhost trên điện thoại thật; không tuyên bố đã phát hành."
+    },
+    {
+      "id": "AI-01",
+      "priority": "P1",
+      "title": "Chặn dự báo live đã hết hạn",
+      "status": "done",
+      "acceptance": "Live quá cũ trả 503 rõ ràng; regression test; replay không bị lẫn live.",
+      "evidence": "Freshness theo CELL_FRESH_HOURS và chặn cả shortest horizon hết hạn; replay riêng. Test per-series, biên thời gian, bundle degrade và full backend đạt."
+    },
+    {
+      "id": "AI-02",
+      "priority": "P2",
+      "title": "Giới hạn fallback v2 đúng phạm vi TSN",
+      "status": "done",
+      "acceptance": "Không dùng model TSN cho Côn Đảo hay ô ngoài phạm vi; xử lý unavailable có test.",
+      "evidence": "Chỉ TSN hoặc alias tương ứng được fallback v2. Thiếu/hỏng fallback thành 503 và bundle vẫn 200; cache nạp nguyên khối. Có regression tests."
+    },
+    {
+      "id": "AI-03",
+      "priority": "P2",
+      "title": "Kiểm tra serving policy và bundle model",
+      "status": "done",
+      "acceptance": "Policy bắt buộc thiếu/hỏng/sai phiên bản phải chặn raw inference âm thầm; kiểm tra bundle.",
+      "evidence": "Policy khai báo bắt buộc: kiểm tra schema, phiên bản, calibration/weights; lỗi không âm thầm phục vụ raw v3. Bundle thật và 39 hash kiểm chứng trong build/progress-model-bundle.json."
+    },
+    {
+      "id": "ML-01",
+      "priority": "P2",
+      "title": "Không coi ngày thiếu dữ liệu mưa là ngày khô",
+      "status": "done",
+      "acceptance": "Dry/rain chỉ dùng ngày đủ 24 giờ hợp lệ; missing/partial unknown; test từng nhánh.",
+      "evidence": "backend/scripts/train_global_v3_interval.py; chưa biết ảnh hưởng artifacts cũ."
+    },
+    {
+      "id": "AUTH-01",
+      "priority": "P2",
+      "title": "Khôi phục mật khẩu an toàn qua email",
+      "status": "done",
+      "acceptance": "API/UI request và confirm, mã hash ngắn hạn một lần, giới hạn yêu cầu/thử sai, thu hồi phiên; không lộ email tồn tại.",
+      "evidence": "Backend reset qua test giả lập, giới hạn/expiry/one-use/session revocation có kiểm tra; Flutter full suite đạt. Chưa có SMTP credentials và chưa gửi email thật."
+    },
+    {
+      "id": "UX-01",
+      "priority": "P2",
+      "title": "Tinh gọn trang chủ và phần AI mở rộng",
+      "status": "done",
+      "acceptance": "Ưu tiên thời tiết/mưa/dự báo; AI nâng cao mở theo nhu cầu; giữ nguồn, độ mới, lỗi và responsive.",
+      "evidence": "Trang chủ dùng AIForecastCard compact sẵn có, giữ đường vào kiểm chứng. Test chữ 1.0/1.3/1.6/2.0, sáng/tối đạt; đã xem ảnh web mới."
+    },
+    {
+      "id": "UX-02",
+      "priority": "P2",
+      "title": "Chia cài đặt thành nhóm dễ tìm",
+      "status": "done",
+      "acceptance": "Cấp đầu gọn; mọi thiết lập cũ còn truy cập; back, replay, chữ lớn, vùng chạm hoạt động.",
+      "evidence": "Cài đặt 5 nhóm chính và tài khoản/trợ giúp, các trang chi tiết giữ theme/back/replay. Test 320px, chữ 200%, persistence, trợ năng và Playwright đạt."
+    },
+    {
+      "id": "QA-01",
+      "priority": "P1",
+      "title": "Kiểm thử hồi quy, analyzer, lint và review",
+      "status": "done",
+      "acceptance": "Test liên quan và full suite phù hợp; ghi passed/skipped/warnings; xem UI và PDF mới.",
+      "evidence": "Full backend/Flutter/golden/contract, analyze và Ruff đạt. Reviewer độc lập đã rà soát auth/AI/settings; phát hiện fallback đã có sửa và test. Chưa thay thế thử thiết bị thật."
+    },
+    {
+      "id": "OPS-01",
+      "priority": "P2",
+      "title": "Kiểm chứng Docker và quy trình phục hồi",
+      "status": "external",
+      "acceptance": "Kiểm tra Docker khả dụng, build/start nếu có; backup/restore DB tạm, không đụng production.",
+      "evidence": "Docker CLI có sẵn; docker info báo không tìm thấy pipe dockerDesktopLinuxEngine. Backup/restore sẽ thử trên DB tạm; chưa xác minh container."
+    },
+    {
+      "id": "IOS-01",
+      "priority": "P2",
+      "title": "Widget iOS và kiểm chứng thiết bị/signing",
+      "status": "external",
+      "acceptance": "Mac/Xcode, App Groups, signing; build/cài/thử widget và notification trên thiết bị.",
+      "evidence": "Không thêm extension chưa kiểm chứng vào release; cần chủ tài khoản Apple."
+    },
+    {
+      "id": "AI-04",
+      "priority": "P3",
+      "title": "Nâng độ phủ và chất lượng mưa dài hạn",
+      "status": "external",
+      "acceptance": "Dữ liệu độc lập, calibration và rolling evaluation; không tune test hay giả xác suất ngày.",
+      "evidence": "Khoảng ngắn hạn 88,48/88,11/89,33%; dài hạn thiếu interval/xác suất mưa ngày đã kiểm chứng. Nghiên cứu riêng."
+    },
+    {
+      "id": "DOC-01",
+      "priority": "P2",
+      "title": "PDF tiến độ và bàn giao cập nhật",
+      "status": "done",
+      "acceptance": "PDF tiếng Việt rõ, có tiêu chí/trạng thái/log; cập nhật sau mỗi nhóm, chỉ đánh dấu xong khi có bằng chứng.",
+      "evidence": "Nguồn JSON và công cụ tạo PDF có tên cố định trong deliverables/."
+    },
+    {
+      "id": "MAIL-01",
+      "priority": "P2",
+      "title": "Xác minh email khôi phục trên SMTP thật",
+      "status": "external",
+      "acceptance": "Cấu hình SMTP TLS qua secret store, xác minh sender và gửi/nhận bằng tài khoản test; không gửi mật khẩu qua chat.",
+      "evidence": "Chưa được cung cấp dịch vụ gửi email. API trả 503 cho mọi địa chỉ nếu chưa cấu hình; không giả vờ gửi thành công."
+    },
+    {
+      "id": "OPS-02",
+      "priority": "P2",
+      "title": "Diễn tập backup/restore SQLite trên DB tạm",
+      "status": "done",
+      "acceptance": "Online backup khi WAL còn mở, restore giữ snapshot đã commit, integrity_check đạt và DB nguồn không mất dữ liệu.",
+      "evidence": "backend/tests/test_backup_restore.py; có trong full backend 789 passed. Chưa thay thế diễn tập máy chủ thật."
+    }
+  ],
+  "checks": [
+    {
+      "at": "26/10/2026 19:01 (+07)",
+      "text": "ML diagnostics: 33 passed (27 mới + 6 hồi quy), Ruff đạt; không training. AI focused: 90 passed; integration còn 3 test cần điều chỉnh dữ liệu stale."
+    },
+    {
+      "at": "26/10/2026 19:20 (+07)",
+      "text": "Flutter non-golden: 753 passed, 7 skipped; analyze: No issues found. Backend full lần đầu: 782 passed, 15 skipped, 2 subtests và 1 lỗi smoke do clock thực tế khác snapshot; đã sửa test dùng thời điểm snapshot và đang chạy lại."
+    },
+    {
+      "at": "26/10/2026 19:45 (+07)",
+      "text": "Cuối đợt: backend 789 passed, 15 skipped, 2 subtests passed (96,69 giây; không model training/ingestion). Flutter non-golden 753 passed, 7 skipped; golden 16 passed; HTTP contract thật với DB tổng hợp cô lập 3 passed. Analyze không issue, Ruff đạt."
+    },
+    {
+      "at": "26/10/2026 19:45 (+07)",
+      "text": "Web release build đạt (71,8 giây). Playwright kiểm tra Home/Điều kiện/Cài đặt/trang hiển thị/hộp thoại recovery ở 390x844, 320x667, 844x390, 1440x960; offline vẫn tới cài đặt; không lỗi JavaScript. Dữ liệu historical reference được gắn nhãn replay, không phải xác nhận live hôm nay."
+    },
+    {
+      "at": "26/10/2026 19:45 (+07)",
+      "text": "Bundle v3 thực tế nạp thành công model/policy/extension; SHA-256 của 39 tệp JSON/PKL lưu tại build/progress-model-bundle.json. Backup/restore WAL trên DB tạm và integrity_check đạt."
+    },
+    {
+      "at": "26/10/2026 19:58 (+07)",
+      "text": "Chốt bản cuối: web release --no-wasm-dry-run exit 0 (57,7 giây); Playwright chạy lại trên build này và API mới, 21 ảnh có dữ liệu/pixel variance hợp lệ, kết quả build/progress-ui-final/results.json. Diff check các file thuộc đợt sửa đạt; global vẫn có 3 dòng EOF trống cũ ngoài phạm vi. PDF 4 trang đã render/xem, dấu tiếng Việt đúng."
+    },
+    {
+      "at": "26/10/2026 21:10 (+07)",
+      "text": "Backend full 807 passed, 2 subtests passed (79,74 giây); 46 targeted Python tests đạt, Ruff đạt. Full suite gồm 15 fixture model nhỏ trên dữ liệu tổng hợp; 39 SHA256 model phục vụ không đổi, không train lại model production."
+    },
+    {
+      "at": "26/10/2026 21:10 (+07)",
+      "text": "Flutter non-golden 753 passed/7 skipped, analyzer không issue. Chrome config 4 passed với workaround CanvasKit local cho test harness Windows; bản release không cần workaround. Release 47,1 giây; Playwright fresh phone/desktop, legacy small-phone, port 8000/8001 đều gọi đúng origin, không lỗi JS/assets. 4 PNG đã kiểm tra."
+    }
+  ],
+  "history": [
+    {
+      "at": "26/10/2026 18:54 (+07)",
+      "text": "Bắt đầu theo yêu cầu: thực hiện và duy trì PDF. Chia phạm vi backend, diagnostics, tài khoản, UX; chưa đánh dấu việc nào hoàn tất."
+    },
+    {
+      "at": "26/10/2026 19:01 (+07)",
+      "text": "Hoàn thành sửa diagnostics mưa. AI reliability đã có patch và focused tests; đang tích hợp contract. Trang chủ dùng lại thẻ AI compact. Docker CLI có nhưng daemon chưa chạy, chưa build/start image."
+    },
+    {
+      "at": "26/10/2026 19:20 (+07)",
+      "text": "Đã có API/UI khôi phục mật khẩu và cấu hình SMTP TLS; 153 backend test nhóm tài khoản đạt. Settings phân nhóm đã tích hợp; kéo bottom sheet không còn cảnh báo thao tác trong nhóm navigation. Đang build web để kiểm chứng trực quan."
+    },
+    {
+      "at": "26/10/2026 19:45 (+07)",
+      "text": "Đã tích hợp phát hiện review: fallback v2 lỗi/thiếu không làm bundle 500; cache model chỉ được công bố sau khi nạp đủ. Có 6 regression test mới, full backend chạy lại đạt. Giữ nguyên artifact và DB production."
+    },
+    {
+      "at": "26/10/2026 19:45 (+07)",
+      "text": "10/14 hạng mục hoàn thành trong phạm vi code/tài liệu/kiểm thử. 4 mục ngoài điều kiện: Docker daemon, SMTP thật, Mac/signing/thiết bị iOS, dữ liệu độc lập cho nâng chất lượng AI. Không có tiến trình tự cập nhật PDF sau khi phiên kết thúc."
+    },
+    {
+      "at": "26/10/2026 19:58 (+07)",
+      "text": "Kết thúc đợt triển khai local: giữ preview web 8136/API 8036 (lifespan off); PDF và handoff đã cập nhật. Không có training, ingestion, gửi email thật hoặc triển khai production."
+    },
+    {
+      "at": "26/10/2026 20:43 (+07)",
+      "text": "Đang kiểm chứng web cùng origin và launcher một lệnh; chưa có backend public cho bản điện thoại."
+    },
+    {
+      "at": "26/10/2026 21:10 (+07)",
+      "text": "Hoàn tất WEB-01 phần code/local. Đã sửa 3 phát hiện review: tái dùng bundle cũ, quota chặn assets và migration xóa URL custom. Có launcher nhấp đúp, tài liệu và CI Chrome. APP-01 còn cần domain/hosting HTTPS và kiểm thử thiết bị thật; chưa triển khai public. Preview 8000 lifespan off, dữ liệu vẫn cũ."
+    }
+  ]
+}

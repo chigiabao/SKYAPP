@@ -6,10 +6,12 @@ library;
 import 'dart:math' as math;
 
 import 'package:fl_chart/fl_chart.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/place.dart';
+import '../models/units.dart';
 import '../models/weather.dart';
 import '../providers/location_provider.dart';
 import '../providers/preferences_provider.dart';
@@ -21,133 +23,13 @@ import '../ui/weather/glass_ink.dart';
 import '../ui/weather/weather_icons.dart';
 import '../ui/weather/widgets/glass_card.dart';
 import '../ui/weather/widgets/glass_page.dart';
-import '../utils/constants.dart';
-import 'forecast/forecast_format.dart';
+import '../ui/weather/widgets/ios_page.dart';
+import '../utils/forecast_format.dart';
+import '../utils/haptics.dart';
 
-/// Kieu cua mot chuoi so sanh.
-@immutable
-class CompareSeriesStyle {
-  const CompareSeriesStyle(this.color, this.dash, this.shape, this.shapeName);
-
-  final Color color;
-
-  /// null = net lien.
-  final List<int>? dash;
-  final CompareDotShape shape;
-
-  /// Ten kieu (cho trinh doc man hinh / chu giai).
-  final String shapeName;
-
-  static const List<CompareSeriesStyle> all = [
-    CompareSeriesStyle(
-      Color(0xFF7DD3FC),
-      null,
-      CompareDotShape.circle,
-      'nét liền',
-    ),
-    CompareSeriesStyle(
-      Color(0xFFFCD34D),
-      [8, 5],
-      CompareDotShape.square,
-      'nét đứt',
-    ),
-    CompareSeriesStyle(
-      Color(0xFFF0ABFC),
-      [2, 4],
-      CompareDotShape.triangle,
-      'nét chấm',
-    ),
-  ];
-}
-
-enum CompareDotShape { circle, square, triangle }
-
-/// Kha nang mua lon nhat (%) trong 3 gio toi; null neu khong co.
-int? rainNext3h(List<HourlyForecast> hours, DateTime nowHcm) {
-  final start = HcmTime.startOfHour(nowHcm);
-  final end = start.add(const Duration(hours: 3));
-  int? best;
-  for (final h in hours) {
-    if (h.time.isBefore(start) || !h.time.isBefore(end)) continue;
-    if (h.rainProbability == null) continue;
-    best = math.max(best ?? 0, h.rainPercent);
-  }
-  return best;
-}
-
-/// Gio dau tien (trong 12 gio toi) co kha nang mua >= 50%; null = khong co.
-DateTime? rainOnset(List<HourlyForecast> hours, DateTime nowHcm) {
-  final start = HcmTime.startOfHour(nowHcm);
-  final end = start.add(const Duration(hours: 12));
-  for (final h in hours) {
-    if (h.time.isBefore(start) || !h.time.isBefore(end)) continue;
-    if ((h.rainProbability ?? 0) >= 0.5) return h.time;
-  }
-  return null;
-}
-
-/// Noi noi bat: mua nhieu nhat (3 gio toi) va nong nhat (hien tai).
-typedef CompareHighlights = ({String? rainiestId, String? hottestId});
-
-CompareHighlights compareHighlights(List<CompareSeries> s, DateTime now) {
-  final ok = [
-    for (final x in s)
-      if (x.data != null) x,
-  ];
-  if (ok.length < 2) return (rainiestId: null, hottestId: null);
-  // Chi noi bat khi hon han noi thu hai (tranh "nóng nhất" khi bang nhau).
-  String? leader(num Function(CompareSeries) v, num margin, num floor) {
-    final sorted = [...ok]..sort((a, b) => v(b).compareTo(v(a)));
-    final a = v(sorted[0]), b = v(sorted[1]);
-    return a >= floor && a - b >= margin ? sorted[0].place.id : null;
-  }
-
-  return (
-    rainiestId: leader(
-      (x) => rainNext3h(x.data!.hourlyForecast, now) ?? 0,
-      10,
-      20,
-    ),
-    hottestId: leader((x) => x.data!.current.temperature, 1, -100),
-  );
-}
-
-/// Mot cau ket luan, vd. "Thủ Đức mưa sớm hơn Bến Thành khoảng 1 giờ."
-String? compareVerdict(
-  List<CompareSeries> series,
-  DateTime now,
-  String Function(double c) temp,
-) {
-  final ok = [
-    for (final x in series)
-      if (x.data != null) x,
-  ];
-  if (ok.length < 2) return null;
-  final onset = {for (final x in ok) x: rainOnset(x.data!.hourlyForecast, now)};
-  final wet = ok.where((x) => onset[x] != null).toList()
-    ..sort((a, b) => onset[a]!.compareTo(onset[b]!));
-  String hh(DateTime t) => '${t.hour.toString().padLeft(2, '0')}:00';
-  if (wet.length >= 2) {
-    final a = wet.first, b = wet.last;
-    final dh = onset[b]!.difference(onset[a]!).inHours;
-    if (dh >= 1) {
-      return '${a.place.name} mưa sớm hơn ${b.place.name} khoảng $dh giờ '
-          '(từ ${hh(onset[a]!)}).';
-    }
-    return 'Các nơi cùng có thể mưa từ khoảng ${hh(onset[a]!)}.';
-  }
-  if (wet.length == 1) {
-    final a = wet.first;
-    return '${a.place.name} có thể mưa từ ${hh(onset[a]!)}; '
-        'nơi còn lại ít khả năng mưa trong 12 giờ tới.';
-  }
-  final hot = ok.reduce(
-    (a, b) =>
-        a.data!.current.temperature >= b.data!.current.temperature ? a : b,
-  );
-  return 'Ít khả năng mưa ở cả ${ok.length} nơi trong 12 giờ tới; '
-      '${hot.place.name} nóng nhất (${temp(hot.data!.current.temperature)}°).';
-}
+part 'compare/compare_helpers.dart';
+part 'compare/compare_column.dart';
+part 'compare/compare_chart.dart';
 
 class CompareScreen extends StatefulWidget {
   const CompareScreen({
@@ -167,33 +49,51 @@ class _CompareScreenState extends State<CompareScreen> {
   final Map<String, WeatherResult> _data = {};
   final Map<String, ApiException> _errors = {};
   bool _loading = true;
+  bool _loaded = false;
+  DateTime? _loadedFor;
+  int _request = 0;
 
   @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final wp = context.watch<WeatherProvider>();
+    final at = wp.isReplay ? wp.replayAt : null;
+    if (!_loaded || at != _loadedFor) _load(clear: true);
   }
 
-  Future<void> _load() async {
-    if (!mounted) return;
+  /// Tai lai moi dia diem; true khi khong co loi (rung keo-de-lam-moi).
+  Future<bool> _load({bool clear = false}) async {
+    if (!mounted) return false;
     final wp = context.read<WeatherProvider>();
+    final request = ++_request;
+    _loaded = true;
+    _loadedFor = wp.isReplay ? wp.replayAt : null;
+    final data = <String, WeatherResult>{};
+    final errors = <String, ApiException>{};
     setState(() {
       _loading = true;
       _errors.clear();
+      if (clear) _data.clear();
     });
     Future<void> one(String id) async {
       try {
-        _data[id] = await wp.fetchWeatherFor(id);
+        data[id] = await wp.fetchWeatherFor(id);
       } on ApiException catch (e) {
-        _errors[id] = e;
+        errors[id] = e;
       } catch (e) {
         debugPrint('CompareScreen: $e');
-        _errors[id] = ApiException(ApiErrorKind.invalidData);
+        errors[id] = ApiException(ApiErrorKind.invalidData);
       }
     }
 
     await Future.wait([for (final id in widget.locationIds) one(id)]);
-    if (mounted) setState(() => _loading = false);
+    if (!mounted || request != _request) return false;
+    setState(() {
+      _data.addAll(data);
+      _errors.addAll(errors);
+      _loading = false;
+    });
+    return errors.isEmpty;
   }
 
   @override
@@ -201,15 +101,10 @@ class _CompareScreenState extends State<CompareScreen> {
       GlassPage(child: Builder(builder: _buildPage));
 
   Widget _buildPage(BuildContext context) {
-    final theme = Theme.of(context);
     final wp = context.watch<WeatherProvider>();
+    final units = PreferencesProvider.unitsOf(context);
     final lp = widget.locations;
     final ids = widget.locationIds.take(CompareSeriesStyle.all.length).toList();
-    final mq = MediaQuery.of(context);
-    final gutter = Space.gutter(mq.size.width);
-    final hPad = mq.size.width > Space.contentMaxWidth + 2 * gutter
-        ? (mq.size.width - Space.contentMaxWidth) / 2
-        : gutter;
 
     final series = <CompareSeries>[
       for (var i = 0; i < ids.length; i++)
@@ -225,522 +120,118 @@ class _CompareScreenState extends State<CompareScreen> {
     final highlights = _loading ? null : compareHighlights(series, wp.nowHcm);
     final verdict = _loading
         ? null
-        : compareVerdict(series, wp.nowHcm, wp.formatTempValue);
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          'So sánh',
-          style: AppTextStyles.heading2.copyWith(
-            color: theme.textTheme.titleLarge?.color,
-          ),
+        : compareVerdict(series, wp.nowHcm, units.tempNumber);
+    return IosPageScaffold(
+      title: 'So sánh',
+      onRefresh: withRefreshHaptic(_load),
+      actions: [
+        IosBarButton(
+          tooltip: 'Tải lại',
+          icon: CupertinoIcons.refresh,
+          onPressed: _loading ? null : _load,
         ),
-        actions: [
-          IconButton(
-            tooltip: 'Tải lại',
-            icon: const Icon(Icons.refresh_rounded),
-            onPressed: _loading ? null : _load,
-          ),
-        ],
-      ),
-      body: ListView(
-        padding: EdgeInsets.fromLTRB(hPad, Space.s, hPad, Space.xxl),
-        children: [
-          IntrinsicHeight(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                for (var i = 0; i < series.length; i++) ...[
-                  if (i > 0) const SizedBox(width: Space.s),
-                  Expanded(
-                    child: _CompareColumn(
-                      series: series[i],
-                      highlights: highlights,
-                      loading: _loading && series[i].result == null,
-                      provider: wp,
-                    ),
-                  ),
+      ],
+      children: [
+        LayoutBuilder(
+          builder: (context, constraints) {
+            Widget column(int i, {bool aligned = false}) => _CompareColumn(
+              series: series[i],
+              reserveNameLines: aligned,
+              highlights: highlights,
+              loading: _loading && series[i].result == null,
+              nowHcm: wp.nowHcm,
+              units: units,
+            );
+            // Chu lon (> 130%) hoac cot qua hep: ten phuong bi cat giua tu
+            // ("Phườ / ng") -> xep doc, moi dia diem mot the full ngang.
+            final colWidth =
+                (constraints.maxWidth - Space.s * (series.length - 1)) /
+                math.max(1, series.length);
+            final stacked =
+                MediaQuery.textScalerOf(context).scale(1) > 1.3 ||
+                colWidth < 104;
+            if (stacked) {
+              return Column(
+                key: const ValueKey('compare-stacked'),
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (var i = 0; i < series.length; i++) ...[
+                    if (i > 0) const SizedBox(height: Space.s),
+                    column(i),
+                  ],
                 ],
-              ],
-            ),
-          ),
-          if (verdict case final v?) ...[
-            const SizedBox(height: Space.cardGap),
-            GlassCard(
-              title: 'KẾT LUẬN',
-              icon: Icons.lightbulb_outline_rounded,
-              child: Semantics(
-                liveRegion: true,
-                child: Text(
-                  v,
-                  style: TypeScale.label.copyWith(color: Palette.white),
-                ),
+              );
+            }
+            return IntrinsicHeight(
+              key: const ValueKey('compare-columns'),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (var i = 0; i < series.length; i++) ...[
+                    if (i > 0) const SizedBox(width: Space.s),
+                    Expanded(child: column(i, aligned: true)),
+                  ],
+                ],
               ),
-            ),
-          ],
+            );
+          },
+        ),
+        if (verdict case final v?) ...[
           const SizedBox(height: Space.cardGap),
           GlassCard(
-            title: 'Nhiệt độ 24 giờ tới',
-            icon: Icons.show_chart_rounded,
-            footer:
-                'Mỗi đường một địa điểm; xem chú giải để phân biệt '
-                '(màu, kiểu nét và hình điểm).',
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                CompareLegend(series: series),
-                const SizedBox(height: Space.m),
-                SizedBox(
-                  height: 220,
-                  child: _loading && _data.isEmpty
-                      ? const Center(child: CircularProgressIndicator())
-                      : CompareChart(series: series, provider: wp),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: Space.m),
-          Text(
-            'Số liệu của mỗi địa điểm lấy theo ô dữ liệu ≈ 8 km chứa địa '
-            'điểm; hai phường trong cùng ô sẽ giống nhau.',
-            style: TypeScale.small.copyWith(
-              fontSize: 13,
-              color: GlassInk.of(context).headerSecondary,
+            title: 'KẾT LUẬN',
+            icon: Icons.lightbulb_outline_rounded,
+            child: Semantics(
+              liveRegion: true,
+              child: Text(
+                v,
+                style: TypeScale.label.copyWith(color: Palette.white),
+              ),
             ),
           ),
         ],
-      ),
+        const SizedBox(height: Space.cardGap),
+        GlassCard(
+          title: 'Nhiệt độ 24 giờ tới',
+          icon: Icons.show_chart_rounded,
+          footer:
+              'Mỗi đường một địa điểm; xem chú giải để phân biệt '
+              '(màu, kiểu nét và hình điểm).',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              CompareLegend(series: series),
+              const SizedBox(height: Space.m),
+              SizedBox(
+                height: 220,
+                child: _loading && _data.isEmpty
+                    ? const Center(child: CupertinoActivityIndicator())
+                    : CompareChart(
+                        series: series,
+                        nowHcm: wp.nowHcm,
+                        units: units,
+                      ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: Space.m),
+        Text(
+          'Số liệu của mỗi địa điểm lấy theo ô dữ liệu ≈ 8 km chứa địa '
+          'điểm; hai phường trong cùng ô sẽ giống nhau.',
+          style: TypeScale.footnote.copyWith(
+            fontWeight: FontWeight.w500,
+            color: GlassInk.of(context).headerSecondary,
+          ),
+        ),
+      ],
     );
   }
 
   static String? _labelFor(LocationProvider lp, String id) {
     for (final s in lp.saved) {
-      if (s.locationId == id) return s.labelText;
+      if (s.locationId == id) return s.shortLabelText;
     }
     return id == lp.currentLocationId ? 'Vị trí hiện tại' : null;
-  }
-}
-
-/// Mot dia diem trong so sanh.
-class CompareSeries {
-  CompareSeries({
-    required this.place,
-    required this.label,
-    required this.style,
-    required this.result,
-    required this.error,
-  });
-
-  final Place place;
-  final String? label;
-  final CompareSeriesStyle style;
-  final WeatherResult? result;
-  final ApiException? error;
-
-  WeatherData? get data => result?.data;
-}
-
-class _CompareColumn extends StatelessWidget {
-  const _CompareColumn({
-    required this.series,
-    required this.loading,
-    required this.provider,
-    this.highlights,
-  });
-
-  final CompareHighlights? highlights;
-  final CompareSeries series;
-  final bool loading;
-  final WeatherProvider provider;
-
-  @override
-  Widget build(BuildContext context) {
-    final ink = GlassInk.of(context);
-    final d = series.data;
-    final c = d?.current;
-    final now = provider.nowHcm;
-    final small = TypeScale.small.copyWith(color: ink.secondary);
-    final value = TypeScale.label.copyWith(
-      color: Palette.white,
-      fontWeight: FontWeight.w600,
-      fontFeatures: kTabular,
-    );
-    Widget metric(String title, String v) => Padding(
-      padding: const EdgeInsets.only(top: Space.s),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(title, style: small),
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            alignment: Alignment.centerLeft,
-            child: Text(v, style: value),
-          ),
-        ],
-      ),
-    );
-
-    final rain = d == null ? null : rainNext3h(d.hourlyForecast, now);
-    final id = series.place.id;
-    final badges = [
-      if (highlights?.rainiestId == id)
-        (Icons.water_drop_rounded, 'Mưa nhiều nhất', ink.rain),
-      if (highlights?.hottestId == id)
-        (Icons.local_fire_department_rounded, 'Nóng nhất', ink.warning),
-    ];
-    return GlassSurface(
-      padding: const EdgeInsets.all(Space.m),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              _LegendSwatch(style: series.style),
-              const SizedBox(width: Space.xs),
-              Expanded(
-                child: Text(
-                  series.place.name,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TypeScale.body.copyWith(
-                    color: Palette.white,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          Text(
-            series.label ?? series.place.detail,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: small,
-          ),
-          for (final (icon, text, color) in badges)
-            Padding(
-              padding: const EdgeInsets.only(top: Space.xs),
-              child: Row(
-                children: [
-                  Icon(icon, size: 14, color: color),
-                  const SizedBox(width: 2),
-                  Expanded(
-                    child: Text(
-                      text,
-                      style: small.copyWith(
-                        color: color,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          if (series.result?.fromCache == true && c != null)
-            Text('Dữ liệu cũ', style: small.copyWith(color: ink.warning)),
-          const SizedBox(height: Space.s),
-          if (loading)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: Space.l),
-              child: Center(child: CircularProgressIndicator()),
-            )
-          else if (c == null)
-            Text(
-              series.error?.message ?? 'Không tải được dữ liệu.',
-              style: small.copyWith(color: Palette.white),
-            )
-          else ...[
-            Row(
-              children: [
-                WeatherIcon.fromCode(
-                  c.weatherCode,
-                  isDay: isDayAt(now),
-                  size: 28,
-                ),
-                const SizedBox(width: Space.xs),
-                Expanded(
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      '${provider.formatTempValue(c.temperature)}°',
-                      style: TypeScale.bigValue.copyWith(color: Palette.white),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            metric(
-              'Cảm giác',
-              c.feelsLike == null
-                  ? '--'
-                  : '${provider.formatTempValue(c.feelsLike!)}°',
-            ),
-            metric('Mưa 3 giờ tới', rain == null ? '--' : '$rain%'),
-            metric(
-              'Gió',
-              PreferencesProvider.unitsOf(context).windText(c.windSpeed),
-            ),
-            metric('AQI (US)', c.usAqi == null ? '--' : '${c.usAqi}'),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-/// Chu giai: mau + kieu net + hinh diem + ten.
-class CompareLegend extends StatelessWidget {
-  const CompareLegend({super.key, required this.series});
-
-  final List<CompareSeries> series;
-
-  @override
-  Widget build(BuildContext context) {
-    return Wrap(
-      spacing: Space.l,
-      runSpacing: Space.xs,
-      children: [
-        for (final s in series)
-          Semantics(
-            label: '${s.place.name}: ${s.style.shapeName}',
-            excludeSemantics: true,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _LegendSwatch(style: s.style),
-                const SizedBox(width: Space.xs),
-                Text(
-                  s.place.name,
-                  style: TypeScale.small.copyWith(color: Palette.white),
-                ),
-              ],
-            ),
-          ),
-      ],
-    );
-  }
-}
-
-class _LegendSwatch extends StatelessWidget {
-  const _LegendSwatch({required this.style});
-
-  final CompareSeriesStyle style;
-
-  @override
-  Widget build(BuildContext context) =>
-      CustomPaint(size: const Size(28, 12), painter: _SwatchPainter(style));
-}
-
-class _SwatchPainter extends CustomPainter {
-  _SwatchPainter(this.style);
-
-  final CompareSeriesStyle style;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final p = Paint()
-      ..color = style.color
-      ..strokeWidth = 2.5
-      ..strokeCap = StrokeCap.round;
-    final y = size.height / 2;
-    final dash = style.dash;
-    if (dash == null) {
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), p);
-    } else {
-      var x = 0.0;
-      while (x < size.width) {
-        final x2 = math.min(size.width, x + dash[0]);
-        canvas.drawLine(Offset(x, y), Offset(x2, y), p);
-        x = x2 + dash[1];
-      }
-    }
-    _drawShape(canvas, style.shape, Offset(size.width / 2, y), 4, style.color);
-  }
-
-  @override
-  bool shouldRepaint(_SwatchPainter old) => old.style != style;
-}
-
-void _drawShape(Canvas c, CompareDotShape s, Offset o, double r, Color color) {
-  final fill = Paint()..color = color;
-  final stroke = Paint()
-    ..color = const Color(0xFF141C2B)
-    ..style = PaintingStyle.stroke
-    ..strokeWidth = 1.2;
-  switch (s) {
-    case CompareDotShape.circle:
-      c.drawCircle(o, r, fill);
-      c.drawCircle(o, r, stroke);
-    case CompareDotShape.square:
-      final rect = Rect.fromCenter(center: o, width: 2 * r, height: 2 * r);
-      c.drawRect(rect, fill);
-      c.drawRect(rect, stroke);
-    case CompareDotShape.triangle:
-      final path = Path()
-        ..moveTo(o.dx, o.dy - r - 1)
-        ..lineTo(o.dx + r + 1, o.dy + r)
-        ..lineTo(o.dx - r - 1, o.dy + r)
-        ..close();
-      c.drawPath(path, fill);
-      c.drawPath(path, stroke);
-  }
-}
-
-class _ShapeDotPainter extends FlDotPainter {
-  _ShapeDotPainter(this.shape, this.color);
-
-  final CompareDotShape shape;
-  final Color color;
-
-  @override
-  void draw(Canvas canvas, FlSpot spot, Offset offsetInCanvas) =>
-      _drawShape(canvas, shape, offsetInCanvas, 4, color);
-
-  @override
-  Size getSize(FlSpot spot) => const Size(10, 10);
-
-  @override
-  Color get mainColor => color;
-
-  @override
-  FlDotPainter lerp(FlDotPainter a, FlDotPainter b, double t) => b;
-
-  @override
-  List<Object?> get props => [shape, color];
-}
-
-/// Bieu do nhiet do 24 gio toi cua cac dia diem tren cung truc.
-class CompareChart extends StatelessWidget {
-  const CompareChart({super.key, required this.series, required this.provider});
-
-  final List<CompareSeries> series;
-  final WeatherProvider provider;
-
-  @override
-  Widget build(BuildContext context) {
-    final ink = GlassInk.of(context);
-    final start = HcmTime.startOfHour(provider.nowHcm);
-    double conv(double c) => provider.isCelsius ? c : c * 9 / 5 + 32;
-    final bars = <LineChartBarData>[];
-    final drawn = <CompareSeries>[];
-    final all = <double>[];
-    for (final s in series) {
-      final hours = s.data?.hourlyForecast ?? const <HourlyForecast>[];
-      final spots = <FlSpot>[];
-      for (final h in hours) {
-        final x = h.time.difference(start).inMinutes / 60;
-        if (x < 0 || x > 23) continue;
-        final y = conv(h.temperature);
-        spots.add(FlSpot(x, y));
-        all.add(y);
-      }
-      if (spots.isEmpty) continue;
-      drawn.add(s);
-      bars.add(
-        LineChartBarData(
-          spots: spots,
-          isCurved: true,
-          preventCurveOverShooting: true,
-          color: s.style.color,
-          barWidth: 2.5,
-          dashArray: s.style.dash,
-          isStrokeCapRound: true,
-          dotData: FlDotData(
-            show: true,
-            checkToShowDot: (spot, _) => spot.x.round() % 4 == 0,
-            getDotPainter: (spot, p, bar, i) =>
-                _ShapeDotPainter(s.style.shape, s.style.color),
-          ),
-        ),
-      );
-    }
-    if (bars.isEmpty) {
-      return Center(
-        child: Text(
-          'Chưa có dữ liệu theo giờ để vẽ biểu đồ.',
-          style: TypeScale.body.copyWith(color: Palette.white),
-        ),
-      );
-    }
-    final lo = (all.reduce(math.min) - 1).floorToDouble();
-    final hi = (all.reduce(math.max) + 1).ceilToDouble();
-    final step = math.max(1, ((hi - lo) / 4).ceil()).toDouble();
-    final axis = TypeScale.small.copyWith(color: ink.secondary);
-    final unit = provider.tempUnit.replaceAll('C', '').replaceAll('F', '');
-    return Semantics(
-      label:
-          'Biểu đồ nhiệt độ 24 giờ tới của ${series.length} địa điểm, '
-          'từ ${lo.round()}$unit đến ${hi.round()}$unit',
-      child: LineChart(
-        LineChartData(
-          minX: 0,
-          maxX: 23,
-          minY: lo,
-          maxY: hi,
-          clipData: const FlClipData.horizontal(),
-          borderData: FlBorderData(show: false),
-          gridData: FlGridData(
-            drawVerticalLine: false,
-            horizontalInterval: step,
-            getDrawingHorizontalLine: (_) =>
-                const FlLine(color: Color(0x29FFFFFF), strokeWidth: 1),
-          ),
-          titlesData: FlTitlesData(
-            topTitles: const AxisTitles(
-              sideTitles: SideTitles(showTitles: false),
-            ),
-            rightTitles: const AxisTitles(
-              sideTitles: SideTitles(showTitles: false),
-            ),
-            leftTitles: AxisTitles(
-              sideTitles: SideTitles(
-                showTitles: true,
-                reservedSize: 36,
-                interval: step,
-                getTitlesWidget: (v, meta) => v == meta.min || v == meta.max
-                    ? const SizedBox.shrink()
-                    : SideTitleWidget(
-                        axisSide: meta.axisSide,
-                        child: Text('${v.round()}°', style: axis),
-                      ),
-              ),
-            ),
-            bottomTitles: AxisTitles(
-              sideTitles: SideTitles(
-                showTitles: true,
-                reservedSize: 26,
-                interval: 1,
-                getTitlesWidget: (v, meta) {
-                  final i = v.round();
-                  if (v != i || i % 4 != 0) return const SizedBox.shrink();
-                  return SideTitleWidget(
-                    axisSide: meta.axisSide,
-                    child: Text(
-                      ForecastFormat.hourShort(start.add(Duration(hours: i))),
-                      style: axis,
-                    ),
-                  );
-                },
-              ),
-            ),
-          ),
-          lineTouchData: LineTouchData(
-            touchTooltipData: LineTouchTooltipData(
-              getTooltipColor: (_) => const Color(0xF0141C2B),
-              fitInsideHorizontally: true,
-              fitInsideVertically: true,
-              getTooltipItems: (spots) => [
-                for (final s in spots)
-                  LineTooltipItem(
-                    '${drawn[s.barIndex].place.name}: '
-                    '${s.y.round()}°',
-                    TypeScale.small.copyWith(color: Palette.white),
-                  ),
-              ],
-            ),
-          ),
-          lineBarsData: bars,
-        ),
-      ),
-    );
   }
 }

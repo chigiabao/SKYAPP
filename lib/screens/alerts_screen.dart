@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -8,11 +9,13 @@ import '../providers/planner_provider.dart';
 import '../providers/weather_provider.dart';
 import '../ui/weather/design_tokens.dart';
 import '../ui/weather/glass_ink.dart';
-import '../ui/weather/widgets/glass_card.dart';
+import '../ui/weather/widgets/ios_list.dart';
+import '../ui/weather/widgets/ios_page.dart';
 import '../ui/weather/widgets/glass_page.dart';
-import '../utils/constants.dart';
 import '../widgets/planner_cards.dart';
 import 'alert_settings_screen.dart';
+import '../utils/haptics.dart';
+import '../utils/forecast_format.dart';
 
 /// Man Canh bao: canh bao hien hanh cua moi dia diem (vi tri hien tai + da
 /// luu) trong cac gio toi, lich su thong bao trong app, mien tru.
@@ -35,10 +38,15 @@ class _AlertsScreenState extends State<AlertsScreen> {
     });
   }
 
-  Future<void> _refresh() async {
+  /// Tai lai moi dia diem; true khi khong dia diem nao loi.
+  Future<bool> _refresh() async {
     final planner = context.read<PlannerProvider>();
     await planner.refreshAll(context.read<WeatherProvider>(), widget.locations);
-    if (mounted) planner.markAllRead();
+    if (!mounted) return false;
+    planner.markAllRead();
+    return widget.locations.pages.every(
+      (p) => planner.errorFor(p.locationId) == null,
+    );
   }
 
   @override
@@ -46,16 +54,10 @@ class _AlertsScreenState extends State<AlertsScreen> {
       GlassPage(child: Builder(builder: _buildPage));
 
   Widget _buildPage(BuildContext context) {
-    final theme = Theme.of(context);
     final ink = GlassInk.of(context);
     final planner = context.watch<PlannerProvider>();
     final wp = context.watch<WeatherProvider>();
     final lp = widget.locations;
-    final mq = MediaQuery.of(context);
-    final gutter = Space.gutter(mq.size.width);
-    final hPad = mq.size.width > Space.contentMaxWidth + 2 * gutter
-        ? (mq.size.width - Space.contentMaxWidth) / 2
-        : gutter;
     final ids = <String>{for (final p in lp.pages) p.locationId}.toList();
 
     final placeCards = <Widget>[];
@@ -64,7 +66,9 @@ class _AlertsScreenState extends State<AlertsScreen> {
           planner.hoursFor(id) ??
           (id == wp.locationId ? wp.hourlyForecast : null);
       final err = planner.errorFor(id);
-      final events = hours == null
+      final events =
+          hours == null ||
+              !hasAlertHours(hours, wp.nowHcm, planner.settings.lookaheadHours)
           ? null
           : planner.alertsFor(id, hours, wp.nowHcm);
       final place = lp.placeById(id);
@@ -72,120 +76,89 @@ class _AlertsScreenState extends State<AlertsScreen> {
           .where((s) => s.locationId == id)
           .map((s) => s.labelText)
           .firstOrNull;
-      Widget body;
-      if (events == null) {
-        body = Text(
-          err != null
-              ? 'Không tải được dữ liệu cho địa điểm này.'
-              : (planner.refreshing ? 'Đang tải…' : 'Chưa có dữ liệu.'),
+      final Widget message = Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: Space.l,
+          vertical: Space.m,
+        ),
+        child: Text(
+          events == null
+              ? (err != null
+                    ? 'Không tải được dữ liệu cho địa điểm này.'
+                    : (planner.refreshing ? 'Đang tải…' : 'Chưa có dữ liệu.'))
+              : 'Chưa phát hiện cảnh báo trong dữ liệu hiện có.',
           style: TypeScale.body.copyWith(color: ink.secondary),
-        );
-      } else if (events.isEmpty) {
-        body = Text(
-          'Không có cảnh báo trong ${planner.settings.lookaheadHours} giờ tới.',
-          style: TypeScale.body.copyWith(color: ink.secondary),
-        );
-      } else {
-        body = Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [for (final e in events) AlertEventTile(event: e)],
-        );
-      }
+        ),
+      );
       placeCards.add(
-        Padding(
-          padding: const EdgeInsets.only(bottom: Space.cardGap),
-          child: GlassCard(
-            title: (label == null ? place.name : '$label · ${place.name}')
-                .toUpperCase(),
-            icon: Icons.place_outlined,
-            child: AnimatedSwitcher(
-              duration: MediaQuery.disableAnimationsOf(context)
-                  ? Duration.zero
-                  : Motion.short,
-              layoutBuilder: (cur, prev) => Stack(
-                alignment: Alignment.topLeft,
-                children: [...prev, ?cur],
-              ),
-              child: KeyedSubtree(
-                key: ValueKey(
-                  events == null ? 'x$err' : events.map((e) => e.key).join(),
-                ),
-                child: body,
+        IosListSection(
+          key: ValueKey('alerts-place-$id'),
+          header: label == null ? place.name : '$label · ${place.name}',
+          headerTrailing: const ExcludeSemantics(
+            child: Padding(
+              padding: EdgeInsets.only(right: Space.l),
+              child: Icon(
+                Icons.place_outlined,
+                size: IconSizes.sm,
+                color: Palette.secondary,
               ),
             ),
           ),
+          dividerIndent: Space.l + IconSizes.md + Space.m,
+          children: events == null || events.isEmpty
+              ? [message]
+              : [for (final e in events) AlertEventTile(event: e, inset: true)],
         ),
       );
     }
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          'Cảnh báo',
-          style: AppTextStyles.heading2.copyWith(
-            color: theme.textTheme.titleLarge?.color,
+    Widget note(IconData icon, String title, String text) => IosListSection(
+      header: title,
+      children: [
+        IosListRow(
+          leading: Icon(icon, color: Palette.white, size: IconSizes.md),
+          title: text,
+        ),
+      ],
+    );
+
+    return IosPageScaffold(
+      title: 'Cảnh báo',
+      onRefresh: withRefreshHaptic(_refresh),
+      actions: [
+        IosBarButton(
+          tooltip: 'Tải lại',
+          icon: CupertinoIcons.refresh,
+          onPressed: planner.refreshing ? null : _refresh,
+        ),
+        IosBarButton(
+          tooltip: 'Cài đặt cảnh báo',
+          icon: CupertinoIcons.slider_horizontal_3,
+          onPressed: () => Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const AlertSettingsScreen()),
           ),
         ),
-        actions: [
-          IconButton(
-            tooltip: 'Tải lại',
-            icon: const Icon(Icons.refresh_rounded),
-            onPressed: planner.refreshing ? null : _refresh,
+      ],
+      children: [
+        note(CupertinoIcons.info, 'Lưu ý', kAlertDisclaimer),
+        if (wp.isReplay)
+          note(
+            CupertinoIcons.time,
+            'Chế độ xem lại',
+            'Cảnh báo tính theo thời điểm xem lại; khoảng sau mốc đó '
+                'ghi "Đã xảy ra" vì đã có số liệu ghi nhận. Không ghi vào '
+                'lịch sử thông báo.',
           ),
-          IconButton(
-            tooltip: 'Cài đặt cảnh báo',
-            icon: const Icon(Icons.tune_rounded),
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const AlertSettingsScreen()),
-            ),
+        if (planner.heldByQuietHours > 0)
+          note(
+            CupertinoIcons.moon_zzz,
+            'Giờ yên lặng',
+            '${planner.heldByQuietHours} cảnh báo chưa thông báo do '
+                'đang trong giờ yên lặng (vẫn hiện ở đây).',
           ),
-        ],
-      ),
-      body: RefreshIndicator(
-        onRefresh: _refresh,
-        child: ListView(
-          padding: EdgeInsets.fromLTRB(hPad, Space.s, hPad, Space.xxl),
-          children: [
-            GlassCard(
-              icon: Icons.info_outline_rounded,
-              title: 'LƯU Ý',
-              child: Text(
-                kAlertDisclaimer,
-                style: TypeScale.body.copyWith(color: Palette.white),
-              ),
-            ),
-            const SizedBox(height: Space.cardGap),
-            if (wp.isReplay)
-              Padding(
-                padding: const EdgeInsets.only(bottom: Space.cardGap),
-                child: GlassCard(
-                  icon: Icons.history_rounded,
-                  title: 'CHẾ ĐỘ XEM LẠI',
-                  child: Text(
-                    'Cảnh báo tính theo thời điểm xem lại; không ghi vào '
-                    'lịch sử thông báo.',
-                    style: TypeScale.body.copyWith(color: Palette.white),
-                  ),
-                ),
-              ),
-            if (planner.heldByQuietHours > 0)
-              Padding(
-                padding: const EdgeInsets.only(bottom: Space.cardGap),
-                child: GlassCard(
-                  icon: Icons.bedtime_outlined,
-                  title: 'GIỜ YÊN LẶNG',
-                  child: Text(
-                    '${planner.heldByQuietHours} cảnh báo chưa thông báo do '
-                    'đang trong giờ yên lặng (vẫn hiện ở đây).',
-                    style: TypeScale.body.copyWith(color: Palette.white),
-                  ),
-                ),
-              ),
-            ...placeCards,
-            _HistoryCard(planner: planner),
-          ],
-        ),
-      ),
+        ...placeCards,
+        _HistoryCard(planner: planner),
+      ],
     );
   }
 }
@@ -233,57 +206,61 @@ class _HistoryCardState extends State<_HistoryCard> {
     }
     _seen = {...keys};
     _unread = unread;
-    return GlassCard(
-      title: 'LỊCH SỬ THÔNG BÁO',
-      icon: Icons.notifications_none_rounded,
+    return IosListSection(
+      key: const ValueKey('alerts-history'),
+      header: 'Lịch sử thông báo',
       footer:
           'Thông báo hiện trong ứng dụng; không lặp lại cùng loại, '
           'địa điểm và khung giờ.',
-      trailing: items.isEmpty
+      headerTrailing: items.isEmpty
           ? null
-          : TextButton(
+          : CupertinoButton(
+              padding: const EdgeInsets.symmetric(horizontal: Space.l),
+              minimumSize: const Size(Touch.min, Touch.min),
               onPressed: _clear,
-              style: TextButton.styleFrom(
-                foregroundColor: Palette.white,
-                minimumSize: const Size(Touch.min, Touch.min),
+              child: Text(
+                'Xóa',
+                style: TypeScale.subhead.copyWith(
+                  color: Palette.white,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
-              child: const Text('Xóa'),
             ),
-      // AnimatedSize voi thoi luong 0 loi bo cuc -> chi dung khi co hieu ung.
-      child: _MaybeAnimatedSize(
-        duration: dur,
-        child: items.isEmpty
-            ? Text(
-                'Chưa có thông báo.',
-                style: TypeScale.body.copyWith(color: ink.secondary),
-              )
-            : Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  for (var i = 0; i < items.length; i++)
-                    _Enter(
-                      key: ValueKey(keys[i]),
-                      animate: !still && fresh.contains(keys[i]),
-                      child: _row(context, items[i], ink, dur),
-                    ),
-                ],
+      dividerIndent: Space.l + IconSizes.md + Space.m,
+      children: items.isEmpty
+          ? [
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: Space.l,
+                  vertical: Space.m,
+                ),
+                child: Text(
+                  'Chưa có thông báo.',
+                  style: TypeScale.body.copyWith(color: ink.secondary),
+                ),
               ),
-      ),
+            ]
+          : [
+              for (var i = 0; i < items.length; i++)
+                _Enter(
+                  key: ValueKey(keys[i]),
+                  animate: !still && fresh.contains(keys[i]),
+                  child: _row(context, items[i], ink, dur),
+                ),
+            ],
     );
   }
 
-  Widget _row(
-    BuildContext context,
-    AlertNotice n,
-    GlassInk ink,
-    Duration dur,
-  ) {
+  Widget _row(BuildContext context, AlertNotice n, GlassInk ink, Duration dur) {
     return Semantics(
       container: true,
       excludeSemantics: true,
       label: '${n.read ? '' : 'Mới. '}${n.title}. ${n.body}',
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: Space.s),
+        padding: const EdgeInsets.symmetric(
+          vertical: Space.s + 2,
+          horizontal: Space.l,
+        ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -334,9 +311,7 @@ class _HistoryCardState extends State<_HistoryCard> {
     );
   }
 
-  static String _stamp(DateTime t) =>
-      '${t.hour.toString().padLeft(2, '0')}:'
-      '${t.minute.toString().padLeft(2, '0')} ${t.day}/${t.month}';
+  static String _stamp(DateTime t) => ForecastFormat.dateTime(t);
 }
 
 /// Muc moi: truot len + hien dan mot lan.
@@ -363,21 +338,4 @@ class _Enter extends StatelessWidget {
       child: child,
     );
   }
-}
-
-class _MaybeAnimatedSize extends StatelessWidget {
-  const _MaybeAnimatedSize({required this.duration, required this.child});
-
-  final Duration duration;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) => duration == Duration.zero
-      ? child
-      : AnimatedSize(
-          duration: duration,
-          curve: Motion.enter,
-          alignment: Alignment.topCenter,
-          child: child,
-        );
 }

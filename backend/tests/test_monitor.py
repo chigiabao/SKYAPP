@@ -9,14 +9,15 @@ import pytest
 from fastapi.testclient import TestClient
 
 import ai_model
+import database
 import ingest
 import main
-from conftest import point_app_at, synthetic_rows, write_db
+from conftest import synthetic_rows, write_db
 from database import LOCAL_TZ
 from routers import monitor
 from test_ingest import NOW, NOW_HOUR, FakeAPI
 
-ADMIN = {"X-Admin-Token": "s3cret"}
+ADMIN = {"X-Admin-Token": "test-admin-token-0123456789abcdef"}
 MON_NOW = datetime(2023, 6, 25, 0, 30, tzinfo=LOCAL_TZ)   # synthetic observations end 2023-06-24 23:00
 
 
@@ -37,6 +38,7 @@ def _exec(db, sql, rows):
 def ingest_db(tmp_path, monkeypatch):
     monkeypatch.setattr(ingest, "_get_json", FakeAPI())
     monkeypatch.setenv("LONG_RANGE_MODEL_DIR", str(tmp_path / "absent-model"))
+    monkeypatch.setenv("LONG_RANGE_V2_MODEL_DIR", str(tmp_path / "absent-model"))
     monitor._retention_day.clear()
     return write_db(tmp_path / "w.db", synthetic_rows(), locations=False)
 
@@ -52,6 +54,9 @@ def test_ingest_logs_published_forecasts_once(ingest_db):
     for h, _, _, temp, prob in ai:
         assert temp == ref["predictions"][f"{h}h"]["temperature"]
         assert prob == ref["predictions"][f"{h}h"]["rain_probability"]
+    metadata = ai_model._v3.get("meta", {}) if ref["model_version"] == ai_model._v3.get("meta", {}).get("model_version") else ai_model._meta
+    assert dict(_q(ingest_db, "SELECT horizon_h, rain_threshold FROM ai_forecast_log WHERE source = 'ai'")) == (
+        monitor._rain_thresholds(metadata, ref["model_version"]))
     alert = _q(ingest_db, "SELECT issued_at, horizon_h, alert, precipitation FROM ai_forecast_log "
                           "WHERE source = 'map_alert'")
     assert alert == []   # no own-model artifact: external forecasts are not published
@@ -220,13 +225,12 @@ def test_retention_deletes_old_rows_once_per_day(ingest_db, monkeypatch):
 
 @pytest.fixture
 def admin(syn_db, monkeypatch):
-    monkeypatch.setenv("ADMIN_TOKEN", "s3cret")
+    monkeypatch.setenv("ADMIN_TOKEN", "test-admin-token-0123456789abcdef")
     monkeypatch.setattr(monitor, "now_local", lambda: MON_NOW)
     return TestClient(main.app)
 
 
 def test_monitor_scores_published_forecasts(admin, syn_db, monkeypatch):
-    monkeypatch.setattr(monitor, "_rain_thresholds", lambda: {1: 0.5, 3: 0.5, 6: 0.5})
     obs = dict(_q(syn_db, "SELECT timestamp, temperature FROM hourly_weather WHERE location_id = 'tsn' "
                           "AND timestamp BETWEEN '2023-06-20 00:00:00' AND '2023-06-24 23:00:00'"))
     precip = dict(_q(syn_db, "SELECT timestamp, precipitation FROM hourly_weather WHERE location_id = 'tsn'"))
@@ -241,7 +245,10 @@ def test_monitor_scores_published_forecasts(admin, syn_db, monkeypatch):
         ("tsn", "map_alert", "2023-06-23 05:00:00", 3, "2023-06-23 08:00:00", None, 0.1, 0.0, 0, "nwp", "x"),
         ("tsn", "map_alert", "2023-06-24 22:00:00", 3, "2023-06-25 01:00:00", None, 0.1, 0.0, 0, "nwp", "x"),  # not observed yet
     ]
-    _exec(syn_db, "INSERT INTO ai_forecast_log VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", rows)
+    _exec(syn_db, "INSERT INTO ai_forecast_log (series_id, source, issued_at, horizon_h, target_time, temperature, "
+                  "rain_probability, precipitation, alert, model_version, logged_at, rain_threshold) "
+                  "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          [r + (0.5 if r[1] == "ai" else None,) for r in rows])
     _exec(syn_db, "UPDATE hourly_weather SET weather_code = 95 WHERE location_id = 'tsn' AND timestamp = ?",
           [("2023-06-23 07:00:00",)])
     _exec(syn_db, "INSERT INTO ingest_log (started_at, status, api_calls, cells_failed, message) VALUES (?, ?, ?, ?, ?)",
@@ -272,7 +279,6 @@ def test_monitor_scores_published_forecasts(admin, syn_db, monkeypatch):
 
 @pytest.mark.parametrize('amount', [0.0, 0.099, 0.1, 0.101, 0.2])
 def test_long_range_rain_event_matches_training_without_changing_legacy(monkeypatch, amount):
-    monkeypatch.setattr(monitor, '_rain_thresholds', lambda: {1: 0.5})
     # The direct-horizon artifact targets >0.1 mm; legacy monitoring uses >=0.1 mm.
     own_event = amount > monitor.long_range_model.RAIN_THRESHOLD_MM
     probability = 1.0 if own_event else 0.0
@@ -282,11 +288,13 @@ def test_long_range_rain_event_matches_training_without_changing_legacy(monkeypa
                      'temperature REAL, precipitation REAL)')
         conn.execute('CREATE TABLE ai_forecast_log (series_id TEXT, source TEXT, issued_at TEXT, '
                      'horizon_h INTEGER, target_time TEXT, temperature REAL, rain_probability REAL, '
-                     'model_version TEXT)')
+                     'model_version TEXT, rain_threshold REAL)')
         conn.executemany('INSERT INTO hourly_weather VALUES (?, ?, 30, ?)', [
             ('tsn', '2023-06-24 12:00:00', amount), ('tsn', '2023-06-24 13:00:00', 1.0)])
         for source in ('ai', 'ai_long_range'):
-            conn.executemany('INSERT INTO ai_forecast_log VALUES (?, ?, ?, 1, ?, 30, ?, ?)', [
+            conn.executemany('INSERT INTO ai_forecast_log (series_id, source, issued_at, horizon_h, target_time, '
+                             'temperature, rain_probability, model_version, rain_threshold) '
+                             'VALUES (?, ?, ?, 1, ?, 30, ?, ?, 0.5)', [
                 ('tsn', source, '2023-06-24 11:00:00', '2023-06-24 12:00:00', probability, 'test'),
                 ('tsn', source, '2023-06-24 12:00:00', '2023-06-24 13:00:00', 1.0, 'test')])
         own = monitor._ai_quality(conn, '2023-06-01', source='ai_long_range')
@@ -299,7 +307,6 @@ def test_long_range_rain_event_matches_training_without_changing_legacy(monkeypa
 
 
 def test_own_long_range_quality_is_separate_with_actual_horizons_and_versions(admin, syn_db, monkeypatch):
-    monkeypatch.setattr(monitor, "_rain_thresholds", lambda: {1: 0.9, 3: 0.9, 6: 0.9})
     target = datetime(2023, 6, 24, 12)
     _exec(syn_db, "UPDATE hourly_weather SET temperature = 30, precipitation = 1 WHERE timestamp = ?",
           [(target.strftime(monitor.TS_FMT),)])
@@ -310,23 +317,88 @@ def test_own_long_range_quality_is_separate_with_actual_horizons_and_versions(ad
                      1, None, "own-v1" if i < 5 else "own-v2", issue))
     rows.append(("tsn", "ai", "2023-06-24 11:00:00", 1, target.strftime(monitor.TS_FMT),
                  31, 0.6, None, None, "legacy-v3", "x"))
-    _exec(syn_db, "INSERT INTO ai_forecast_log VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", rows)
+    _exec(syn_db, "INSERT INTO ai_forecast_log (series_id, source, issued_at, horizon_h, target_time, temperature, "
+                  "rain_probability, precipitation, alert, model_version, logged_at, rain_threshold) "
+                  "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          [r + (0.9 if r[1] == "ai" else None,) for r in rows])
     response = admin.get("/admin/monitor", headers=ADMIN, params={"days": 14})
     assert response.status_code == 200
     data = response.json()
     own = data["own_long_range_quality"]
     assert own["source"] == "ai_long_range"
-    assert own["overall"] == {"n": 11, "temperature_mae": 2.0, "rain_f1": 1.0}
+    assert own["overall"] == {"n": 11, "temperature_mae": 2.0, "rain_f1": 1.0,
+                              "rain_n": 11, "rain_threshold_missing": 0}
     assert set(own["by_horizon"]) == {f"{h}h" for h in monitor.LONG_RANGE_HORIZONS}
-    assert all(v == {"n": 1, "temperature_mae": 2.0, "rain_f1": 1.0} for v in own["by_horizon"].values())
+    assert all(v == {"n": 1, "temperature_mae": 2.0, "rain_f1": 1.0,
+                     "rain_n": 1, "rain_threshold_missing": 0} for v in own["by_horizon"].values())
     assert set(own["rain_thresholds"].values()) == {0.5}
     assert own["by_model_version"] == {
-        "own-v1": {"n": 5, "temperature_mae": 2.0, "rain_f1": 1.0},
-        "own-v2": {"n": 6, "temperature_mae": 2.0, "rain_f1": 1.0}}
+        "own-v1": {"n": 5, "temperature_mae": 2.0, "rain_f1": 1.0, "rain_n": 5, "rain_threshold_missing": 0},
+        "own-v2": {"n": 6, "temperature_mae": 2.0, "rain_f1": 1.0, "rain_n": 6, "rain_threshold_missing": 0}}
     legacy = data["ai_quality"]
-    assert legacy["overall"] == {"n": 1, "temperature_mae": 1.0, "rain_f1": 0.0}
+    assert legacy["overall"] == {"n": 1, "temperature_mae": 1.0, "rain_f1": 0.0,
+                                 "rain_n": 1, "rain_threshold_missing": 0}
     assert set(legacy["by_horizon"]) == {"1h", "3h", "6h"}
-    assert set(legacy["rain_thresholds"].values()) == {0.9}
+    assert legacy["rain_thresholds"] == {"1h": 0.9, "3h": None, "6h": None}
+
+
+def test_logged_threshold_survives_model_change_and_duplicate_publication(ingest_db, monkeypatch):
+    with monitor._connect(ingest_db) as con:
+        database.migrate(con)
+    meta = {"model_version": "issue-v1", "rain_decision_threshold": {f"{h}h": 0.3 for h in (1, 3, 6)}}
+    monkeypatch.setattr(ai_model, "_meta", meta)
+    monkeypatch.setattr(ai_model, "_load_v3", lambda: False)
+    monkeypatch.setattr(ai_model, "predict_for_location", lambda *_: {
+        "issued_at": "2023-06-24T12:00:00", "model_version": ai_model._meta["model_version"],
+        "predictions": {f"{h}h": {"temperature": 30.0, "rain_probability": 0.6} for h in (1, 3, 6)}})
+    monkeypatch.setattr(monitor.long_range_model, "predict", Mock(side_effect=ValueError("unavailable")))
+    _exec(ingest_db, "UPDATE hourly_weather SET temperature = 30, precipitation = 1 WHERE timestamp = ?",
+          [(f"2023-06-24 {h:02}:00:00",) for h in (13, 15, 18)])
+    assert monitor.log_published_forecasts(ingest_db, MON_NOW) == 3
+    with monitor._connect(ingest_db) as con:
+        before = monitor._ai_quality(con, "2023-06-01")
+    assert before["overall"]["rain_f1"] == 1.0 and before["overall"]["rain_n"] == 3
+    monkeypatch.setattr(ai_model, "_meta", {"model_version": "replacement-v2", "rain_decision_threshold": {
+        f"{h}h": 0.9 for h in (1, 3, 6)}})
+    assert monitor.log_published_forecasts(ingest_db, MON_NOW) == 0
+    with monitor._connect(ingest_db) as con:
+        assert monitor._ai_quality(con, "2023-06-01") == before
+    assert _q(ingest_db, "SELECT DISTINCT model_version, rain_threshold FROM ai_forecast_log") == [("issue-v1", 0.3)]
+
+
+def test_archive_migration_preserves_unknown_legacy_thresholds(tmp_path):
+    path = tmp_path / "legacy-archive.db"
+    with monitor._connect(path) as con:
+        con.execute("CREATE TABLE hourly_weather (timestamp TEXT, temperature REAL, precipitation REAL, location_id TEXT)")
+        con.execute("INSERT INTO hourly_weather VALUES ('2023-06-24 13:00:00', 30, 1, 'tsn')")
+        con.execute("CREATE TABLE ai_forecast_log (series_id TEXT, source TEXT, issued_at TEXT, horizon_h INTEGER, "
+                    "target_time TEXT, temperature REAL, rain_probability REAL, precipitation REAL, alert INTEGER, "
+                    "model_version TEXT, logged_at TEXT)")
+        con.executemany("INSERT INTO ai_forecast_log (series_id, source, issued_at, horizon_h, target_time, temperature, "
+                        "rain_probability, model_version, logged_at) VALUES ('tsn', ?, '2023-06-24 12:00:00', 1, "
+                        "'2023-06-24 13:00:00', 31, 0.6, 'legacy', 'x')", [("ai",), ("ai_long_range",)])
+        legacy = monitor._ai_quality(con, "2023-06-01")
+        assert legacy["overall"] == {"n": 1, "temperature_mae": 1.0, "rain_f1": None,
+                                      "rain_n": 0, "rain_threshold_missing": 1}
+        assert legacy["legacy_missing_threshold"] == "excluded_from_rain_f1"
+        assert monitor._ai_quality(con, "2023-06-01", "ai_long_range")["overall"]["rain_f1"] == 1.0
+        database.migrate(con)
+        database.migrate(con)
+        assert [r[0] for r in con.execute("SELECT rain_threshold FROM ai_forecast_log")] == [None, None]
+        assert monitor._ai_quality(con, "2023-06-01") == legacy
+
+
+def test_threshold_capture_requires_matching_model_provenance():
+    meta = {"model_version": "m1", "rain_decision_threshold": {"1h": 0.3, "3h": float("inf"), "6h": None}}
+    assert monitor._rain_thresholds(meta, "m1") == {1: 0.3}
+    assert monitor._rain_thresholds(meta, "m2") == {}
+
+
+def test_mixed_archived_thresholds_are_scored_per_forecast():
+    rows = [{"temperature": 30, "obs_t": 30, "rain_probability": 0.6, "obs_p": 1, "rain_threshold": threshold}
+            for threshold in (0.3, 0.9, None)]
+    assert monitor._scores(rows) == {"n": 3, "temperature_mae": 0.0, "rain_f1": 0.667,
+                                     "rain_n": 2, "rain_threshold_missing": 1}
 
 
 # --- retrain / rollback ---------------------------------------------------------------------------------
@@ -342,9 +414,23 @@ def _write_model(d, mae, f1, version):
     (d / "metadata_v3.json").write_text(json.dumps({"model_version": version}), encoding="utf-8")
 
 
+def _write_selection(d, cand, cur=(0.5, 0.5), cur_version="current", beats=True, split="val_select"):
+    """selection_v3.json as written by train_global_v3.py --compare-with: val_select scores of both models."""
+    score = lambda mf: None if mf is None else {"temperature_mae": mf[0], "rain_f1": mf[1], "beats_baselines": beats,
+        "rain_brier": 0.1, "baseline_persistence_mae": 0.8, "baseline_climatology_mae": 0.9,
+        "baseline_persistence_f1": 0.2, "baseline_climatology_f1": 0.3, "baseline_climatology_brier": 0.2,
+        "cells": 2, "rows": 100, "evaluation_rows_sha256": "0" * 64}
+    sel = {"split": split, "window": ["2024-10-01 00:00:00", "2025-09-23 23:00:00"],
+           "comparison_policy": "rain_calibration_only",
+           "candidate": score(cand), "current": score(cur), "current_model_version": cur_version,
+           "current_error": None if cur else "no served model to compare with"}
+    (d / "selection_v3.json").write_text(json.dumps(sel), encoding="utf-8")
+
+
 class FakePopen:
     """Stands in for the training subprocess: writes the candidate model when it 'finishes'."""
-    result = (0.4, 0.6, "cand-1")   # mae, f1, version; None = write nothing
+    result = (0.4, 0.6, "cand-1")   # TEST mae, f1, version; None = write nothing
+    selection = {"cand": (0.4, 0.6)}   # kwargs of _write_selection (VALIDATION scores); None = no file
     returncode = 0
     ext_returncode = 0              # train_global_v3_ext.py
     gate = None                     # threading.Event to hold the job in 'running'
@@ -373,6 +459,8 @@ class FakePopen:
             return FakePopen.interval_returncode
         if FakePopen.result is not None:
             _write_model(self.out, *FakePopen.result)
+            if FakePopen.selection is not None:
+                _write_selection(self.out, **FakePopen.selection)
         return FakePopen.returncode
 
 
@@ -385,6 +473,7 @@ def models(tmp_path, monkeypatch):
     reloads = []
     monkeypatch.setattr(monitor.ai_model, "reset_v3_cache", lambda: reloads.append(1))
     FakePopen.result, FakePopen.returncode, FakePopen.gate, FakePopen.calls = (0.4, 0.6, "cand-1"), 0, None, []
+    FakePopen.selection = {"cand": (0.4, 0.6)}
     FakePopen.ext_returncode = 0
     FakePopen.interval_returncode = 0
     monitor._jobs.clear()
@@ -410,7 +499,7 @@ def test_retrain_promotes_better_candidate_and_rollback(admin, models):
     assert job["status"] == "promoted" and job["returncode"] == 0
     cmd = FakePopen.calls[0]
     assert cmd[1].endswith("train_global_v3.py") and cmd[cmd.index("--out") + 1] == str(d / "v3_candidate")
-    assert "--quick" in cmd
+    assert "--quick" in cmd and cmd[cmd.index("--compare-with") + 1] == str(d / "v3")   # same val rows
     ext = FakePopen.calls[1]   # then the extension script on the SAME candidate dir (no --quick)
     assert len(FakePopen.calls) == 3 and ext[1].endswith("train_global_v3_ext.py")
     assert ext[ext.index("--out") + 1] == str(d / "v3_candidate") and "--quick" not in ext
@@ -421,7 +510,9 @@ def test_retrain_promotes_better_candidate_and_rollback(admin, models):
     assert "_ext" in promoted and "_interval" in promoted   # extended and interval keys both promoted
     assert _version(d / "v3") == "cand-1" and _version(d / "v3_prev") == "current"
     assert not (d / "v3_candidate").exists() and reloads == [1]
-    assert job["candidate_score"]["temperature_mae"] == 0.4 and job["current_score"]["temperature_mae"] == 0.5
+    assert job["candidate_val_score"]["temperature_mae"] == 0.4 and job["current_val_score"]["temperature_mae"] == 0.5
+    assert job["selection_split"] == "val_select" and job["selection_window"][0].startswith("2024-10-01")
+    assert job["candidate_test_score"]["temperature_mae"] == 0.4   # reported, not used for the decision
 
     r = admin.post("/admin/rollback", headers=ADMIN)
     assert r.status_code == 200 and r.json()["current"]["model_version"] == "current"
@@ -432,7 +523,8 @@ def test_retrain_promotes_better_candidate_and_rollback(admin, models):
 
 def test_retrain_rejects_worse_or_broken_candidate(admin, models):
     d, reloads = models
-    FakePopen.result = (0.45, 0.4, "worse-f1")   # lower MAE but lower F1: not better
+    FakePopen.result = (0.45, 0.4, "worse-f1")
+    FakePopen.selection = {"cand": (0.45, 0.4)}   # lower val MAE but lower val F1: not better
     job = _run_job(admin)
     assert job["status"] == "rejected" and _version(d / "v3") == "current"
     assert _version(d / "v3_candidate") == "worse-f1" and not (d / "v3_prev").exists() and reloads == []
@@ -443,6 +535,7 @@ def test_retrain_rejects_worse_or_broken_candidate(admin, models):
     assert _run_job(admin)["status"] == "failed"
     assert len(FakePopen.calls) == 1   # ext script skipped when the base training failed
     FakePopen.returncode, FakePopen.result, FakePopen.ext_returncode = 0, (0.4, 0.6, "cand-2"), 1
+    FakePopen.selection = {"cand": (0.4, 0.6)}
     job = _run_job(admin)
     assert job["status"] == "failed" and job["step"] == "train_global_v3_ext.py"   # ext failed: no promotion
     assert _version(d / "v3") == "current"
@@ -451,6 +544,72 @@ def test_retrain_rejects_worse_or_broken_candidate(admin, models):
     assert job["status"] == "failed" and job["step"] == "train_global_v3_interval.py"   # interval failed
     assert len(FakePopen.calls) == 3 and _version(d / "v3") == "current"
     assert admin.post("/admin/rollback", headers=ADMIN).status_code == 409   # no v3_prev yet
+
+
+def test_promotion_is_decided_on_validation_not_test(admin, models):
+    d, _ = models
+    FakePopen.result = (0.9, 0.1, "bad-test-good-val")   # much worse on its (longer) test window ...
+    FakePopen.selection = {"cand": (0.4, 0.6)}            # ... but better on the shared val rows
+    job = _run_job(admin)
+    assert job["status"] == "promoted" and _version(d / "v3") == "bad-test-good-val"
+    assert job["candidate_test_score"]["temperature_mae"] == 0.9   # still reported
+
+    FakePopen.result = (0.1, 0.9, "good-test-bad-val")   # far better test score must not promote
+    FakePopen.selection = {"cand": (0.6, 0.4), "cur": (0.4, 0.6), "cur_version": "bad-test-good-val"}
+    job = _run_job(admin)
+    assert job["status"] == "rejected" and "validation" in job["reason"]
+    assert _version(d / "v3") == "bad-test-good-val"
+
+
+def test_promotion_needs_both_models_on_the_same_val_rows(admin, models):
+    d, _ = models
+    FakePopen.selection = {"cand": (0.4, 0.6), "cur": None}   # served model could not be scored
+    job = _run_job(admin)
+    assert job["status"] == "rejected" and "validation rows" in job["reason"] and _version(d / "v3") == "current"
+    FakePopen.selection = {"cand": (0.4, 0.6), "cur_version": "older-model"}   # scored a different model
+    assert _run_job(admin)["status"] == "rejected" and _version(d / "v3") == "current"
+    FakePopen.selection = {"cand": (0.4, 0.6), "split": "validation"}   # old file: window also tuned the model
+    job = _run_job(admin)
+    assert job["status"] == "rejected" and "val_select" in job["reason"] and _version(d / "v3") == "current"
+    FakePopen.selection = None   # no validation comparison at all (old training script)
+    job = _run_job(admin)
+    assert job["status"] == "rejected" and "selection_v3.json" in job["reason"]
+    FakePopen.selection = {"cand": (0.4, 0.6), "beats": False}   # better than v3 but not than the baselines
+    job = _run_job(admin)
+    assert job["status"] == "rejected" and "baselines" in job["reason"] and _version(d / "v3") == "current"
+
+
+def test_is_better_uses_validation_scores(tmp_path):
+    _write_selection(tmp_path, (0.4, 0.6), cur=(0.5, 0.6))
+    scores = json.loads((tmp_path / "selection_v3.json").read_text())
+    cand, cur = scores["candidate"], scores["current"]
+    assert monitor._is_better(cand, cur)
+    assert not monitor._is_better(cand, dict(cur, temperature_mae=0.4))   # MAE must be lower
+    assert not monitor._is_better(cand, dict(cur, rain_brier=0.09))
+    assert not monitor._is_better(dict(cand, beats_baselines=False), None)
+    assert monitor._is_better(cand, None) and not monitor._is_better(None, None)
+
+
+@pytest.mark.parametrize("field,value", [("rows", 99), ("cells", 3), ("baseline_climatology_f1", 0.31),
+                                       ("evaluation_rows_sha256", "1" * 64),
+                                       ("temperature_mae", float("nan")), ("rain_brier", float("inf"))])
+def test_promotion_rejects_mismatched_or_nonfinite_validation(models, field, value):
+    d, _ = models
+    candidate = d / "v3_candidate"
+    _write_model(candidate, 0.4, 0.6, "candidate")
+    _write_selection(candidate, (0.4, 0.6))
+    path = candidate / "selection_v3.json"
+    sel = json.loads(path.read_text())
+    sel["current"][field] = value
+    path.write_text(json.dumps(sel))
+    assert monitor._promotion_check(candidate, d / "v3")[0] is False
+
+
+def test_promotion_recomputes_baseline_gate_instead_of_trusting_flag(tmp_path):
+    _write_selection(tmp_path, (0.4, 0.6))
+    score = json.loads((tmp_path / "selection_v3.json").read_text())["candidate"]
+    for field, value in (("rain_brier", 0.21), ("rain_f1", 0.3), ("temperature_mae", 0.8)):
+        assert not monitor._is_better(dict(score, **{field: value}), None)
 
 
 def test_retrain_one_job_at_a_time_and_auth(admin, models):

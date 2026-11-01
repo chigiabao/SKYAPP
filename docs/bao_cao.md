@@ -203,7 +203,7 @@ Mọi `/weather/*` (trừ `/weather/map` và `/weather/map/meta`) nhận `locati
 | `GET /weather/ai-verify` | Dự báo AI phát hành tại `at` (mặc định 6 giờ trước) đặt cạnh giá trị thực tế của chuỗi |
 | `GET /weather/map` | Mỗi ô tại khung *t* = hiện tại + `offset_hours` (0–72): nhiệt độ, mã thời tiết, gió (`wind_speed`, `wind_direction`, `wind_gusts`), lượng mưa, tổng mưa và xác suất mưa 3 giờ sau *t*, `alert` (mã dông hoặc ≥ 10 mm trong 3 giờ; theo mô hình, không chính thức), `source`, `valid_time`, `outlook_source` (mục 7.3) |
 | `GET /weather/map/meta` | `now`, `max_offset_hours` (tối đa 72; bằng 0 ở chế độ xem lại), `issued_at` của lần dự báo NWP mới nhất |
-| `GET /route` | `from_lat, from_lon, to_lat, to_lon, depart_at, profile` (`driving` / `cycling` / `foot`): tuyến từ OSRM, mẫu thời tiết khoảng mỗi 2 km theo giờ đến dự kiến (mục 7.5) |
+| `POST /route` | JSON body `from_lat, from_lon, to_lat, to_lon, depart_at, profile` (`driving` / `cycling` / `foot`): tuyến từ OSRM, mẫu thời tiết khoảng mỗi 2 km theo giờ đến dự kiến (mục 7.5). Không đưa GPS vào URL; GET cũ trả 405. |
 | `POST /route/along-weather` | Làm mới thời tiết dọc một tuyến app đã có, không gọi lại OSRM |
 | `POST /feedback` | Báo lỗi, góp ý, báo dự báo sai; không cần đăng nhập; trả `verified: false` |
 | `GET /feedback/summary` | Thống kê phản hồi theo loại, theo ô, tỉ lệ báo sai dự báo mưa (quản trị) |

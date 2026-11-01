@@ -1,0 +1,10 @@
+target-version = "py312"
+
+[lint]
+# Start with import and correctness checks; preserve the project's formatting.
+select = ["E4", "E9", "F"]
+
+[lint.per-file-ignores]
+"main.py" = ["E402"]  # Router registration follows app construction.
+"**/train_long_range.py" = ["E402"]  # Adds the backend import path first.
+"**/recalibrate_intervals_v3.py" = ["E402"]  # Adds the backend import path first.

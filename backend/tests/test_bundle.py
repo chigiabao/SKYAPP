@@ -23,9 +23,11 @@ def test_bundle_equals_singles_live(client):
     body = r.json()
     assert body["location_id"] == "tsn" and body["cell_id"] == "tsn"
     assert body["generated_at"].endswith("+07:00")
-    assert body["ai_error"] is None
+    ai = client.get('/weather/ai-forecast')
+    assert ai.status_code == 503
+    assert body["ai_error"] == ai.json()["detail"]
     assert body['current'] == client.get('/weather/current').json()
-    assert body['ai_forecast'] == client.get('/weather/ai-forecast').json()
+    assert body['ai_forecast'] is None
     assert body['hourly'] == [] and body['daily'] == []
     assert body['forecast_provider'] == 'sky_weather_ai'
     assert body['forecast_error'] == client.get('/weather/hourly').json()['detail']

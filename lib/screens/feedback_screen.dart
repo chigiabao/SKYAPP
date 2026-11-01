@@ -1,12 +1,19 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/weather_provider.dart';
 import '../services/feedback_service.dart';
+import '../ui/weather/design_tokens.dart';
+import '../ui/weather/glass_ink.dart';
+import '../ui/weather/widgets/app_segmented_control.dart';
 import '../ui/weather/widgets/glass_page.dart';
-import '../utils/constants.dart';
+import '../ui/weather/widgets/ios_controls.dart';
+import '../ui/weather/widgets/ios_page.dart';
+import '../ui/weather/widgets/ios_toast.dart';
+import '../utils/haptics.dart';
 
-/// Man Gop y (nhom 10): bao loi, gop y, bao du bao sai.
+/// Man Phan hoi (nhom 10): bao loi, gop y, bao du bao sai.
 ///
 /// Tu dinh kem forecast_snapshot nho (dia diem, gio, nhiet do, kha nang mua,
 /// nguon), phien ban app va nen tang. KHONG gui toa do GPS.
@@ -33,6 +40,9 @@ class FeedbackScreen extends StatefulWidget {
 
 class _FeedbackScreenState extends State<FeedbackScreen> {
   late final FeedbackService _service = widget.service ?? FeedbackService();
+
+  /// Lan gui dang chay: dong client sau khi gui xong, khong cat ngang.
+  Future<void>? _submitting;
   final _message = TextEditingController();
   late FeedbackKind _kind = widget.initialKind ?? FeedbackKind.bug;
   bool? _raining;
@@ -84,6 +94,14 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
   @override
   void dispose() {
     _message.dispose();
+    if (widget.service == null) {
+      final pending = _submitting;
+      if (pending == null) {
+        _service.close();
+      } else {
+        pending.whenComplete(_service.close).ignore();
+      }
+    }
     super.dispose();
   }
 
@@ -108,25 +126,36 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
       _sending = true;
       _error = null;
     });
-    final messenger = ScaffoldMessenger.of(context);
     try {
-      await _service.submit(_draft);
+      final submit = _submitting = _service.submit(_draft);
+      await submit;
       if (!mounted) return;
-      messenger.showSnackBar(
-        const SnackBar(content: Text('Đã gửi phản hồi. Cảm ơn bạn!')),
+      AppHaptics.success();
+      showIosToast(
+        context,
+        'Đã gửi phản hồi. Cảm ơn bạn!',
+        tone: IosToastTone.success,
       );
       Navigator.of(context).maybePop();
     } on FeedbackException catch (e) {
       if (!mounted) return;
+      // Loi hien mot lan, ngay tren nut Gui. Chi loi mang them thong bao
+      // ngan co nut "Thử lại" (khong lap lai nguyen van loi).
       setState(() => _error = e.message);
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(e.message),
-          action: e.draftSaved
-              ? SnackBarAction(label: 'Thử lại', onPressed: _send)
+      AppHaptics.error();
+      if (e.kind == FeedbackErrorKind.network) {
+        showIosToast(
+          context,
+          'Chưa gửi được phản hồi.',
+          tone: IosToastTone.error,
+          actionLabel: e.draftSaved ? 'Thử lại' : null,
+          onAction: e.draftSaved
+              ? () {
+                  if (mounted && _canSend) _send();
+                }
               : null,
-        ),
-      );
+        );
+      }
     } finally {
       if (mounted) setState(() => _sending = false);
     }
@@ -139,134 +168,157 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
   Widget _buildPage(BuildContext context) {
     final theme = Theme.of(context);
     final small = theme.textTheme.bodySmall;
+    final ink = GlassInk.of(context);
     final snap = _snapshot;
-    return Scaffold(
-      appBar: AppBar(title: const Text('Góp ý')),
-      body: ListView(
-        padding: const EdgeInsets.all(AppSizes.paddingM),
-        children: [
-          Text('Loại phản hồi', style: theme.textTheme.titleSmall),
-          const SizedBox(height: AppSizes.paddingS),
-          Wrap(
-            spacing: AppSizes.paddingS,
-            runSpacing: AppSizes.paddingS,
-            children: [
-              for (final k in FeedbackKind.values)
-                ChoiceChip(
-                  label: Text(k.label),
-                  selected: _kind == k,
-                  onSelected: (_) => setState(() => _kind = k),
-                ),
+    return IosPageScaffold(
+      title: 'Phản hồi',
+      children: [
+        Text('Loại phản hồi', style: theme.textTheme.titleSmall),
+        const SizedBox(height: Space.s),
+        AppSegmentedControl<FeedbackKind>(
+          segments: [
+            for (final k in FeedbackKind.values)
+              AppSegment(value: k, label: k.label),
+          ],
+          selected: _kind,
+          onChanged: (k) => setState(() => _kind = k),
+        ),
+        if (_wrong) ...[
+          const SizedBox(height: Space.l),
+          Text('Ở chỗ bạn đang mưa không?', style: theme.textTheme.titleSmall),
+          const SizedBox(height: Space.s),
+          AppSegmentedControl<bool>(
+            segments: const [
+              AppSegment(value: true, label: 'Có'),
+              AppSegment(value: false, label: 'Không'),
             ],
+            selected: _raining,
+            onChanged: (v) => setState(() => _raining = v),
+            onDeselect: () => setState(() => _raining = null),
           ),
-          if (_wrong) ...[
-            const SizedBox(height: AppSizes.paddingM),
-            Text(
-              'Ở chỗ bạn đang mưa không?',
-              style: theme.textTheme.titleSmall,
-            ),
-            const SizedBox(height: AppSizes.paddingS),
-            Wrap(
-              spacing: AppSizes.paddingS,
-              children: [
-                for (final (v, l) in const [(true, 'Có'), (false, 'Không')])
-                  ChoiceChip(
-                    label: Text(l),
-                    selected: _raining == v,
-                    onSelected: (s) => setState(() => _raining = s ? v : null),
-                  ),
-              ],
-            ),
-            const SizedBox(height: AppSizes.paddingM),
-            Text('Cảm giác nhiệt', style: theme.textTheme.titleSmall),
-            const SizedBox(height: AppSizes.paddingS),
-            Wrap(
-              spacing: AppSizes.paddingS,
-              children: [
-                for (final f in TemperatureFeel.values)
-                  ChoiceChip(
-                    label: Text(f.label),
-                    selected: _feel == f,
-                    onSelected: (s) => setState(() => _feel = s ? f : null),
-                  ),
-              ],
-            ),
-          ],
-          const SizedBox(height: AppSizes.paddingM),
-          TextField(
-            key: const ValueKey('feedback-message'),
-            controller: _message,
-            maxLength: kFeedbackMaxLength,
-            minLines: 4,
-            maxLines: 8,
-            decoration: InputDecoration(
-              labelText: 'Nội dung',
-              hintText: _wrong
-                  ? 'Mô tả ngắn điều bạn thấy (không bắt buộc)'
-                  : 'Mô tả lỗi hoặc góp ý của bạn',
-              border: const OutlineInputBorder(),
-            ),
-          ),
-          if (_restored)
-            Padding(
-              padding: const EdgeInsets.only(bottom: AppSizes.paddingS),
-              child: Text('Đã khôi phục bản nháp chưa gửi.', style: small),
-            ),
-          Card(
-            margin: EdgeInsets.zero,
-            child: Padding(
-              padding: const EdgeInsets.all(AppSizes.paddingM),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      const Icon(Icons.info_outline_rounded, size: 18),
-                      const SizedBox(width: AppSizes.paddingS),
-                      Expanded(
-                        child: Text(
-                          kFeedbackDisclaimer,
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: AppSizes.paddingS),
-                  Text(
-                    'Gửi kèm: ${snap == null ? 'không có dự báo' : 'dự báo đang hiển thị (giờ, nhiệt độ, khả năng mưa, nguồn)'}'
-                    '${_locationId == null ? '' : ', mã địa điểm'}, '
-                    'phiên bản app $kAppVersion, nền tảng. '
-                    'Không gửi toạ độ GPS.',
-                    style: small,
-                  ),
-                ],
-              ),
-            ),
-          ),
-          if (_error != null) ...[
-            const SizedBox(height: AppSizes.paddingM),
-            Text(
-              _error!,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.error,
-              ),
-            ),
-          ],
-          const SizedBox(height: AppSizes.paddingM),
-          FilledButton.icon(
-            onPressed: _canSend ? _send : null,
-            icon: _sending
-                ? const SizedBox.square(
-                    dimension: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.send_rounded),
-            label: Text(_error != null ? 'Thử lại' : 'Gửi'),
+          const SizedBox(height: Space.l),
+          Text('Cảm giác nhiệt', style: theme.textTheme.titleSmall),
+          const SizedBox(height: Space.s),
+          AppSegmentedControl<TemperatureFeel>(
+            segments: [
+              for (final f in TemperatureFeel.values)
+                AppSegment(value: f, label: f.label),
+            ],
+            selected: _feel,
+            onChanged: (f) => setState(() => _feel = f),
+            onDeselect: () => setState(() => _feel = null),
           ),
         ],
-      ),
+        const SizedBox(height: Space.l),
+        IosTextField(
+          key: const ValueKey('feedback-message'),
+          label: 'Nội dung',
+          controller: _message,
+          maxLength: kFeedbackMaxLength,
+          minLines: 4,
+          maxLines: 8,
+          placeholder: _wrong
+              ? 'Mô tả ngắn điều bạn thấy (không bắt buộc)'
+              : 'Mô tả lỗi hoặc góp ý của bạn',
+        ),
+        Padding(
+          padding: const EdgeInsets.only(top: Space.xs, bottom: Space.s),
+          child: Text(
+            '${_message.text.characters.length}/$kFeedbackMaxLength',
+            textAlign: TextAlign.end,
+            style: TypeScale.footnote.copyWith(
+              color: ink.secondary,
+              fontFeatures: TypeScale.tabular,
+            ),
+          ),
+        ),
+        if (_restored)
+          Padding(
+            padding: const EdgeInsets.only(bottom: Space.s),
+            child: Text('Đã khôi phục bản nháp chưa gửi.', style: small),
+          ),
+        // Nhom inset kieu iOS tren kinh (khong dung Card Material).
+        DecoratedBox(
+          key: const ValueKey('feedback-disclaimer'),
+          decoration: iosFieldDecoration(),
+          child: Padding(
+            padding: const EdgeInsets.all(Space.l),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    ExcludeSemantics(
+                      child: Icon(
+                        CupertinoIcons.info,
+                        size: IconSizes.inline,
+                        color: ink.secondary,
+                      ),
+                    ),
+                    const SizedBox(width: Space.s),
+                    Expanded(
+                      child: Text(
+                        kFeedbackDisclaimer,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: Space.s),
+                Text(
+                  'Gửi kèm: ${snap == null ? 'không có dự báo' : 'dự báo đang hiển thị (giờ, nhiệt độ, khả năng mưa, nguồn)'}'
+                  '${_locationId == null ? '' : ', mã địa điểm'}, '
+                  'phiên bản app $kAppVersion, nền tảng. '
+                  'Không gửi tọa độ GPS.',
+                  style: small,
+                ),
+              ],
+            ),
+          ),
+        ),
+        if (_error != null) ...[
+          const SizedBox(height: Space.l),
+          Text(
+            _error!,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.error,
+            ),
+          ),
+        ],
+        const SizedBox(height: Space.l),
+        FilledButton.icon(
+          onPressed: _canSend ? _send : null,
+          // Tat: vien ro (>= 3:1 tren nen kinh) + chu mo, khac han nut trang
+          // dang bat.
+          style: FilledButton.styleFrom(
+            disabledBackgroundColor: Colors.transparent,
+            disabledForegroundColor: Palette.secondary,
+            side: _canSend || _sending
+                ? BorderSide.none
+                : const BorderSide(color: Palette.fieldBorder),
+          ),
+          icon: _sending
+              ? const SizedBox.square(
+                  dimension: 18,
+                  child: CupertinoActivityIndicator(radius: 9),
+                )
+              : const Icon(Icons.send_rounded),
+          label: Text(_error != null ? 'Thử lại' : 'Gửi'),
+        ),
+        if (!_canSend && !_sending)
+          Padding(
+            padding: const EdgeInsets.only(top: Space.s),
+            child: Text(
+              _wrong
+                  ? 'Chọn một câu trả lời hoặc nhập nội dung để gửi.'
+                  : 'Nhập nội dung để gửi.',
+              style: small,
+              textAlign: TextAlign.center,
+            ),
+          ),
+      ],
     );
   }
 }

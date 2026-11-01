@@ -11,12 +11,55 @@ Nền động thay đổi theo thời tiết thật, icon thời tiết và màn
 | `painters/` | Mỗi lớp hiệu ứng một painter; trạng thái hạt tạo một lần, không cấp phát Paint/Path mỗi khung |
 | `debug/weather_simulator_screen.dart` | "Giả lập thời tiết" (chỉ debug, `WeatherSimulatorScreen.available`) |
 
+## Widget nằm ở đâu
+
+| Thư mục | Chứa gì | Ví dụ |
+|---------|---------|-------|
+| `lib/ui/weather/widgets/` | Khối giao diện kính dùng chung và các phần của Home: không gắn với một nguồn dữ liệu cụ thể ngoài `WeatherData` / token | `GlassCard`, `GlassPage`, `MetricTile`, `HourlyStrip`, `DailyForecastCard`, `HomeNavigation`, `Shimmer` |
+| `lib/widgets/` | Thẻ theo tính năng dùng ở từ hai màn hình trở lên (AI, xem lại, nguồn số liệu, kế hoạch) | `AIForecastCard`, `AIUnavailableCard`, `SourceTag` / `SourceLegend`, `ReplayBanner`, `ReplaySettingsCard`, `planner_cards.dart` |
+| `lib/screens/<màn>/` | Phần riêng của một màn hình (chỉ màn đó import) và controller của nó | `screens/trip/*` (+ `TripSetupController`), `screens/map/*`, `screens/settings/*` |
+
+Quy tắc: widget mới chỉ một màn dùng thì để trong `lib/screens/<màn>/`; khi
+màn thứ hai cần thì chuyển lên `lib/widgets/` (thẻ tính năng) hoặc
+`lib/ui/weather/widgets/` (khối kính chung). Trạng thái và luồng bất đồng bộ
+(GPS, gọi API) nằm trong provider hoặc controller (`ChangeNotifier`), widget
+chỉ vẽ và mở hộp thoại. `lib/widgets/` và `lib/ui/` không import
+`lib/screens/` (kiểm bởi `test/screen_refactor_test.dart`): định dạng ngày/giờ
+dùng chung nằm ở `lib/utils/forecast_format.dart`, còn điều hướng sang màn hình
+khác do màn hình gọi truyền vào bằng callback (`onVerify` của `AIForecastCard`
+/ `AIUnavailableCard`, `onMap` của `BottomPillBar`).
+
+## Design tokens và bảng màu
+
+`design_tokens.dart` là nguồn DUY NHẤT cho khoảng cách, bo góc, cỡ icon, chữ,
+chuyển động và màu. `lib/screens/**` và `lib/widgets/**` không viết tay mã hex
+`Color(0x...)` (kiểm bởi `test/design_tokens_test.dart`); cần màu mới thì thêm
+token có tên theo vai trò vào đây. `lib/utils/theme.dart` dựng `ThemeData` từ
+`SystemColors`; `lib/utils/constants.dart` chỉ còn `AppColors.rainyText` /
+`AppColors.statIcon` (chọn `Tones` theo nền sáng/tối/kính) và `enum StatTone`.
+
+| Nhóm | Dùng cho | Token chính |
+|------|----------|-------------|
+| `Space` | Khoảng cách nhịp 4/8 | `xs` 4, `s` 8, `m` 12, `l` 16, `xl` 24, `xxl` 32, `xxxl` 48, `gutter()` |
+| `Radii` | Bo góc | `card` 22, `tile` 18, `pill`, `bar` 3; trang Material: `small` 8, `medium` 16, `large` 24 |
+| `IconSizes` | Cỡ icon | `sm` 16, `md` 24, `lg` 32, `hero` 64; `inline` 20, `row` 28, `state` 48 |
+| `Touch` | Vùng chạm | `min` 48 dp (mọi nền tảng) |
+| `TypeScale` | Chữ | kính: `hero`, `city`, `condition`, `hiLo`, `bigValue`, `label`, `body`, `cardTitle`, `hourLabel`, `small`; trang Material: `heading2/3`, `bodyLarge/Medium/Small`, `caption`, `temperatureSmall` |
+| `Palette` | Màu cố định trên kính (không phụ thuộc cảnh) | trắng + độ mờ (`secondary` 0.85, `title`, `border`, `track`, `subtleFill`), `ink` #0F172A, `alert` #F59E0B, `stale`, thang nhiệt `tempCool…tempVeryHot`, `sheetBase`, `header`, `banner`, `segmentTrack/Thumb`, `chartTooltip/Ink/Grid`, `fieldBorder`, `onWhite`, `danger` #B3261E, `swipeDelete`, `stop`, `drivingScrim`, `replay` #8A4B00 |
+| `DataColors` | Màu dữ liệu (luôn kèm nhãn chữ / hình dạng) | `rainScale`, `windScale` (5 bậc), `gust`, `noData`, `mapBase`, `mapLabelDark`, ranh giới / ô / ghim bản đồ, `hazard*` (chưa rõ / không / mưa / mưa to / dông), `routeCasing`, `attribution*`, `seriesA/B/C` |
+| `Tones` | Màu nhấn trên trang Material ngoài kính, theo cặp `…OnLight` (≥ 4.5:1 chữ, ≥ 3:1 icon trên nền sáng) / `…OnDark` | `brand` #2196F3, `brandDeep` #1976D2, `brandSoft`, `navySurface`, `navyCard`, `rain*`, `air*`, `pressure*`, `warm*`, `neutral*`, `success*`, `teal*`, `windOnLight`, `amber*`, `gustOnDark`, `marker*` |
+| `SystemColors` | Theme Material/Cupertino và trang Cài đặt (kiểu iOS) | `label` #1C1C1E, `secondaryLabel*`, `accentLight` #0066CC, `accentDark` #64D2FF, `groupedBackground` #F2F2F7, `backgroundDark` #111113, `separator*`, `subtitle*`, `icon*` (ô màu sau icon cài đặt) |
+
+Trên nền kính, màu chữ phụ / tiêu đề / nhấn / "mưa" theo cảnh lấy từ
+`GlassInk.of(context)`, không lấy từ `Tones`.
+
 ## Dùng ở Home
 
 ```dart
-final isDay = isDaytime(HcmTime.now(), lat: 10.7909, lon: 106.6313);
+// place: dia diem cua trang dang xem (LocationProvider.placeById(...)).
+final isDay = isDayAt(provider.nowHcm, lat: place.lat, lon: place.lon);
 final resolved = resolveScene(
-  weatherCode: code,                 // WMO từ Open-Meteo
+  weatherCode: code,                 // mã WMO từ backend
   isDay: isDay,
   windSpeedKmh: current.windSpeed,
   visibilityMeters: visibilityM,     // mét
@@ -149,8 +192,9 @@ trong ~60 khung): `WeatherBackground.qualityScale` 1.0 → 0.6 → 0.35.
 **Nối cảnh vào app**
 
 Chỉ một nơi tính cảnh: `app_scene.dart` (`AppSceneScope` trong
-`MaterialApp.builder`). `isDay = isDaytime(provider.nowHcm, lat, lon)` với
-toạ độ `ApiConfig.latitude/longitude`; ở chế độ xem lại `nowHcm` là thời
-điểm xem lại. `scene = effectiveScene(resolveScene(mã WMO, isDay, gió, tầm
+`MaterialApp.builder`). `isDay = isDayAt(provider.nowHcm, lat: place.lat,
+lon: place.lon)` với toạ độ của địa điểm đang xem (phường/xã đã chọn; app phủ
+toàn bộ TP.HCM mới, không cố định một điểm); ở chế độ xem lại `nowHcm` là
+thời điểm xem lại. `scene = effectiveScene(resolveScene(mã WMO, isDay, gió, tầm
 nhìn, mây), SceneOverride)`. Khi đang tải lại (chưa có dữ liệu) giữ cảnh cũ.
 Màn hình phụ dùng `GlassPage` để có cùng nền và theme kính.

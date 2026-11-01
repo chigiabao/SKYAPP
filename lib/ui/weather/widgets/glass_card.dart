@@ -43,10 +43,18 @@ class GlassSurface extends StatelessWidget {
     this.blur = true,
     this.padding = EdgeInsets.zero,
     this.tint,
+    this.borderRadius,
+    this.border = true,
   });
 
   final Widget child;
   final double radius;
+
+  /// Bo goc rieng tung goc (hang dau / cuoi cua nhom iOS); ghi de [radius].
+  final BorderRadius? borderRadius;
+
+  /// false: khong ve vien (hang giua nhom, ngan bang duong ke rieng).
+  final bool border;
   final bool blur;
   final EdgeInsetsGeometry padding;
 
@@ -69,12 +77,14 @@ class GlassSurface extends StatelessWidget {
         color.withValues(alpha: color.a < 0.8 ? 0.8 : color.a),
       );
     }
-    final BorderRadius br = BorderRadius.circular(radius);
+    final BorderRadius br = borderRadius ?? BorderRadius.circular(radius);
     Widget box = DecoratedBox(
       decoration: BoxDecoration(
         color: color,
         borderRadius: br,
-        border: hc
+        border: !border
+            ? null
+            : hc
             ? Border.all(color: Palette.secondary, width: 1.5)
             : Border.all(color: Palette.border),
       ),

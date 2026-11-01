@@ -281,15 +281,15 @@ def admin_client(db, api, monkeypatch):
 def test_admin_requires_token(admin_client, monkeypatch):
     monkeypatch.delenv("ADMIN_TOKEN", raising=False)
     assert admin_client.get("/admin/ingest/log").status_code == 403    # TestClient host is not localhost
-    monkeypatch.setenv("ADMIN_TOKEN", "s3cret")
+    monkeypatch.setenv("ADMIN_TOKEN", "test-admin-token-0123456789abcdef")
     assert admin_client.get("/admin/ingest/log").status_code == 401
     assert admin_client.get("/admin/ingest/log", headers={"X-Admin-Token": "nope"}).status_code == 401
-    assert admin_client.get("/admin/ingest/log", headers={"X-Admin-Token": "s3cret"}).status_code == 200
+    assert admin_client.get("/admin/ingest/log", headers={"X-Admin-Token": "test-admin-token-0123456789abcdef"}).status_code == 200
 
 
 def test_admin_ingest_log_and_health(admin_client, monkeypatch):
-    monkeypatch.setenv("ADMIN_TOKEN", "s3cret")
-    h = {"X-Admin-Token": "s3cret"}
+    monkeypatch.setenv("ADMIN_TOKEN", "test-admin-token-0123456789abcdef")
+    h = {"X-Admin-Token": "test-admin-token-0123456789abcdef"}
     r = admin_client.post("/admin/ingest", headers=h)
     assert r.status_code == 200
     row = r.json()

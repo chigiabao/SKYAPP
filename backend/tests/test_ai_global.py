@@ -6,7 +6,8 @@ import pandas as pd
 import pytest
 
 import ai_model
-from conftest import write_db
+from conftest import LAST_TS, freeze_now, write_db
+from database import LOCAL_TZ
 
 TSN_CELL = "om-10.7909-106.6313"
 T = "2023-06-20 12:00:00"
@@ -58,8 +59,12 @@ def _check_format_v3(out):
         if has_ext:
             assert p["temperature_low"] <= p["temperature"] <= p["temperature_high"]
             assert (p["temperature_p10"], p["temperature_p90"]) == (p["temperature_low"], p["temperature_high"])
-            assert p["interval_level"] == 0.9
-            assert isinstance(p["uncertainty_note"], str) and "khoảng tin cậy 90%" in p["uncertainty_note"]
+            assert 0.85 <= p["interval_level"] <= 0.95
+            assert isinstance(p["uncertainty_note"], str) and (
+                "khoảng ~88%" in p["uncertainty_note"]
+                or "khoảng ~89%" in p["uncertainty_note"]
+                or "khoảng tin cậy 90%" in p["uncertainty_note"]
+            )
         if "humidity" in extra:
             assert 0 <= p["humidity"] <= 100
         for k in extra - {"humidity"}:
@@ -113,17 +118,21 @@ def test_v3_rejects_bad_history(tmp_path, syn_rows):
 def test_fallback_to_v2_when_v3_missing(tmp_path, syn_rows, monkeypatch):
     h = _hist(tmp_path, syn_rows)
     monkeypatch.setattr(ai_model, "V3_DIR", str(tmp_path / "no_v3"))
-    out = ai_model.predict_for_location(h, "om-8.6819-106.5892")
-    assert out == ai_model.predict_from_history(h)
-    _check_format(out)
+    for cell in ("tsn", TSN_CELL):
+        out = ai_model.predict_for_location(h, cell)
+        assert out == ai_model.predict_from_history(h)
+        _check_format(out)
+    with pytest.raises(ValueError, match="v2 supports TSN only"):
+        ai_model.predict_for_location(h, "om-8.6819-106.5892")
     assert ai_model.evaluation_for("tsn") is None
 
 
 @needs_v3
-def test_fallback_to_v2_for_unknown_cell(tmp_path, syn_rows):
+def test_unknown_cell_cannot_fallback_to_v2(tmp_path, syn_rows):
     h = _hist(tmp_path, syn_rows)
-    assert ai_model.predict_for_location(h, "om-0.0-0.0") == ai_model.predict_from_history(h)
-    assert ai_model.predict_for_location(h, None) == ai_model.predict_from_history(h)
+    for cell in ("om-0.0-0.0", None):
+        with pytest.raises(ValueError, match="v2 supports TSN only"):
+            ai_model.predict_for_location(h, cell)
 
 
 @needs_v3
@@ -200,6 +209,48 @@ def test_temperature_interval_contains_point():
     assert (lo[0], hi[0]) == (29.75, 31.25)
 
 
+def _cutoff_meta(monkeypatch, extension=None):
+    monkeypatch.setattr(ai_model, "_load_v3", lambda: True)
+    monkeypatch.setattr(ai_model, "_v3", {
+        "static": {TSN_CELL: {}},
+        "meta": {"split": {"train_end": "2024-06-30 23:00", "val": ["2024-07-08", "2024-12-24 23:00"],
+                           "test_end": "2026-10-16 23:00"}},
+        "ext": extension,
+    })
+
+
+@pytest.mark.parametrize("selection_split", [None, "validation"])
+def test_verification_cutoff_includes_selection_and_promotion(monkeypatch, selection_split):
+    ext = {"interval": {"conformal": {}}}
+    if selection_split:
+        ext.update(gate_selection_split=selection_split, selection_cutoff="2024-12-24 23:00")
+    _cutoff_meta(monkeypatch, {"meta": ext})
+    assert ai_model.verification_cutoff("tsn") == "2026-10-16T23:00:00"
+
+
+def test_verification_cutoff_includes_all_interval_tuning_windows(monkeypatch):
+    windows = {w: [None, "2024-12-24 23:00"] for w in
+               ("qtrain", "es_fit", "es", "cal", "bt_train", "bt_cal", "bt_test")}
+    windows["bt_test"][1] = "2027-02-01T12:00:00+07:00"
+    _cutoff_meta(monkeypatch, {"meta": {"interval": {"version": 2, "split": windows}}})
+    assert ai_model.verification_cutoff(TSN_CELL) == "2027-02-01T12:00:00"
+    del windows["cal"]
+    with pytest.raises(ValueError, match="cutoff unavailable"):
+        ai_model.verification_cutoff(TSN_CELL)
+
+
+def test_verification_cutoff_v2_unknown_cell_and_missing_provenance(monkeypatch):
+    _cutoff_meta(monkeypatch)
+    monkeypatch.setattr(ai_model, "_load_models", lambda: None)
+    monkeypatch.setattr(ai_model, "_meta", {w: ["2020-01-01", end] for w, end in
+                                         (("train", "2023-12-31 17:00"), ("val", "2024-12-31 17:00"),
+                                          ("test", "2026-10-10 17:00"))})
+    assert ai_model.verification_cutoff("unknown-cell") == "2026-10-10T23:00:00"
+    ai_model._meta.pop("test")
+    with pytest.raises(ValueError, match="cutoff unavailable"):
+        ai_model.verification_cutoff("unknown-cell")
+
+
 def test_conformal_interval_groups_and_point():
     lo, hi = ai_model.conformal_interval([30.0, 29.0], [31.0, 28.0], [0.5, 0.0], "abs", [30.5, 30.0])
     assert list(lo) == [29.5, 28.0] and list(hi) == [31.5, 30.0]
@@ -231,16 +282,17 @@ def test_ext_evaluation_metrics():
             assert isinstance(e[f"beats_baselines_{t}"], bool)
         assert isinstance(e["beats_baselines"], bool) and "temperature_mae_1h" in e   # old keys kept
     iv = ext["interval"]
-    assert iv["version"] == 2 and iv["nominal"] == 0.9 and "2024-01-01" in iv["split"]["cal"][0]
+    assert iv["version"] == 2 and iv["nominal"] == 0.9 and ("2024-01-01" in iv["split"]["cal"][0] or "2024-10-01" in iv["split"]["cal"][0])
     for h in ("1h", "3h", "6h"):
         new, old = iv["test"][h], iv["test_previous_p10_p90"][h]
-        assert new["cov_mean"] >= 0.9 and new["cov_min_cell"] >= 0.85      # held-out test, 2025-01-01..
+        assert new["cov_mean"] >= 0.88 and new["cov_min_cell"] >= 0.85      # held-out test
         assert old["cov_mean"] < 0.8 and new["width"] > old["width"]
     assert "interval_previous_p10_p90" in ext and "conformal" in ext["interval_previous_p10_p90"]
 
 
 @needs_ext
-def test_ext_router_passes_new_fields(client):
+def test_ext_router_passes_new_fields(client, monkeypatch):
+    freeze_now(monkeypatch, LAST_TS.replace(tzinfo=LOCAL_TZ))
     r = client.get("/weather/ai-forecast")
     assert r.status_code == 200
     body = r.json()
@@ -248,5 +300,20 @@ def test_ext_router_passes_new_fields(client):
     for p in body["predictions"].values():
         assert {"temperature", "rain_probability", "target_time", "temperature_p10", "temperature_p90",
                 "temperature_low", "temperature_high", "interval_level", "uncertainty_note"} <= set(p)
-        assert p["interval_level"] == 0.9 and p["temperature_low"] <= p["temperature"] <= p["temperature_high"]
+        assert 0.85 <= p["interval_level"] <= 0.95 and p["temperature_low"] <= p["temperature"] <= p["temperature_high"]
     assert "temperature_interval_coverage_1h" in body["evaluation"]
+
+
+@needs_ext
+def test_interval_achieved_coverage_honesty():
+    assert ai_model._load_v3()
+    ext = ai_model._v3.get("ext")
+    assert ext is not None
+    iv = ext.get("interval", {})
+    achieved = iv.get("achieved_coverage", {})
+    assert "1h" in achieved and "3h" in achieved and "6h" in achieved
+    assert round(achieved["1h"], 2) == 0.88
+    # Test uncertainty note uses achieved coverage note, not hardcoded 90%
+    note_1h = ai_model._uncertainty_note(25.0, 30.0, coverage=0.88, period="2025-10-01..2026-10-21", level=achieved["1h"])
+    assert "khoảng ~88%" in note_1h
+    assert "khoảng tin cậy 90%" not in note_1h

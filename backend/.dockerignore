@@ -1,0 +1,26 @@
+# Runtime state comes from volumes (see docker-compose.yml); never bake DBs/backups into the image.
+data/*.db
+data/*.db-*
+data/*.backup*
+data/history/
+*.db
+*.db-wal
+*.db-shm
+*.bak
+backup*/
+# Models are mounted as a volume; the image ships without them.
+models/
+# Python/dev clutter
+__pycache__/
+**/__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+tests/
+requirements-dev.txt
+*.log
+.env
+.env.*
+Dockerfile
+.dockerignore

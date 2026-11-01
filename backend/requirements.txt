@@ -1,11 +1,17 @@
-fastapi
-uvicorn
-pandas
-numpy
-openpyxl
-lightgbm
-scikit-learn
-joblib
-tzdata
-httpx
-bcrypt
+# Pinned to the versions the backend suite was run with (Python 3.14.8, 2026-10-31).
+# Model artifacts (lightgbm boosters, scikit-learn/joblib pickles) must be loaded with the same versions.
+fastapi==0.143.1
+uvicorn==0.54.0
+pandas==3.0.6
+numpy==2.5.3
+openpyxl==3.1.5
+lightgbm==4.7.0
+scikit-learn==1.9.1
+joblib==1.6.0
+tzdata==2026.5
+httpx==0.28.1
+bcrypt==5.0.0
+# Direct runtime libraries of the above whose behaviour the API relies on (validation, ASGI, sklearn).
+starlette==1.8.0
+pydantic==2.14.1
+scipy==1.18.1

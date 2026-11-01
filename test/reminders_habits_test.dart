@@ -1,11 +1,12 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:sky_weather_app/config/api_config.dart';
 import 'package:sky_weather_app/models/activities.dart';
 import 'package:sky_weather_app/models/app_settings.dart';
+import 'package:sky_weather_app/services/app_settings_store.dart';
 import 'package:sky_weather_app/models/habits.dart';
 import 'package:sky_weather_app/models/place.dart';
 import 'package:sky_weather_app/models/reminders.dart';
@@ -16,7 +17,7 @@ import 'package:sky_weather_app/providers/weather_provider.dart';
 import 'package:sky_weather_app/screens/activities_screen.dart';
 import 'package:sky_weather_app/screens/alert_settings_screen.dart';
 import 'package:sky_weather_app/services/api_service.dart';
-import 'package:sky_weather_app/services/background_check.dart';
+import 'package:sky_weather_app/background/background_check.dart';
 import 'package:sky_weather_app/services/notification_service.dart';
 import 'package:sky_weather_app/ui/weather/app_scene.dart';
 import 'package:sky_weather_app/utils/theme.dart';
@@ -86,11 +87,13 @@ class _FakeApi extends ApiService {
   final Set<int> storm;
 
   @override
-  Future<WeatherData> fetchWeatherData({DateTime? at}) async {
+  Future<WeatherData> fetchWeatherDataFor(
+    String locationId, {
+    DateTime? at,
+  }) async {
     final base = HcmTime.startOfHour(at ?? _now);
     return WeatherData(
       current: CurrentWeather(
-        locationName: ApiConfig.locationName,
         temperature: 30,
         condition: WeatherCondition.cloudy,
         weatherCode: 3,
@@ -330,20 +333,17 @@ void main() {
       // Xem lai -> khong gui.
       SharedPreferences.setMockInitialValues({
         PlannerProvider.notifyKey: '{"system":true}',
-        AppSettings.replayEnabledKey: true,
-        AppSettings.replayAtKey: '2026-10-10T12:00:00+07:00',
+        AppSettingsStore.replayEnabledKey: true,
+        AppSettingsStore.replayAtKey: '2026-10-10T12:00:00+07:00',
       });
-      expect(
-        await runBackgroundCheck(notifications: fake, api: api),
-        0,
-      );
+      expect(await runBackgroundCheck(notifications: fake, api: api), 0);
     });
   });
 
   group('dong bo nen / app (race lich su)', () {
-    Future<void> enableSystem() async => SharedPreferences.setMockInitialValues({
-      PlannerProvider.notifyKey: '{"system":true}',
-    });
+    Future<void> enableSystem() async => SharedPreferences.setMockInitialValues(
+      {PlannerProvider.notifyKey: '{"system":true}'},
+    );
 
     test('hai lan chay nen lien tiep: lan hai gui 0', () async {
       await enableSystem();
@@ -400,7 +400,7 @@ void main() {
       expect(app.history, hasLength(reread.history.length));
     });
 
-    test('sau "Xoá lịch sử" khong bao lai canh bao con hieu luc', () async {
+    test('sau "Xóa lịch sử" khong bao lai canh bao con hieu luc', () async {
       final fake = FakeNotifications();
       final p = PlannerProvider(notifications: fake, clock: _clockAt(_now));
       await p.load();
@@ -642,7 +642,10 @@ void main() {
         await tester.pump();
       }
       expect(planner.habits.doneAt(Activity.running, 14), 3);
-      expect(find.textContaining('Gợi ý lịch: Chạy bộ lúc 14:00'), findsOneWidget);
+      expect(
+        find.textContaining('Gợi ý lịch: Chạy bộ lúc 14:00'),
+        findsOneWidget,
+      );
       await tester.tap(find.text('Xác nhận'));
       await tester.pump();
       expect(planner.routines.single.hour, 14);
@@ -650,7 +653,8 @@ void main() {
 
       await tester.tap(find.text('Xóa dữ liệu thói quen'));
       await tester.pumpAndSettle();
-      await tester.tap(find.widgetWithText(FilledButton, 'Xóa'));
+      // Hop thoai iOS (CupertinoAlertDialog): nut pha huy "Xóa".
+      await tester.tap(find.widgetWithText(CupertinoDialogAction, 'Xóa'));
       await tester.pumpAndSettle();
       expect(planner.habits.doneAt(Activity.running, 14), 0);
       expect(planner.habits.enabled, isTrue);

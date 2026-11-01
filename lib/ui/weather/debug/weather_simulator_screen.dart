@@ -10,6 +10,7 @@ import 'package:flutter/services.dart';
 
 import '../weather_background.dart';
 import '../weather_icons.dart';
+import '../widgets/ios_toast.dart';
 
 /// Xem truoc moi canh thoi tiet va ap dung gia lap cho toan app qua
 /// [SceneOverride]. Chi mo khi [available] (ban debug).
@@ -92,9 +93,7 @@ class _WeatherSimulatorScreenState extends State<WeatherSimulatorScreen> {
   }
 
   void _toast(String msg) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(msg)));
+    showIosToast(context, msg);
   }
 
   @override

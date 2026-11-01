@@ -31,8 +31,23 @@ linter:
   # `// ignore_for_file: name_of_lint` syntax on the line or in the file
   # producing the lint.
   rules:
+    # Them (0 issue tren code hien tai): an toan async/stream, final, gon gang.
+    - always_declare_return_types
+    - avoid_slow_async_io
+    - avoid_type_to_string
+    - avoid_void_async
+    - cancel_subscriptions
+    - literal_only_boolean_expressions
+    - prefer_final_fields
+    - prefer_final_locals
+    - prefer_relative_imports
+    - prefer_single_quotes
+    - sort_child_properties_last
+    - test_types_in_equals
+    - unnecessary_statements
+    - use_named_constants
+    - use_super_parameters
     # avoid_print: false  # Uncomment to disable the `avoid_print` rule
-    # prefer_single_quotes: true  # Uncomment to enable the `prefer_single_quotes` rule
 
 # Additional information about this file can be found at
 # https://dart.dev/guides/language/analysis-options

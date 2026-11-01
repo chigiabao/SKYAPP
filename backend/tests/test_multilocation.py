@@ -6,10 +6,12 @@ from unittest.mock import Mock
 import pytest
 from fastapi.testclient import TestClient
 
+import ai_model
+import long_range_model_v2 as long_range_model
 import main
-from conftest import COLUMNS, REAL_DB, point_app_at, synthetic_rows
+from conftest import COLUMNS, REAL_DB, freeze_now, point_app_at, synthetic_rows
 from database import LOCAL_TZ
-from routers import weather
+from routers import weather, weather_climatology
 
 OTHER = "om-10.3691-107.0976"   # Vung Tau cell (series_id == cell_id)
 WARD = "phuong-vung-tau"
@@ -19,11 +21,11 @@ WARD = "phuong-vung-tau"
 def no_own_model(monkeypatch):
     def unavailable(*args, **kwargs):
         raise ValueError("untrained: synthetic unavailable model")
-    monkeypatch.setattr(weather.long_range_model, "predict", unavailable)
-    monkeypatch.setattr(weather.long_range_model, "status", lambda: {
+    monkeypatch.setattr(long_range_model, "predict", unavailable)
+    monkeypatch.setattr(long_range_model, "status", lambda: {
         "status": "untrained", "cell_ids": [], "trained_through": None,
     })
-    monkeypatch.setattr(weather.long_range_model, "artifact_revision", lambda: ("location-test", 1), raising=False)
+    monkeypatch.setattr(long_range_model, "artifact_revision", lambda: ("location-test", 1), raising=False)
     weather.invalidate_climatology()
     yield
     weather.invalidate_climatology()
@@ -39,15 +41,13 @@ def short_model(monkeypatch):
                                 "rain_probability": 0.4} for h in ("1h", "3h", "6h")},
         }
     predictor = Mock(side_effect=predict)
-    monkeypatch.setattr(weather.ai_model, "predict_for_location", predictor)
+    monkeypatch.setattr(ai_model, "predict_for_location", predictor)
     return predictor
 
 
 @pytest.fixture
-def real_client(monkeypatch):
-    if not REAL_DB.exists():
-        pytest.skip("real weather.db not found")
-    point_app_at(monkeypatch, REAL_DB)
+def real_client(monkeypatch, real_db_snapshot):
+    point_app_at(monkeypatch, real_db_snapshot)
     # Skip lifespan so read-only checks never migrate or warm the real database.
     yield TestClient(main.app)
 
@@ -93,7 +93,7 @@ def test_ward_without_fresh_data_rejects_tsn_climatology_fallback(client, syn_db
         _add_series(syn_db, OTHER)
     def forbidden(*args, **kwargs):
         raise AssertionError("A missing/stale ward must not borrow tsn climatology")
-    monkeypatch.setattr(weather, "_climatology", forbidden)
+    monkeypatch.setattr(weather_climatology, "_climatology", forbidden)
     r = client.get(f"/weather/{route}", params={"location_id": WARD})
     assert r.status_code == 503
     assert r.json()["detail"]
@@ -133,7 +133,10 @@ def test_map_replay_never_uses_future_beyond_3h(client, syn_db, short_model):
     short_model.assert_not_called()
 
 
-def test_ai_forecast_has_location_and_evaluation(real_client, short_model):
+def test_ai_forecast_has_location_and_evaluation(real_client, short_model, monkeypatch):
+    with sqlite3.connect(f"file:{REAL_DB.as_posix()}?mode=ro", uri=True) as con:
+        latest = con.execute("SELECT MAX(timestamp) FROM hourly_weather WHERE location_id = 'tsn'").fetchone()[0]
+    freeze_now(monkeypatch, datetime.fromisoformat(latest).replace(tzinfo=LOCAL_TZ))
     r = real_client.get("/weather/ai-forecast")
     assert r.status_code == 200
     body = r.json()

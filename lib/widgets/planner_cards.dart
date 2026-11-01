@@ -1,6 +1,7 @@
 /// The kinh cho canh bao va goi y hoat dong (Home + man chi tiet).
 library;
 
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -9,7 +10,7 @@ import '../models/weather.dart';
 import '../models/weather_alerts.dart';
 import '../providers/planner_provider.dart';
 import '../providers/preferences_provider.dart';
-import '../providers/weather_provider.dart';
+import '../utils/forecast_format.dart';
 import '../ui/weather/design_tokens.dart';
 import '../ui/weather/glass_ink.dart';
 import '../ui/weather/widgets/glass_card.dart';
@@ -68,16 +69,10 @@ Color levelColor(BuildContext context, AlertLevel l) {
 String _hh(DateTime t) =>
     '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
 
-/// "Hôm nay 06:00–07:00" / "Mai 17:00–19:00" / "T2 18/10 06:00–07:00".
+/// "Hôm nay 06:00–07:00" / "Ngày mai 17:00–19:00" / "Thứ 5 06:00–07:00"
+/// (nhan ngay dung chung [ForecastFormat.relativeDayLong]).
 String windowLabel(DateTime start, DateTime end, DateTime nowHcm) {
-  final d = HcmTime.startOfDay(start)
-      .difference(HcmTime.startOfDay(nowHcm))
-      .inDays;
-  final day = d == 0
-      ? 'Hôm nay'
-      : d == 1
-      ? 'Mai'
-      : '${start.day}/${start.month}';
+  final day = ForecastFormat.relativeDayLong(start, nowHcm);
   return '$day ${_hh(start)}\u2060–\u2060${_hh(end)}';
 }
 
@@ -155,8 +150,7 @@ class AlertsSummaryBanner extends StatelessWidget {
                                   '${top.detailFor(PreferencesProvider.unitsOf(context))}$more',
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
-                                  style: TypeScale.small.copyWith(
-                                    fontSize: 13,
+                                  style: TypeScale.footnote.copyWith(
                                     color: ink.secondary,
                                   ),
                                 ),
@@ -166,7 +160,7 @@ class AlertsSummaryBanner extends StatelessWidget {
                         ),
                         const ExcludeSemantics(
                           child: Icon(
-                            Icons.chevron_right_rounded,
+                            CupertinoIcons.chevron_forward,
                             color: Palette.white,
                           ),
                         ),
@@ -185,7 +179,7 @@ class AlertsSummaryBanner extends StatelessWidget {
                     child: const SizedBox.square(
                       dimension: Touch.min,
                       child: Icon(
-                        Icons.close_rounded,
+                        CupertinoIcons.xmark,
                         color: Palette.white,
                         size: IconSizes.md,
                       ),
@@ -204,9 +198,12 @@ class AlertsSummaryBanner extends StatelessWidget {
 
 /// Mot dong canh bao (man Canh bao).
 class AlertEventTile extends StatelessWidget {
-  const AlertEventTile({super.key, required this.event});
+  const AlertEventTile({super.key, required this.event, this.inset = false});
 
   final AlertEvent event;
+
+  /// Hang trong nhom inset-grouped (le ngang 16).
+  final bool inset;
 
   @override
   Widget build(BuildContext context) {
@@ -219,7 +216,10 @@ class AlertEventTile extends StatelessWidget {
       child: ConstrainedBox(
         constraints: const BoxConstraints(minHeight: Touch.min),
         child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: Space.s),
+          padding: EdgeInsets.symmetric(
+            vertical: Space.s + (inset ? 2 : 0),
+            horizontal: inset ? Space.l : 0,
+          ),
           child: Row(
             children: [
               Icon(
@@ -300,6 +300,7 @@ class ActivitySuggestionCard extends StatelessWidget {
         horizonHours: horizonHours,
         limit: 1,
         sensitivity: sensitivity,
+        units: PreferencesProvider.unitsOf(context),
       );
       rows.add(
         ActivityWindowRow(
@@ -368,7 +369,7 @@ class ActivityWindowRow extends StatelessWidget {
         : showDay
         ? windowLabel(w.start, w.end, nowHcm)
         : '${_hh(w.start)}⁠–⁠${_hh(w.end)}';
-    final rating = w?.rating.label;
+    final rating = w == null || w.missing.isNotEmpty ? null : w.rating.label;
     return Semantics(
       container: true,
       excludeSemantics: true,
@@ -418,7 +419,7 @@ class ActivityWindowRow extends StatelessWidget {
 }
 
 /// Hai dong di / ve cho "Đi làm / đi học" (gio trong [PlannerProvider.commute],
-/// mac dinh 7:30 / 17:30): "Về 17h30: mưa 70% – mang áo mưa". Dung du lieu
+/// mac dinh 07:30 / 17:30): "Về 17:30: mưa 70% – mang áo mưa". Dung du lieu
 /// cua Nha (luc di) / Noi lam (luc ve) neu da tai, khong thi [hours] cua
 /// trang dang xem.
 class CommuteRows extends StatelessWidget {
@@ -429,10 +430,10 @@ class CommuteRows extends StatelessWidget {
 
   static String Function(double)? _temp(BuildContext context) {
     try {
-      return Provider.of<WeatherProvider>(
+      return Provider.of<PreferencesProvider>(
         context,
         listen: false,
-      ).formatTemperature;
+      ).units.tempText;
     } on ProviderNotFoundException {
       return null;
     }

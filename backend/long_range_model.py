@@ -189,8 +189,10 @@ def predict(history: pd.DataFrame, cell_id: str) -> dict:
         hist = hist.tail(MIN_HISTORY_HOURS).reset_index(drop=True)
         if not hist.timestamp.diff().dropna().eq(pd.Timedelta(hours=1)).all():
             raise ValueError("last 48 hours must be contiguous")
-        if not np.isfinite(pd.to_numeric(hist.temperature, errors="coerce")).all():
-            raise ValueError("temperature history must be finite")
+        bad = [name for name in WEATHER_FEATURES if name not in hist
+               or not np.isfinite(pd.to_numeric(hist[name], errors="coerce")).all()]
+        if bad:
+            raise ValueError(f"history must be finite for: {', '.join(bad)}")
     except Exception as exc:
         raise ValueError(f"invalid_history: {exc}") from exc
     issue = hist.timestamp.iloc[-1]

@@ -29,10 +29,10 @@ class _Weather extends WeatherProvider {
 
   @override
   CurrentWeather get currentWeather => CurrentWeather(
-    locationName: 'Home',
     temperature: 28,
     condition: WeatherCondition.cloudy,
     lastUpdated: nowHcm,
+    source: DataSource.observed,
   );
 
   @override
@@ -43,6 +43,7 @@ class _Weather extends WeatherProvider {
         temperature: 28,
         condition: WeatherCondition.cloudy,
         rainProbability: i >= 3 && i < 8 ? 0.9 : 0.05,
+        source: DataSource.forecast,
       ),
   ];
 
@@ -55,6 +56,7 @@ class _Weather extends WeatherProvider {
         tempMax: 30,
         condition: WeatherCondition.cloudy,
         precipitationMm: 0,
+        source: DataSource.forecast,
       ),
   ];
 
@@ -77,10 +79,10 @@ class _RevalidatingApi extends ApiService {
 
   WeatherData data({required bool storm}) => WeatherData(
     current: CurrentWeather(
-      locationName: 'Home',
       temperature: 28,
       condition: WeatherCondition.cloudy,
       lastUpdated: now,
+      source: DataSource.observed,
     ),
     hourlyForecast: [
       for (var i = 0; i < 24; i++)
@@ -92,6 +94,7 @@ class _RevalidatingApi extends ApiService {
               : WeatherCondition.cloudy,
           weatherCode: storm ? 95 : 3,
           rainProbability: storm ? 0.9 : 0,
+          source: DataSource.forecast,
         ),
     ],
     dailyForecast: const [],
@@ -151,6 +154,8 @@ void main() {
         apiService: api,
         initialSettings: const AppSettings(),
         clock: () => DateTime.utc(2026, 10, 19, 2),
+        // Kiem tra ket qua cuoi cua lan tai, khong kiem tra viec thu lai.
+        retryDelays: const [],
       );
       final planner = PlannerProvider();
       await planner.load();

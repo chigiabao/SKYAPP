@@ -21,6 +21,7 @@ import 'package:sky_weather_app/screens/map_screen.dart';
 import 'package:sky_weather_app/services/api_service.dart';
 import 'package:sky_weather_app/ui/weather/app_scene.dart';
 import 'package:sky_weather_app/ui/weather/widgets/glass_card.dart';
+import 'package:sky_weather_app/ui/weather/widgets/ios_list.dart';
 
 Map<String, dynamic> _cell(int offset) => {
   'cell_id': 'c1',
@@ -94,17 +95,22 @@ void main() {
       expect(windText(c), 'gió không có dữ liệu');
       expect(mapFrameLabel(c.source, c.validTime), isNull);
       expect(outlookSourceLabel('ai'), 'Dự báo AI Sky Weather');
-      expect(outlookSourceLabel('forecast'), 'Dự báo Open-Meteo');
+      expect(outlookSourceLabel('forecast'), 'Dự báo nguồn ngoài (máy chủ cũ)');
+      expect(outlookSourceLabel('forecast'), isNot(contains('Open-Meteo')));
     });
 
     test('nhan khung quan trac / du bao', () {
       final t = DateTime.utc(2026, 10, 17, 18);
       expect(
-        mapFrameLabel(DataSource.observed, DateTime.utc(2026, 10, 17, 15)),
-        'Thực tế (dữ liệu phân tích) lúc 15:00',
+        mapFrameLabel(
+          DataSource.observed,
+          DateTime.utc(2026, 10, 17, 18),
+          observedAt: DateTime.utc(2026, 10, 17, 15),
+        ),
+        'Đã ghi nhận (mô hình) lúc 17/10 15:00',
       );
-      expect(mapFrameLabel(DataSource.forecast, t), 'Dự báo lúc 18:00 thứ Bảy');
-      expect(mapFrameLabel(DataSource.ai, t), 'Dự báo AI lúc 18:00 thứ Bảy');
+      expect(mapFrameLabel(DataSource.forecast, t), 'Dự báo: Thứ 7 · 18:00');
+      expect(mapFrameLabel(DataSource.ai, t), 'Dự báo AI: Thứ 7 · 18:00');
       expect(mapFrameLabel(DataSource.ai, null), isNull);
       expect(offsetLabel(0), 'Bây giờ');
       expect(offsetLabel(3), '+3 giờ');
@@ -136,7 +142,12 @@ void main() {
                           ? null
                           : (off == 0 ? 'observed' : 'ai'),
                       'valid_time': HcmTime.toIso(
-                        DateTime.utc(2026, 10, 17, 15).add(Duration(hours: off)),
+                        DateTime.utc(
+                          2026,
+                          10,
+                          17,
+                          15,
+                        ).add(Duration(hours: off)),
                       ),
                     },
                   ]),
@@ -418,15 +429,15 @@ void main() {
     testWidgets('slider co gia tri dang chu', (tester) async {
       final handle = tester.ensureSemantics();
       await tester.pumpWidget(host(bar()));
-      expect(find.text('+3 giờ · 18:00 thứ Bảy 17/10'), findsOneWidget);
+      expect(find.text('+3 giờ · Thứ 7, 17/10 · 18:00'), findsOneWidget);
       final slider = tester.widget<Slider>(find.byType(Slider));
       expect(
         slider.semanticFormatterCallback!(3),
-        '+3 giờ, 18:00 thứ Bảy 17/10',
+        '+3 giờ, Thứ 7, 17/10 · 18:00',
       );
       expect(
         slider.semanticFormatterCallback!(0),
-        'Bây giờ, 15:00 thứ Bảy 17/10',
+        'Bây giờ, Thứ 7, 17/10 · 15:00',
       );
       handle.dispose();
     });
@@ -463,13 +474,17 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 200));
     expect(find.byKey(const ValueKey('wind-arrow')), findsNothing);
-    expect(find.textContaining('Thực tế (dữ liệu phân tích)'), findsOneWidget);
+    expect(find.textContaining('Đã ghi nhận (mô hình)'), findsOneWidget);
 
     await tester.tap(find.text('Gió'));
     await tester.pump();
     // Zoom mac dinh: o nho -> chi to mau, khong ve so/mui ten tren o.
     expect(find.byType(CellLabel), findsNothing);
     expect(find.byKey(const ValueKey('wind-arrow')), findsNothing);
+    // Dien thoai: chu giai gon (thang so + nut "Chú giải"); mo ra de xem du.
+    expect(find.byKey(const ValueKey('map-legend-compact')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('map-legend-toggle')));
+    await tester.pump();
     expect(find.text('Ô có cảnh báo mưa/dông'), findsOneWidget);
 
     // Danh sach thay the van doc duoc huong gio.
@@ -483,7 +498,7 @@ void main() {
     for (var i = 0; i < 16; i++) {
       expect(arrow.transform.storage[i], closeTo(expected.storage[i], 1e-6));
     }
-    await tester.tap(find.byType(ListTile).first);
+    await tester.tap(find.byType(IosListRow).first);
     await tester.pumpAndSettle();
     expect(find.text('CÁC PHƯỜNG, XÃ TRONG Ô'), findsOneWidget);
     Navigator.of(tester.element(find.byType(CellSheet))).pop();

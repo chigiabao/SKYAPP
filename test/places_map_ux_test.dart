@@ -36,7 +36,6 @@ CompareSeries _series(String id, String name, {int? rainFromHour}) {
     result: WeatherResult(
       WeatherData(
         current: CurrentWeather(
-          locationName: name,
           temperature: id == 'a' ? 33 : 31,
           condition: WeatherCondition.cloudy,
           lastUpdated: _now,

@@ -1,7 +1,7 @@
 """
 Route with weather along the way (groups 6/7).
 
-GET  /route?from_lat&from_lon&to_lat&to_lon&depart_at&profile   route from OSRM + weather samples every ~2 km
+POST /route {from_lat, from_lon, to_lat, to_lon, depart_at?, profile?}   route + weather samples every ~2 km
 POST /route/along-weather {geometry, depart_at?, duration_min?, profile?}   refresh the weather of a route the
      app already has, without calling OSRM again.
 
@@ -28,13 +28,15 @@ from typing import Dict, List, Literal, Optional, Tuple
 
 import httpx
 import numpy as np
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 import database
 from database import now_local, to_local
 from routers import monitor
-from routers.weather import _SEVERITY, _floor_hour, _latest_observed, _naive, _num, _series
+from routers.weather_core import _floor_hour, _latest_observed, _naive, _num
+from routers.weather_daily import _SEVERITY
+from routers.weather_series import _series
 
 OSRM_URLS = {
     "driving": "https://router.project-osrm.org/route/v1/driving",
@@ -44,11 +46,14 @@ OSRM_URLS = {
 USER_AGENT = "SkyWeatherHCMC/1.0 (student weather app backend; route weather)"
 OSRM_TIMEOUT = 10.0
 OSRM_MIN_INTERVAL = 1.0      # seconds between two OSRM requests (usage policy: max 1 req/s)
+OSRM_MAX_QUEUE_SECONDS = 5.0  # uncached requests that would wait longer for a slot get 503 instead
 CACHE_SIZE = 256
 MAX_ROUTE_KM = 300.0
 SAMPLE_STEP_KM = 2.0
 MAX_GEOMETRY_POINTS = 300
 MAX_INPUT_POINTS = 20000
+OSRM_MAX_RESPONSE_BYTES = 2 * 1024 * 1024
+MAX_DURATION_SECONDS = 24 * 60 * 60
 CELL_FALLBACK_KM = 10.0      # without the boundary file: "inside" = within this distance of a cell
 DEPART_PAST_HOURS = 24       # depart_at may be at most this far in the past ...
 DEPART_FUTURE_DAYS = 7       # ... or this far in the future
@@ -237,14 +242,17 @@ def _weather_samples(points: List[Tuple[float, float, float]], depart: datetime)
             "lat": round(lat, 5), "lon": round(lon, 5), "eta": eta.isoformat(timespec="seconds"),
             "cell_id": cell[0] if cell is not None else None,
             "temperature": _num(item.temperature, 1) if item is not None else None,
+            "humidity": _num(item.humidity, 1) if item is not None else None,
             "precipitation": _num(item.precipitation, 2) if item is not None else None,
             "rain_probability": _num(item.rain_probability, 2) if item is not None else None,
             "weather_code": item.weather_code if item is not None else None,
             "wind_gusts": _num(item.wind_gusts, 1) if item is not None else None,
+            "wind_speed": _num(item.wind_speed, 1) if item is not None else None,
+            "uv_index": _num(item.uv_index, 1) if item is not None else None,
             "source": item.source if item is not None else None,
             "forecast_available": item is not None and any(getattr(item, field) is not None for field in
-                                                          ("temperature", "precipitation", "rain_probability",
-                                                           "weather_code", "wind_gusts")),
+                                                          ("temperature", "humidity", "precipitation", "rain_probability",
+                                                           "weather_code", "wind_gusts", "wind_speed", "uv_index")),
             "hazard_assessment_complete": item is not None and item.source in {"observed", "forecast"}
                                           and all(getattr(item, field) is not None for field in
                                                   ("precipitation", "weather_code", "wind_gusts")),
@@ -317,27 +325,53 @@ _last_call = [0.0]
 
 def _http_get(url: str, params: dict) -> httpx.Response:
     """Single OSRM GET (patched in tests)."""
-    return httpx.get(url, params=params, timeout=OSRM_TIMEOUT, headers={"User-Agent": USER_AGENT})
+    with httpx.stream("GET", url, params=params, timeout=OSRM_TIMEOUT,
+                      headers={"User-Agent": USER_AGENT}) as response:
+        body = bytearray()
+        for chunk in response.iter_bytes():
+            if len(body) + len(chunk) > OSRM_MAX_RESPONSE_BYTES:
+                raise OsrmError("OSRM response too large")
+            body.extend(chunk)
+        return httpx.Response(response.status_code, content=bytes(body))
+
+
+def _osrm_number(value) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError("Invalid OSRM number")
+    number = float(value)
+    if not math.isfinite(number) or number < 0:
+        raise ValueError("Invalid OSRM number")
+    return number
 
 
 def _osrm_request(profile: str, a: Tuple[float, float], b: Tuple[float, float]) -> dict:
     url = f"{OSRM_URLS[profile]}/{a[1]:.6f},{a[0]:.6f};{b[1]:.6f},{b[0]:.6f}"
     params = {"overview": "full", "geometries": "geojson", "annotations": "duration", "steps": "false"}
-    with _osrm_lock:   # serialises OSRM calls: at most one per OSRM_MIN_INTERVAL
-        wait = OSRM_MIN_INTERVAL - (time.monotonic() - _last_call[0])
-        if wait > 0:
-            time.sleep(wait)
-        try:
-            r = _http_get(url, params)
-        except httpx.HTTPError as e:
-            monitor.record_api_call("osrm", ok=False)
-            raise OsrmError(f"{type(e).__name__}: {e}")
-        finally:
-            _last_call[0] = time.monotonic()
+    # Reserve the next start slot (at most one OSRM call per OSRM_MIN_INTERVAL) under the lock, but sleep
+    # and call outside it, so one slow OSRM response never blocks every other worker thread.
+    with _osrm_lock:
+        now = time.monotonic()
+        slot = max(now, _last_call[0] + OSRM_MIN_INTERVAL)
+        wait = slot - now
+        if wait > OSRM_MAX_QUEUE_SECONDS:
+            raise OsrmError("OSRM queue full")
+        _last_call[0] = slot
+    if wait > 0:
+        time.sleep(wait)
     try:
+        r = _http_get(url, params)
+    except (httpx.HTTPError, OsrmError) as e:
+        monitor.record_api_call("osrm", ok=False)
+        raise OsrmError(type(e).__name__) from None
+    try:
+        if len(r.content) > OSRM_MAX_RESPONSE_BYTES:
+            raise OsrmError("OSRM response too large")
         data = r.json()
-    except ValueError:
+    except (ValueError, RecursionError):
         data = {}
+    except OsrmError:
+        monitor.record_api_call("osrm", ok=False)
+        raise
     code = data.get("code") if isinstance(data, dict) else None
     if code in ("NoRoute", "NoSegment"):
         monitor.record_api_call("osrm", ok=True)
@@ -345,23 +379,51 @@ def _osrm_request(profile: str, a: Tuple[float, float], b: Tuple[float, float]) 
     if r.status_code != 200 or code != "Ok" or not data.get("routes"):
         monitor.record_api_call("osrm", ok=False)
         raise OsrmError(f"HTTP {r.status_code}, code {code}")
+    try:
+        if not isinstance(data["routes"], list):
+            raise ValueError("Invalid OSRM routes")
+        route = data["routes"][0]
+        raw_coords = route["geometry"]["coordinates"]
+        if not isinstance(raw_coords, list) or not 2 <= len(raw_coords) <= MAX_INPUT_POINTS:
+            raise ValueError("Invalid OSRM geometry")
+        coords = []
+        for point in raw_coords:
+            if not isinstance(point, list) or len(point) != 2:
+                raise ValueError("Invalid OSRM coordinate")
+            lon, lat = point
+            if any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v)
+                   for v in point) or not (-180 <= lon <= 180 and -90 <= lat <= 90):
+                raise ValueError("Invalid OSRM coordinate")
+            coords.append((float(lat), float(lon)))
+        distance_km = _osrm_number(route["distance"]) / 1000
+        total_s = _osrm_number(route["duration"])
+        if total_s > MAX_DURATION_SECONDS:
+            raise ValueError("Invalid OSRM duration")
+        durs = []
+        legs = route.get("legs", [])
+        if not isinstance(legs, list):
+            raise ValueError("Invalid OSRM legs")
+        for leg in legs:
+            durations = (leg.get("annotation") or {}).get("duration", [])
+            if not isinstance(durations, list) or len(durs) + len(durations) > MAX_INPUT_POINTS:
+                raise ValueError("Invalid OSRM annotations")
+            durs.extend(_osrm_number(d) for d in durations)
+        if sum(durs) > MAX_DURATION_SECONDS:
+            raise ValueError("Invalid OSRM duration")
+        cum_km = _cumulative_km(coords)
+        if cum_km[-1] > MAX_ROUTE_KM:
+            raise ValueError("OSRM geometry too long")
+        if len(durs) == len(coords) - 1:
+            cum_s = [0.0]
+            for d in durs:
+                cum_s.append(cum_s[-1] + d)
+        else:   # no per-segment annotation: spread the total duration over the distance
+            cum_s = [total_s * (k / cum_km[-1]) if cum_km[-1] else 0.0 for k in cum_km]
+    except (KeyError, IndexError, TypeError, ValueError, AttributeError, OverflowError):
+        monitor.record_api_call("osrm", ok=False)
+        raise OsrmError("Malformed OSRM route") from None
     monitor.record_api_call("osrm", ok=True)
-    route = data["routes"][0]
-    coords = [(float(c[1]), float(c[0])) for c in route["geometry"]["coordinates"]]
-    durs = []
-    for leg in route.get("legs", []):
-        durs += (leg.get("annotation") or {}).get("duration") or []
-    if len(coords) < 2:
-        coords = [a, b]
-    cum_km = _cumulative_km(coords)
-    total_s = float(route.get("duration") or 0.0)
-    if len(durs) == len(coords) - 1:
-        cum_s = [0.0]
-        for d in durs:
-            cum_s.append(cum_s[-1] + float(d))
-    else:   # no per-segment annotation: spread the total duration over the distance
-        cum_s = [total_s * (k / cum_km[-1]) if cum_km[-1] else 0.0 for k in cum_km]
-    return {"coords": coords, "cum_s": cum_s, "distance_km": float(route.get("distance") or 0.0) / 1000}
+    return {"coords": coords, "cum_s": cum_s, "distance_km": distance_km}
 
 
 def get_osrm_route(profile: str, a: Tuple[float, float], b: Tuple[float, float]) -> Tuple[dict, bool]:
@@ -381,14 +443,27 @@ def get_osrm_route(profile: str, a: Tuple[float, float], b: Tuple[float, float])
 
 # --- Endpoints ------------------------------------------------------------------------------------------
 
-@router.get("")
-def get_route(from_lat: float = Query(..., ge=-90, le=90), from_lon: float = Query(..., ge=-180, le=180),
-              to_lat: float = Query(..., ge=-90, le=90), to_lon: float = Query(..., ge=-180, le=180),
-              depart_at: Optional[str] = Query(default=None, description="ISO 8601, naive = HCMC time; default now"),
-              profile: Profile = Query(default="driving")):
+class RouteIn(BaseModel):
+    from_lat: float = Field(..., ge=-90, le=90, allow_inf_nan=False)
+    from_lon: float = Field(..., ge=-180, le=180, allow_inf_nan=False)
+    to_lat: float = Field(..., ge=-90, le=90, allow_inf_nan=False)
+    to_lon: float = Field(..., ge=-180, le=180, allow_inf_nan=False)
+    depart_at: Optional[str] = None
+    profile: Profile = "driving"
+
+
+@router.get("", include_in_schema=False)
+@router.get("/", include_in_schema=False)
+def legacy_get_route():
+    raise HTTPException(status_code=405, detail="Use POST /route with a JSON body.", headers={"Allow": "POST"})
+
+
+@router.post("")
+def get_route(body: RouteIn):
     """Route from OSRM with the weather expected at each ~2 km sample when passing it."""
-    a, b = (from_lat, from_lon), (to_lat, to_lon)
-    depart = _parse_depart(depart_at)
+    a, b = (body.from_lat, body.from_lon), (body.to_lat, body.to_lon)
+    profile = body.profile
+    depart = _parse_depart(body.depart_at)
     _check_endpoints(a, b)
     if _haversine_km(a, b) > MAX_ROUTE_KM:
         raise _too_long()
@@ -405,9 +480,9 @@ def get_route(from_lat: float = Query(..., ge=-90, le=90), from_lon: float = Que
 
 class AlongWeatherIn(BaseModel):
     geometry: List[List[float]] = Field(..., min_length=2, max_length=MAX_INPUT_POINTS,
-                                        description="[[lat, lon], ...] e.g. the geometry returned by GET /route")
+                                        description="[[lat, lon], ...] e.g. the geometry returned by POST /route")
     depart_at: Optional[str] = None
-    duration_min: Optional[float] = Field(default=None, gt=0, le=24 * 60,
+    duration_min: Optional[float] = Field(default=None, gt=0, le=24 * 60, allow_inf_nan=False,
                                           description="total travel time; default from the profile's speed")
     profile: Profile = "driving"
 

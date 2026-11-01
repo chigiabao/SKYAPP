@@ -2,7 +2,9 @@
 import sqlite3
 from datetime import datetime, timedelta
 
-from routers import weather as weather_router
+from routers import weather as weather_router, weather_core
+from routers.weather_climatology import _clim_series, _climatology
+from routers.weather_series import _series
 
 OTHER = "om-10.3691-107.0976"   # Vung Tau cell (series_id == cell_id)
 WARD = "phuong-vung-tau"
@@ -29,24 +31,24 @@ def _write_history(path, cell_id, years=(2022, 2023), temp=40.0):
 
 
 def _hist_path():
-    return weather_router.HISTORY_DB_PATH
+    return weather_core.HISTORY_DB_PATH
 
 
 def test_reference_without_history_can_use_tsn_but_live_cannot(client):
     assert not _hist_path().exists()
-    assert weather_router._clim_series(OTHER) == "tsn"
+    assert _clim_series(OTHER) == "tsn"
     r = client.get("/weather/hourly", params={"location_id": WARD, "hours": 6})
     assert r.status_code == 503
     times = [datetime(2024, 6, 10, 14) + timedelta(hours=h) for h in range(6)]
-    reference = weather_router._series(times, None, False, OTHER)
+    reference = _series(times, None, False, OTHER)
     assert {i.source for i in reference} == {'climatology'}
 
 
 def test_cell_with_history_has_own_climatology(client):
     _write_history(_hist_path(), OTHER)
-    assert weather_router._clim_series(OTHER) == OTHER
-    hourly, daily = weather_router._climatology(OTHER)
-    tsn_hourly, _ = weather_router._climatology("tsn")
+    assert _clim_series(OTHER) == OTHER
+    hourly, daily = _climatology(OTHER)
+    tsn_hourly, _ = _climatology("tsn")
     assert abs(hourly.loc[(6, 10, 15), "temperature"] - 40.0) < 1e-6
     assert abs(tsn_hourly.loc[(6, 10, 15), "temperature"] - 40.0) > 1
     assert abs(daily.loc[(6, 10), "temp_max"] - 40.0) < 1e-6
@@ -54,19 +56,19 @@ def test_cell_with_history_has_own_climatology(client):
     assert hourly["uv_index"].isna().all()                       # not in history: no uv climatology
     assert client.get('/weather/hourly', params={'location_id': WARD, 'hours': 6}).status_code == 503
     times = [datetime(2024, 6, 10, 14) + timedelta(hours=h) for h in range(6)]
-    reference = weather_router._series(times, None, False, OTHER)
+    reference = _series(times, None, False, OTHER)
     assert {i.source for i in reference} == {'climatology'}
     assert all(abs(i.temperature - 40.0) < 0.05 for i in reference)
 
 
 def test_cell_without_history_rows_falls_back_to_tsn(client):
     _write_history(_hist_path(), "om-0.0000-0.0000")   # file exists, but only for another cell
-    assert weather_router._clim_series(OTHER) == "tsn"
+    assert _clim_series(OTHER) == "tsn"
 
 
 def test_short_history_falls_back_to_tsn(client):
     _write_history(_hist_path(), OTHER, years=(2023,))   # ~1 year < 2-year threshold
-    assert weather_router._clim_series(OTHER) == "tsn"
+    assert _clim_series(OTHER) == "tsn"
 
 
 def test_weather_db_rows_win_on_duplicate_hours(client, syn_db):
@@ -76,5 +78,5 @@ def test_weather_db_rows_win_on_duplicate_hours(client, syn_db):
                     "VALUES ('2022-06-10 15:00:00', 10.0, ?)", (OTHER,))
     con.close()
     weather_router.invalidate_climatology()
-    hourly, _ = weather_router._climatology(OTHER)
+    hourly, _ = _climatology(OTHER)
     assert abs(hourly.loc[(6, 10, 15), "temperature"] - (40.0 * 2 + 10.0) / 3) < 1e-6

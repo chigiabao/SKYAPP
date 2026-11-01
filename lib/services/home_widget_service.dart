@@ -7,16 +7,13 @@
 /// - Web / desktop: khong lam gi.
 ///
 /// Cap nhat: moi khi app tai xong du lieu truc tiep cua trang dau tien
-/// ([HomeWidgetUpdater]) va moi lan tac vu nen workmanager chay.
+/// (`HomeWidgetUpdater` trong providers/) va moi lan tac vu nen workmanager chay.
 library;
 
 import 'package:flutter/foundation.dart';
 import 'package:home_widget/home_widget.dart';
 
 import '../models/weather.dart';
-import '../providers/location_provider.dart';
-import '../providers/weather_provider.dart';
-import 'share_service.dart' show rainNext3h;
 
 /// Ten day du cua AppWidgetProvider (namespace Android cua app).
 const String kAndroidWidgetProvider =
@@ -87,42 +84,4 @@ Future<void> pushHomeWidget(HomeWidgetData d) async {
   } catch (e) {
     debugPrint('homeWidget: $e');
   }
-}
-
-/// Nghe [WeatherProvider]: khi du lieu TRUC TIEP (khong cache, khong xem lai)
-/// cua trang dau tien tai xong thi day len widget.
-class HomeWidgetUpdater {
-  HomeWidgetUpdater(
-    this._wp,
-    this._lp, {
-    this._push = pushHomeWidget,
-  }) {
-    _wp.addListener(_onChanged);
-  }
-
-  final WeatherProvider _wp;
-  final LocationProvider _lp;
-  final Future<void> Function(HomeWidgetData) _push;
-  WeatherData? _lastData;
-  HomeWidgetData? _last;
-
-  void _onChanged() {
-    final data = _wp.weatherData;
-    if (data == null || _wp.isReplay || _wp.isFromCache) return;
-    if (identical(data, _lastData)) return;
-    final first = _lp.pages.first.locationId;
-    if (_wp.locationId != first) return;
-    _lastData = data;
-    final d = HomeWidgetData.from(
-      placeName: _lp.placeById(first).name,
-      data: data,
-      nowHcm: _wp.nowHcm,
-      formatTempValue: _wp.formatTempValue,
-    );
-    if (d == _last) return;
-    _last = d;
-    _push(d);
-  }
-
-  void dispose() => _wp.removeListener(_onChanged);
 }

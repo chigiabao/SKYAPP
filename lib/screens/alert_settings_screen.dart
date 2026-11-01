@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -7,14 +8,19 @@ import '../models/units.dart';
 import '../models/weather_alerts.dart';
 import '../providers/planner_provider.dart';
 import '../providers/preferences_provider.dart';
-import '../providers/weather_provider.dart';
 import '../services/gps_service.dart';
 import '../ui/weather/design_tokens.dart';
 import '../ui/weather/glass_ink.dart';
-import '../ui/weather/widgets/glass_card.dart';
 import '../ui/weather/widgets/glass_page.dart';
-import '../utils/constants.dart';
+import '../ui/weather/widgets/ios_controls.dart';
+import '../ui/weather/widgets/ios_list.dart';
+import '../ui/weather/widgets/ios_page.dart';
+import '../ui/weather/widgets/ios_sheet.dart';
+import '../ui/weather/widgets/ios_toast.dart';
+import '../utils/forecast_format.dart';
+import '../utils/haptics.dart';
 import '../widgets/planner_cards.dart';
+import '../ui/weather/widgets/app_segmented_control.dart';
 
 /// Pham vi + buoc cua thanh truot nguong tung loai.
 class _Range {
@@ -105,24 +111,18 @@ class AlertSettingsScreen extends StatelessWidget {
   /// Nhiet do theo don vi nguoi dung chon (°C / °F); khong co provider -> °C.
   static String Function(double) _tempOf(BuildContext context) {
     try {
-      return context.read<WeatherProvider>().formatTemperature;
+      return context.read<PreferencesProvider>().units.tempText;
     } on ProviderNotFoundException {
       return _celsius;
     }
   }
 
   Widget _buildPage(BuildContext context) {
-    final theme = Theme.of(context);
     final ink = GlassInk.of(context);
     final planner = context.watch<PlannerProvider>();
     final s = planner.settings;
     final units = PreferencesProvider.unitsOf(context);
     final temp = _tempOf(context);
-    final mq = MediaQuery.of(context);
-    final gutter = Space.gutter(mq.size.width);
-    final hPad = mq.size.width > Space.contentMaxWidth + 2 * gutter
-        ? (mq.size.width - Space.contentMaxWidth) / 2
-        : gutter;
 
     Widget typeTile(AlertType t) {
       final on = s.isEnabled(t);
@@ -131,7 +131,7 @@ class AlertSettingsScreen extends StatelessWidget {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          SwitchListTile(
+          SwitchListTile.adaptive(
             contentPadding: EdgeInsets.zero,
             secondary: Icon(alertIcon(t), color: Palette.white),
             title: Text(
@@ -149,14 +149,14 @@ class AlertSettingsScreen extends StatelessWidget {
             onChanged: (v) => planner.setSettings(s.withEnabled(t, v)),
           ),
           if (on && value != null && r != null)
-            Slider(
+            IosSlider(
               value: value.clamp(r.min, r.max).toDouble(),
               min: r.min,
               max: r.max,
               divisions: r.divisions,
-              label: _fmt(t, value, units, temp),
-              semanticFormatterCallback: (v) =>
-                  'Ngưỡng ${_fmt(t, v, units, temp)}',
+              valueLabel: _fmt(t, value, units, temp),
+              semanticLabel: 'Ngưỡng ${t.label}',
+              semanticValue: (v) => _fmt(t, v, units, temp),
               onChanged: (v) => planner.setSettings(s.withThreshold(t, v)),
             ),
         ],
@@ -166,13 +166,10 @@ class AlertSettingsScreen extends StatelessWidget {
     String hour(int h) => '${h.toString().padLeft(2, '0')}:00';
 
     Future<void> pickHour(bool start) async {
-      final t = await showTimePicker(
-        context: context,
-        initialTime: TimeOfDay(
-          hour: start ? s.quietStart : s.quietEnd,
-          minute: 0,
-        ),
-        helpText: start ? 'Bắt đầu giờ yên lặng' : 'Kết thúc giờ yên lặng',
+      final t = await showIosTimeSheet(
+        context,
+        initial: TimeOfDay(hour: start ? s.quietStart : s.quietEnd, minute: 0),
+        title: start ? 'Bắt đầu giờ yên lặng' : 'Kết thúc giờ yên lặng',
       );
       if (t == null) return;
       planner.setSettings(
@@ -180,133 +177,109 @@ class AlertSettingsScreen extends StatelessWidget {
       );
     }
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          'Cài đặt cảnh báo',
-          style: AppTextStyles.heading2.copyWith(
-            color: theme.textTheme.titleLarge?.color,
+    return IosPageScaffold(
+      title: 'Cài đặt cảnh báo',
+      actions: [
+        IosBarTextButton(
+          label: 'Mặc định',
+          onPressed: () => planner.setSettings(const AlertSettings()),
+        ),
+      ],
+      children: [
+        IosListSection.padded(
+          header: 'Loại cảnh báo và ngưỡng',
+          footer: kAlertDisclaimer,
+          child: Material(
+            type: MaterialType.transparency,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [for (final t in AlertType.values) typeTile(t)],
+            ),
           ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => planner.setSettings(const AlertSettings()),
-            style: TextButton.styleFrom(
-              foregroundColor: Palette.white,
-              minimumSize: const Size(Touch.min, Touch.min),
-            ),
-            child: const Text('Mặc định'),
-          ),
-        ],
-      ),
-      body: ListView(
-        padding: EdgeInsets.fromLTRB(hPad, Space.s, hPad, Space.xxl),
-        children: [
-          GlassCard(
-            title: 'LOẠI CẢNH BÁO VÀ NGƯỠNG',
-            icon: Icons.tune_rounded,
-            footer: kAlertDisclaimer,
-            // Material rieng: ListTile ve hieu ung cham len day.
-            child: Material(
-              type: MaterialType.transparency,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [for (final t in AlertType.values) typeTile(t)],
-              ),
-            ),
-          ),
-          const SizedBox(height: Space.cardGap),
-          GlassCard(
-            title: 'THÔNG BÁO',
-            icon: Icons.notifications_none_rounded,
-            footer:
-                'Thông báo luôn hiện trong ứng dụng (lịch sử ở màn Cảnh báo). '
-                'Mức Nguy hiểm vẫn báo trong giờ yên lặng.',
-            child: Material(
-              type: MaterialType.transparency,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    'Mức ưu tiên tối thiểu',
+        const SizedBox(height: Space.cardGap),
+        IosListSection.padded(
+          header: 'THÔNG BÁO',
+          footer:
+              'Thông báo luôn hiện trong ứng dụng (lịch sử ở màn Cảnh báo). '
+              'Mức Nguy hiểm vẫn báo trong giờ yên lặng.',
+          child: Material(
+            type: MaterialType.transparency,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'Mức ưu tiên tối thiểu',
+                  style: TypeScale.body.copyWith(color: Palette.white),
+                ),
+                const SizedBox(height: Space.s),
+                AppSegmentedControl<AlertLevel>(
+                  segments: [
+                    for (final l in AlertLevel.values)
+                      AppSegment(value: l, label: l.label),
+                  ],
+                  selected: s.minNotifyLevel,
+                  onChanged: (v) =>
+                      planner.setSettings(s.copyWith(minNotifyLevel: v)),
+                ),
+                const SizedBox(height: Space.m),
+                Text(
+                  'Xét ${s.lookaheadHours} giờ tới',
+                  style: TypeScale.body.copyWith(color: Palette.white),
+                ),
+                IosSlider(
+                  value: s.lookaheadHours.toDouble(),
+                  min: 6,
+                  max: 48,
+                  divisions: 7,
+                  valueLabel: '${s.lookaheadHours} giờ',
+                  semanticLabel: 'Số giờ xét tới',
+                  semanticValue: (v) => '${v.round()} giờ tới',
+                  onChanged: (v) => planner.setSettings(
+                    s.copyWith(lookaheadHours: v.round()),
+                  ),
+                ),
+                SwitchListTile.adaptive(
+                  contentPadding: EdgeInsets.zero,
+                  secondary: const Icon(
+                    Icons.bedtime_outlined,
+                    color: Palette.white,
+                  ),
+                  title: Text(
+                    'Giờ yên lặng',
                     style: TypeScale.body.copyWith(color: Palette.white),
                   ),
-                  const SizedBox(height: Space.s),
-                  SegmentedButton<AlertLevel>(
-                    segments: [
-                      for (final l in AlertLevel.values)
-                        ButtonSegment(value: l, label: Text(l.label)),
+                  subtitle: Text(
+                    '${hour(s.quietStart)}–${hour(s.quietEnd)}',
+                    style: TypeScale.small.copyWith(color: ink.secondary),
+                  ),
+                  value: s.quietEnabled,
+                  onChanged: (v) =>
+                      planner.setSettings(s.copyWith(quietEnabled: v)),
+                ),
+                if (s.quietEnabled)
+                  Wrap(
+                    spacing: Space.s,
+                    children: [
+                      IosButton.tinted(
+                        onPressed: () => pickHour(true),
+                        icon: CupertinoIcons.moon,
+                        label: 'Từ ${hour(s.quietStart)}',
+                      ),
+                      IosButton.tinted(
+                        onPressed: () => pickHour(false),
+                        icon: CupertinoIcons.sunrise,
+                        label: 'Đến ${hour(s.quietEnd)}',
+                      ),
                     ],
-                    selected: {s.minNotifyLevel},
-                    showSelectedIcon: false,
-                    onSelectionChanged: (v) => planner.setSettings(
-                      s.copyWith(minNotifyLevel: v.first),
-                    ),
                   ),
-                  const SizedBox(height: Space.m),
-                  Text(
-                    'Xét ${s.lookaheadHours} giờ tới',
-                    style: TypeScale.body.copyWith(color: Palette.white),
-                  ),
-                  Slider(
-                    value: s.lookaheadHours.toDouble(),
-                    min: 6,
-                    max: 48,
-                    divisions: 7,
-                    label: '${s.lookaheadHours} giờ',
-                    semanticFormatterCallback: (v) => '${v.round()} giờ tới',
-                    onChanged: (v) => planner.setSettings(
-                      s.copyWith(lookaheadHours: v.round()),
-                    ),
-                  ),
-                  SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    secondary: const Icon(
-                      Icons.bedtime_outlined,
-                      color: Palette.white,
-                    ),
-                    title: Text(
-                      'Giờ yên lặng',
-                      style: TypeScale.body.copyWith(color: Palette.white),
-                    ),
-                    subtitle: Text(
-                      '${hour(s.quietStart)}–${hour(s.quietEnd)}',
-                      style: TypeScale.small.copyWith(color: ink.secondary),
-                    ),
-                    value: s.quietEnabled,
-                    onChanged: (v) =>
-                        planner.setSettings(s.copyWith(quietEnabled: v)),
-                  ),
-                  if (s.quietEnabled)
-                    Wrap(
-                      spacing: Space.s,
-                      children: [
-                        OutlinedButton(
-                          onPressed: () => pickHour(true),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: Palette.white,
-                            minimumSize: const Size(Touch.min, Touch.min),
-                          ),
-                          child: Text('Từ ${hour(s.quietStart)}'),
-                        ),
-                        OutlinedButton(
-                          onPressed: () => pickHour(false),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: Palette.white,
-                            minimumSize: const Size(Touch.min, Touch.min),
-                          ),
-                          child: Text('Đến ${hour(s.quietEnd)}'),
-                        ),
-                      ],
-                    ),
-                ],
-              ),
+              ],
             ),
           ),
-          const SizedBox(height: Space.cardGap),
-          _SystemNotifyCard(planner: planner),
-        ],
-      ),
+        ),
+        const SizedBox(height: Space.cardGap),
+        _SystemNotifyCard(planner: planner),
+      ],
     );
   }
 }
@@ -330,34 +303,26 @@ class _SystemNotifyCard extends StatelessWidget {
           !kIsWeb &&
           (defaultTargetPlatform == TargetPlatform.android ||
               defaultTargetPlatform == TargetPlatform.iOS);
-      final messenger = ScaffoldMessenger.of(context);
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(
-            'Chưa được cấp quyền thông báo (hoặc thiết bị không hỗ trợ). '
-            'Cảnh báo vẫn hiện trong ứng dụng.'
-            '${mobile ? '' : ' Bật thông báo cho Sky Weather trong Cài đặt '
-                      'của thiết bị.'}',
-          ),
-          action: mobile
-              ? SnackBarAction(
-                  label: 'Mở cài đặt',
-                  onPressed: () async {
-                    final opened = await const GeolocatorGps()
-                        .openAppSettings();
-                    if (!opened) {
-                      messenger.showSnackBar(
-                        const SnackBar(
-                          content: Text(
-                            'Vào Cài đặt > Sky Weather > Thông báo để bật lại.',
-                          ),
-                        ),
-                      );
-                    }
-                  },
-                )
-              : null,
-        ),
+      AppHaptics.warning();
+      showIosToast(
+        context,
+        'Chưa được cấp quyền thông báo (hoặc thiết bị không hỗ trợ). '
+        'Cảnh báo vẫn hiện trong ứng dụng.'
+        '${mobile ? '' : ' Bật thông báo cho Sky Weather trong Cài đặt '
+                  'của thiết bị.'}',
+        tone: IosToastTone.error,
+        actionLabel: mobile ? 'Mở cài đặt' : null,
+        onAction: mobile
+            ? () async {
+                final opened = await const GeolocatorGps().openAppSettings();
+                if (!opened && context.mounted) {
+                  showIosToast(
+                    context,
+                    'Vào Cài đặt > Sky Weather > Thông báo để bật lại.',
+                  );
+                }
+              }
+            : null,
       );
     }
   }
@@ -375,23 +340,22 @@ class _SystemNotifyCard extends StatelessWidget {
         : 'Đã hẹn ${plan.reminders.length} lần nhắc trong 48 giờ tới'
               '${plan.skippedQuiet > 0 ? ' · bỏ ${plan.skippedQuiet} lần trong giờ yên lặng' : ''}.';
     final quietLabel = planner.settings.quietEnabled
-        ? 'Giờ yên lặng ${planner.settings.quietStart}h–'
-              '${planner.settings.quietEnd}h. Tắt: lời nhắc bạn tự đặt vẫn '
+        ? 'Giờ yên lặng ${ForecastFormat.clock(planner.settings.quietStart, 0)}–'
+              '${ForecastFormat.clock(planner.settings.quietEnd, 0)}. Tắt: lời '
+              'nhắc bạn tự đặt vẫn '
               'được gửi.'
         : 'Giờ yên lặng đang tắt.';
-    return GlassCard(
-      title: 'THÔNG BÁO HỆ THỐNG',
-      icon: Icons.notifications_active_outlined,
-      footer:
-          'Android: kiểm tra nền khoảng mỗi giờ (hệ điều hành có thể giãn '
-          'ra), cảnh báo tự động tôn trọng giờ yên lặng và chống trùng. '
-          'Không gửi ở chế độ xem lại.',
+    return IosListSection.padded(
+      header: 'THÔNG BÁO HỆ THỐNG',
+      footer: systemNotifyFooter(
+        android: !kIsWeb && defaultTargetPlatform == TargetPlatform.android,
+      ),
       child: Material(
         type: MaterialType.transparency,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            SwitchListTile(
+            SwitchListTile.adaptive(
               contentPadding: EdgeInsets.zero,
               secondary: const Icon(
                 Icons.phone_android_rounded,
@@ -408,7 +372,7 @@ class _SystemNotifyCard extends StatelessWidget {
               value: n.system,
               onChanged: (v) => _toggle(context, v),
             ),
-            SwitchListTile(
+            SwitchListTile.adaptive(
               contentPadding: EdgeInsets.zero,
               secondary: const Icon(Icons.alarm_rounded, color: Palette.white),
               title: Text(
@@ -429,16 +393,15 @@ class _SystemNotifyCard extends StatelessWidget {
                 style: TypeScale.body.copyWith(color: Palette.white),
               ),
               const SizedBox(height: Space.s),
-              SegmentedButton<int>(
+              AppSegmentedControl<int>(
                 segments: [
                   for (final m in NotifySettings.minuteOptions)
-                    ButtonSegment(value: m, label: Text(_minutesLabel(m))),
+                    AppSegment(value: m, label: _minutesLabel(m)),
                 ],
-                selected: {n.minutesBefore},
-                showSelectedIcon: false,
-                onSelectionChanged: (v) => planner.setReminderMinutes(v.first),
+                selected: n.minutesBefore,
+                onChanged: planner.setReminderMinutes,
               ),
-              SwitchListTile(
+              SwitchListTile.adaptive(
                 contentPadding: EdgeInsets.zero,
                 secondary: const Icon(
                   Icons.bedtime_outlined,
@@ -469,3 +432,13 @@ class _SystemNotifyCard extends StatelessWidget {
     );
   }
 }
+
+/// Chu thich nhom "Thông báo hệ thống". Cau ve kiem tra nen chi dung tren
+/// Android (WorkManager); nen tang khac khong hien (web an toan: [kIsWeb]).
+@visibleForTesting
+String systemNotifyFooter({required bool android}) => [
+  if (android)
+    'Android: kiểm tra nền khoảng mỗi giờ (hệ điều hành có thể giãn ra).',
+  'Cảnh báo tự động tôn trọng giờ yên lặng và chống trùng. '
+      'Không gửi ở chế độ xem lại.',
+].join(' ');

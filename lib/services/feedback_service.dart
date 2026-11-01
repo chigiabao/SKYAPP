@@ -210,6 +210,9 @@ class FeedbackService {
   final http.Client _client;
   final String? _baseUrl;
 
+  /// Dong http.Client (chi khi noi tao service so huu no).
+  void close() => _client.close();
+
   /// Doc moi lan goi: ApiConfig.baseUrl co the doi luc chay.
   String get baseUrl => _baseUrl ?? ApiConfig.baseUrl;
   final Duration timeout;

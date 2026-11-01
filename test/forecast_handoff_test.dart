@@ -179,7 +179,7 @@ void main() {
       (_) async => _intervals(),
     );
     final chart = tester.widget<LineChart>(find.byType(LineChart));
-    expect(find.textContaining('Mốc 6h: AI dự báo'), findsOneWidget);
+    expect(find.textContaining('Lệch trung bình'), findsOneWidget);
     expect(chart.data.lineBarsData.last.spots[1].isNull(), isTrue);
     expect(chart.duration, Duration.zero);
     expect(find.byType(ChartReveal), findsOneWidget);

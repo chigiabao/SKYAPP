@@ -6,7 +6,7 @@ library;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import 'package:sky_weather_app/models/app_settings.dart';
+import 'package:sky_weather_app/services/app_settings_store.dart';
 import 'package:sky_weather_app/providers/location_provider.dart';
 import 'package:sky_weather_app/providers/planner_provider.dart';
 import 'package:sky_weather_app/providers/preferences_provider.dart';
@@ -33,7 +33,7 @@ class _BenThanhGps implements GpsService {
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  final settings = await AppSettings.load();
+  final settings = await AppSettingsStore.load();
   final s = Uri.base.queryParameters['s'] ?? 'trip_quick';
   final lp = LocationProvider();
   await lp.refreshPlaces();

@@ -8,71 +8,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../config/api_config.dart';
 import '../models/place.dart';
 import '../models/weather.dart';
+import 'weather_repository.dart';
 
-/// Loai loi khi goi backend.
-enum ApiErrorKind {
-  network,
-  timeout,
-  server,
-  invalidData,
-  badRequest,
-  notFound,
-}
-
-/// Loi khi goi backend. [message] la cau tieng Viet than thien de hien thi;
-/// chi tiet ky thuat chi ghi qua debugPrint.
-class ApiException implements Exception {
-  final ApiErrorKind kind;
-  final String message;
-
-  ApiException(this.kind) : message = messageFor(kind);
-
-  static String messageFor(ApiErrorKind kind) {
-    switch (kind) {
-      case ApiErrorKind.network:
-        return 'Không có kết nối mạng hoặc không tới được máy chủ.';
-      case ApiErrorKind.timeout:
-        return 'Máy chủ không phản hồi.';
-      case ApiErrorKind.server:
-        return 'Máy chủ đang gặp lỗi.';
-      case ApiErrorKind.invalidData:
-        return 'Dữ liệu từ máy chủ không hợp lệ.';
-      case ApiErrorKind.badRequest:
-        return 'Máy chủ không chấp nhận yêu cầu (thời điểm xem lại không hợp '
-            'lệ hoặc chưa được hỗ trợ).';
-      case ApiErrorKind.notFound:
-        return 'Máy chủ chưa hỗ trợ chức năng này.';
-    }
-  }
-
-  @override
-  String toString() => 'ApiException(${kind.name}): $message';
-}
-
-/// GET /locations/nearest: diem nam ngoai TP.HCM (404 co `detail`).
-class OutsideAreaException implements Exception {
-  const OutsideAreaException([this.message = defaultMessage]);
-
-  static const String defaultMessage = 'Ngoài vùng hỗ trợ (TP.HCM)';
-  final String message;
-
-  @override
-  String toString() => 'OutsideAreaException: $message';
-}
-
-/// Ket qua tai du lieu: tu mang hay tu cache.
-class WeatherResult {
-  final WeatherData data;
-  final bool fromCache;
-
-  /// Thoi diem luu cache (gio TP.HCM); null neu du lieu tu mang.
-  final DateTime? savedAt;
-
-  const WeatherResult(this.data, {required this.fromCache, this.savedAt});
-}
+export 'weather_repository.dart';
 
 /// API Service ket noi backend FastAPI (xem lib/config/api_config.dart).
-class ApiService {
+class ApiService implements WeatherRepository {
   /// v2: {"saved_at": ISO UTC, "payload": {current, hourly, daily, ai}}.
   /// Cache v1 (khong co saved_at) bi bo qua.
   static const String cacheKey = 'weather_cache_v2';
@@ -81,6 +22,7 @@ class ApiService {
   final String? _baseUrl;
 
   /// Doc moi lan goi: ApiConfig.baseUrl co the doi luc chay.
+  @override
   String get baseUrl => _baseUrl ?? ApiConfig.baseUrl;
   final Duration timeout;
 
@@ -90,12 +32,21 @@ class ApiService {
   /// Tra ve thoi diem that hien tai (thay duoc khi test).
   final DateTime Function() clock;
 
+  /// So cache dia diem toi da (ngoai diem mac dinh); cai luu cu nhat bi xoa
+  /// khi luu them. Mac dinh chi gioi han tren web: SharedPreferences la
+  /// localStorage (~5 MB) va moi lan tai truoc trang ke ben deu ghi cache.
+  /// null = khong gioi han.
+  final int? maxLocationCaches;
+
+  static const int webMaxLocationCaches = 8;
+
   ApiService({
     http.Client? client,
     this._baseUrl,
     this.timeout = ApiConfig.timeout,
     this.bundleTimeout = ApiConfig.bundleTimeout,
     DateTime Function()? clock,
+    this.maxLocationCaches = kIsWeb ? webMaxLocationCaches : null,
   }) : _client = client ?? http.Client(),
        clock = clock ?? DateTime.now;
 
@@ -124,6 +75,8 @@ class ApiService {
             : code == 404 || code == 405
             ? ApiErrorKind.notFound
             : ApiErrorKind.server,
+        statusCode: code,
+        detail: _detailOf(response),
       );
     }
     try {
@@ -131,6 +84,16 @@ class ApiService {
     } on FormatException catch (e) {
       debugPrint('ApiService: invalid JSON $uri: $e');
       throw ApiException(ApiErrorKind.invalidData);
+    }
+  }
+
+  /// `detail` trong than loi JSON (FastAPI); null neu khong co.
+  static String? _detailOf(http.Response response) {
+    try {
+      final body = jsonDecode(utf8.decode(response.bodyBytes));
+      return body is Map ? body['detail']?.toString() : null;
+    } catch (_) {
+      return null;
     }
   }
 
@@ -146,9 +109,14 @@ class ApiService {
     throw ApiException(ApiErrorKind.invalidData);
   }
 
-  /// GET /health (co the co latest_timestamp, data_age_hours).
-  Future<BackendHealth> fetchHealth() async =>
-      BackendHealth.fromJson(await _getTyped<Map<String, dynamic>>('/health'));
+  /// GET /health dang JSON tho (Cai dat > May chu: kiem tra truoc khi luu).
+  Future<Map<String, dynamic>> fetchHealthJson() =>
+      _getTyped<Map<String, dynamic>>('/health');
+
+  /// Dong http.Client; chi goi khi ApiService tu tao client (khong truyen
+  /// [client]) va khong dung nua.
+  @override
+  void close() => _client.close();
 
   /// Tham so query; [at] (gio TP.HCM) -> `at=...+07:00` (che do xem lai).
   /// [location] -> `location_id` (bo qua voi diem mac dinh "tsn" de giu
@@ -166,6 +134,7 @@ class ApiService {
     return result.isEmpty ? null : result;
   }
 
+  @override
   Future<Map<String, dynamic>> fetchCurrentRaw({
     DateTime? at,
     String? locationId,
@@ -174,6 +143,7 @@ class ApiService {
     _query(at, null, locationId),
   );
 
+  @override
   Future<List<dynamic>> fetchHourlyRaw({
     int hours = ApiConfig.hourlyHours,
     DateTime? at,
@@ -192,24 +162,17 @@ class ApiService {
     _query(at, {'days': '$days'}, locationId),
   );
 
-  /// GET /weather/ai-verify cho [locationId]. Diem mac dinh di qua
-  /// [fetchAIVerification] (lop gia trong test ghi de ham do).
+  /// GET /weather/ai-verify[?at=] cho diem mac dinh.
+  Future<AIVerification> fetchAIVerification({DateTime? at}) =>
+      fetchAIVerificationFor(Place.defaultId, at: at);
+
+  /// GET /weather/ai-verify cho [locationId]. Nem ApiException (notFound neu
+  /// backend chua co endpoint, invalidData neu sai dinh dang).
+  @override
   Future<AIVerification> fetchAIVerificationFor(
     String locationId, {
     DateTime? at,
-  }) => locationId == Place.defaultId
-      ? fetchAIVerification(at: at)
-      : _fetchAIVerification(at, locationId);
-
-  /// GET /weather/ai-verify[?at=]. Nem ApiException (notFound neu backend
-  /// chua co endpoint, invalidData neu sai dinh dang).
-  Future<AIVerification> fetchAIVerification({DateTime? at}) =>
-      _fetchAIVerification(at, null);
-
-  Future<AIVerification> _fetchAIVerification(
-    DateTime? at,
-    String? locationId,
-  ) async {
+  }) async {
     final json = await _getTyped<Map<String, dynamic>>(
       '/weather/ai-verify',
       _query(at, null, locationId),
@@ -225,19 +188,8 @@ class ApiService {
     }
   }
 
-  /// GET /weather/ai-forecast. Tra ve null neu endpoint chua san sang
-  /// (404, loi mang, sai dinh dang) - KHONG bao gio tra so lieu gia.
-  Future<AIForecast?> fetchAIForecast({DateTime? at}) async {
-    final raw = await _fetchAIRaw(at);
-    if (raw == null) return null;
-    try {
-      return AIForecast.fromJson(raw);
-    } on FormatException catch (e) {
-      debugPrint('ApiService: invalid AI forecast: $e');
-      return null;
-    }
-  }
-
+  /// GET /weather/ai-forecast tho; null neu endpoint chua san sang (404, loi
+  /// mang, sai dinh dang) - KHONG bao gio tra so lieu gia.
   Future<Map<String, dynamic>?> _fetchAIRaw([
     DateTime? at,
     String? locationId,
@@ -258,26 +210,29 @@ class ApiService {
   /// (cache chi chua du lieu truc tiep).
   /// Nem ApiException neu current/hourly/daily loi.
   Future<WeatherData> fetchWeatherData({DateTime? at}) =>
-      _fetchBundle(Place.defaultId, at);
-
-  /// Nhu [fetchWeatherData] cho dia diem [locationId]; cache rieng moi diem.
-  /// Diem mac dinh di qua [fetchWeatherData] (lop gia trong test ghi de ham
-  /// do).
-  Future<WeatherData> fetchWeatherDataFor(String locationId, {DateTime? at}) =>
-      locationId == Place.defaultId
-      ? fetchWeatherData(at: at)
-      : _fetchBundle(locationId, at);
+      fetchWeatherDataFor(Place.defaultId, at: at);
 
   /// baseUrl da biet khong co /weather/bundle (backend cu) -> goi 4 API le.
   String? _noBundleFor;
 
-  Future<WeatherData> _fetchBundle(String locationId, DateTime? at) async {
+  /// So lan [evictCache] theo id: request bat dau truoc khi dia diem bi xoa
+  /// khong ghi lai cache (neu khong se de lai cache mo coi).
+  final Map<String, int> _evictions = {};
+
+  /// Nhu [fetchWeatherData] cho dia diem [locationId]; cache rieng moi diem.
+  @override
+  Future<WeatherData> fetchWeatherDataFor(
+    String locationId, {
+    DateTime? at,
+  }) async {
+    final server = baseUrl;
+    final evictions = _evictions[locationId] ?? 0;
     final bundle =
         await _fetchCombined(locationId, at) ??
         await _fetchSeparate(locationId, at);
     final WeatherData data;
     try {
-      data = WeatherData.fromJson(bundle, locationName: ApiConfig.locationName);
+      data = WeatherData.fromJson(bundle);
     } on FormatException catch (e) {
       debugPrint('ApiService: invalid weather data: ${e.message}');
       throw ApiException(ApiErrorKind.invalidData);
@@ -285,7 +240,10 @@ class ApiService {
       debugPrint('ApiService: weather data type error: $e');
       throw ApiException(ApiErrorKind.invalidData);
     }
-    if (at == null) await _saveCache(bundle, locationId);
+    if (server != baseUrl) throw ApiException(ApiErrorKind.network);
+    if (at == null && (_evictions[locationId] ?? 0) == evictions) {
+      await _saveCache(bundle, locationId, server);
+    }
     return data;
   }
 
@@ -317,6 +275,7 @@ class ApiService {
       'daily': json['daily'],
       'ai': ai is Map<String, dynamic> ? ai : null,
       'forecast_error': json['forecast_error'],
+      'ai_error': json['ai_error'],
     };
   }
 
@@ -339,18 +298,6 @@ class ApiService {
     };
   }
 
-  /// Uu tien mang; neu loi thi dung cache (fromCache = true).
-  /// Nem lai loi goc neu khong co cache.
-  Future<WeatherResult> fetchWithCacheFallback() async {
-    try {
-      return WeatherResult(await fetchWeatherData(), fromCache: false);
-    } on ApiException {
-      final cached = await loadCachedResult();
-      if (cached != null) return cached;
-      rethrow;
-    }
-  }
-
   /// Khoa cache cua [locationId] (diem mac dinh giu khoa cu).
   static String cacheKeyFor(String locationId) =>
       locationId == Place.defaultId ? cacheKey : '${cacheKey}_$locationId';
@@ -358,44 +305,89 @@ class ApiService {
   Future<void> _saveCache(
     Map<String, dynamic> bundle,
     String locationId,
+    String server,
   ) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(
         cacheKeyFor(locationId),
         jsonEncode({
+          'server_url': ApiConfig.normalizeBaseUrl(server),
           'saved_at': clock().toUtc().toIso8601String(),
           'payload': bundle,
         }),
       );
+      await _pruneLocationCaches(prefs, locationId);
     } catch (e) {
       // Cache la tuy chon, bo qua loi
       debugPrint('ApiService: save cache failed: $e');
     }
   }
 
+  /// Giu toi da [maxLocationCaches] cache dia diem, xoa cai luu cu nhat
+  /// (khong xoa cache cua [keep] va cua diem mac dinh).
+  Future<void> _pruneLocationCaches(
+    SharedPreferences prefs,
+    String keep,
+  ) async {
+    final max = maxLocationCaches;
+    if (max == null) return;
+    final keepKey = cacheKeyFor(keep);
+    final others = [
+      for (final k in prefs.getKeys())
+        if (k.startsWith('${cacheKey}_') && k != keepKey) k,
+    ];
+    final excess = others.length + (keep == Place.defaultId ? 0 : 1) - max;
+    if (excess <= 0) return;
+    DateTime savedAt(String key) {
+      try {
+        final json = jsonDecode(prefs.getString(key) ?? '');
+        final at = json is Map ? json['saved_at'] : null;
+        return (at is String ? DateTime.tryParse(at) : null) ?? DateTime.utc(0);
+      } catch (_) {
+        return DateTime.utc(0);
+      }
+    }
+
+    final at = {for (final k in others) k: savedAt(k)};
+    others.sort((a, b) => at[a]!.compareTo(at[b]!));
+    for (final k in others.take(excess)) {
+      await prefs.remove(k);
+    }
+  }
+
+  @override
+  Future<void> evictCache(String locationId) async {
+    if (locationId == Place.defaultId) return;
+    _evictions[locationId] = (_evictions[locationId] ?? 0) + 1;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(cacheKeyFor(locationId));
+    } catch (e) {
+      debugPrint('ApiService: evict cache failed: $e');
+    }
+  }
+
   /// Doc cache v2; gio/ngay da qua bi loai bo. null neu khong co hoac hong.
-  Future<WeatherResult?> loadCachedResult() => _loadCached(Place.defaultId);
+  Future<WeatherResult?> loadCachedResult() =>
+      loadCachedResultFor(Place.defaultId);
 
-  /// Cache cua [locationId]; diem mac dinh di qua [loadCachedResult].
-  Future<WeatherResult?> loadCachedResultFor(String locationId) =>
-      locationId == Place.defaultId
-      ? loadCachedResult()
-      : _loadCached(locationId);
-
-  Future<WeatherResult?> _loadCached(String locationId) async {
+  /// Cache cua [locationId] (nhu [loadCachedResult]).
+  @override
+  Future<WeatherResult?> loadCachedResultFor(String locationId) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final raw = prefs.getString(cacheKeyFor(locationId));
       if (raw == null) return null;
       final json = jsonDecode(raw) as Map<String, dynamic>;
+      if (json['server_url'] != ApiConfig.normalizeBaseUrl(baseUrl)) {
+        return null;
+      }
       final savedAt = HcmTime.tryParse(json['saved_at'] as String?);
       final payload = json['payload'];
       if (savedAt == null || payload is! Map<String, dynamic>) return null;
-      final data = WeatherData.fromJson(
-        payload,
-        locationName: ApiConfig.locationName,
-      ).withoutPastItems(HcmTime.now(clock));
+      final data = WeatherData.fromJson(payload)
+          .withoutPastItems(HcmTime.now(clock));
       return WeatherResult(data, fromCache: true, savedAt: savedAt);
     } catch (e) {
       debugPrint('ApiService: load cache failed: $e');
@@ -403,15 +395,15 @@ class ApiService {
     }
   }
 
-  Future<WeatherData?> loadCache() async => (await loadCachedResult())?.data;
-
   // --- Dia diem / ban do ---------------------------------------------------
 
   /// GET /locations. Nem ApiException (notFound neu backend chua ho tro).
+  @override
   Future<List<Place>> fetchLocations() async =>
       Place.listFromJson(await _getTyped<List<dynamic>>('/locations'));
 
   /// GET /locations/search?q= (ket qua tot nhat truoc).
+  @override
   Future<List<Place>> searchLocations(String q) async => Place.listFromJson(
     await _getTyped<List<dynamic>>('/locations/search', {'q': q}),
   );
@@ -419,48 +411,23 @@ class ApiService {
   /// GET /locations/nearest. Nem [OutsideAreaException] khi may chu bao
   /// diem nam ngoai TP.HCM (404 co `detail` khac "Not Found"); ApiException
   /// voi loi khac (notFound = backend chua co endpoint).
+  @override
   Future<Place> nearestLocation(double lat, double lon) async {
-    final uri = Uri.parse('$baseUrl/locations/nearest').replace(
-      queryParameters: {
+    final Map<String, dynamic> json;
+    try {
+      json = await _getTyped<Map<String, dynamic>>('/locations/nearest', {
         'lat': lat.toStringAsFixed(5),
         'lon': lon.toStringAsFixed(5),
-      },
-    );
-    final http.Response response;
-    try {
-      response = await _client.get(uri).timeout(timeout);
-    } on TimeoutException {
-      throw ApiException(ApiErrorKind.timeout);
-    } catch (e) {
-      debugPrint('ApiService: network error /locations/nearest: $e');
-      throw ApiException(ApiErrorKind.network);
-    }
-    dynamic body;
-    try {
-      body = jsonDecode(utf8.decode(response.bodyBytes));
-    } catch (_) {
-      body = null;
-    }
-    if (response.statusCode == 404) {
-      final detail = body is Map ? body['detail']?.toString() : null;
-      if (detail != null && detail != 'Not Found') {
+      });
+    } on ApiException catch (e) {
+      final detail = e.detail;
+      if (e.statusCode == 404 && detail != null && detail != 'Not Found') {
         throw OutsideAreaException(detail);
       }
-      throw ApiException(ApiErrorKind.notFound);
-    }
-    if (response.statusCode != 200) {
-      final code = response.statusCode;
-      throw ApiException(
-        code == 400 || code == 422
-            ? ApiErrorKind.badRequest
-            : ApiErrorKind.server,
-      );
-    }
-    if (body is! Map<String, dynamic>) {
-      throw ApiException(ApiErrorKind.invalidData);
+      rethrow;
     }
     try {
-      return Place.fromJson(body);
+      return Place.fromJson(json);
     } on FormatException {
       throw ApiException(ApiErrorKind.invalidData);
     }
@@ -468,6 +435,7 @@ class ApiService {
 
   /// GET /weather/map[?offset_hours=][&at=]: moi o luoi mot muc.
   /// [offsetHours] 0..72 (0 thi khong gui, giu tuong thich backend cu).
+  @override
   Future<List<MapCell>> fetchMapCells({
     DateTime? at,
     int offsetHours = 0,
@@ -479,6 +447,7 @@ class ApiService {
   );
 
   /// GET /locations/boundary (GeoJSON).
+  @override
   Future<CityBoundary> fetchBoundary() async =>
       CityBoundary.fromGeoJson(await _getJson('/locations/boundary'));
 }

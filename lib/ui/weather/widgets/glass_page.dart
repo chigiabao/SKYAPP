@@ -2,14 +2,15 @@
 /// nen canh thoi tiet hien tai + theme kinh (chu trang, the kinh).
 library;
 
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../../../utils/constants.dart';
 import '../app_scene.dart';
 import '../design_tokens.dart';
 import '../glass_ink.dart';
 import '../weather_background.dart';
+import '../../../utils/theme.dart';
 import 'glass_card.dart';
 
 /// Theme cua app (sang/toi theo Cai dat) truoc khi bi theme kinh ghi de.
@@ -66,14 +67,12 @@ final Map<(SceneTheme, Brightness), ThemeData> _glassCache = {};
 
 ThemeData _buildGlassTheme(SceneTheme scene, ThemeData appTheme) {
   final GlassInk ink = GlassInk.forTheme(scene);
-  final ThemeData base = ThemeData(
-    useMaterial3: true,
+  final ThemeData base = appTheme.copyWith(
     brightness: Brightness.dark,
-    fontFamily: TypeScale.family,
     colorScheme: ColorScheme.dark(
       primary: ink.accent,
-      onPrimary: const Color(0xFF0B1F33),
-      secondary: AppColors.accentLight,
+      onPrimary: Palette.onWhite,
+      secondary: Tones.brandSoft,
       surface: const Color(0xFF1B2333),
       error: const Color(0xFFFFB4A9),
     ),
@@ -81,6 +80,18 @@ ThemeData _buildGlassTheme(SceneTheme scene, ThemeData appTheme) {
   const TextStyle w = TextStyle(color: Palette.white);
   final TextStyle s = TextStyle(color: ink.secondary);
   return base.copyWith(
+    cupertinoOverrideTheme: appTheme.cupertinoOverrideTheme?.copyWith(
+      brightness: Brightness.dark,
+      primaryColor: Palette.white,
+      barBackgroundColor: const Color(0xCC20242B),
+      // Moi chu Cupertino (tieu de lon, nut thanh dieu huong, picker) trang
+      // tren nen canh, ke ca khi app dang o giao dien sang.
+      textTheme: AppTheme.cupertinoTextTheme(
+        primary: Palette.white,
+        foreground: Palette.white,
+        secondary: ink.secondary,
+      ),
+    ),
     extensions: [GlassThemeMarker(ink)],
     scaffoldBackgroundColor: Colors.transparent,
     canvasColor: Colors.transparent,
@@ -121,28 +132,89 @@ ThemeData _buildGlassTheme(SceneTheme scene, ThemeData appTheme) {
       color: Colors.white,
       linearTrackColor: Color(0x33FFFFFF),
     ),
-    elevatedButtonTheme: ElevatedButtonThemeData(
-      style: ElevatedButton.styleFrom(
-        backgroundColor: Colors.white,
-        foregroundColor: const Color(0xFF0B1F33),
-        minimumSize: const Size(44, 44),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppSizes.borderRadiusS),
-        ),
-      ),
-    ),
+    // Nut Material con lai mang dang iOS: dac trang (chinh), trang mo
+    // (phu), chu trang dam (lien ket); bo 12, khong bong, khong gon song.
+    elevatedButtonTheme: ElevatedButtonThemeData(style: _iosFilled),
+    filledButtonTheme: FilledButtonThemeData(style: _iosFilled),
     textButtonTheme: TextButtonThemeData(
       style: TextButton.styleFrom(
         foregroundColor: Colors.white,
         minimumSize: const Size(44, 44),
+        textStyle: TypeScale.headline,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(Radii.button),
+        ),
       ),
     ),
     outlinedButtonTheme: OutlinedButtonThemeData(
       style: OutlinedButton.styleFrom(
         foregroundColor: Colors.white,
-        side: const BorderSide(color: Color(0x80FFFFFF)),
+        backgroundColor: Palette.subtleFill,
+        side: BorderSide.none,
         minimumSize: const Size(44, 44),
+        textStyle: TypeScale.headline,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(Radii.button),
+        ),
       ),
+    ),
+    chipTheme: ChipThemeData(
+      backgroundColor: Palette.subtleFill,
+      selectedColor: Palette.white,
+      disabledColor: Palette.subtleFill,
+      checkmarkColor: Palette.onWhite,
+      showCheckmark: true,
+      side: const BorderSide(color: Palette.border),
+      shape: const StadiumBorder(),
+      labelStyle: TypeScale.subhead.copyWith(
+        color: WidgetStateColor.resolveWith(
+          (states) => states.contains(WidgetState.selected)
+              ? Palette.onWhite
+              : Palette.white,
+        ),
+      ),
+      secondaryLabelStyle: TypeScale.subhead.copyWith(color: Palette.onWhite),
+      iconTheme: const IconThemeData(color: Palette.white, size: 16),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+    ),
+    inputDecorationTheme: InputDecorationTheme(
+      filled: true,
+      fillColor: Palette.subtleFill,
+      labelStyle: TextStyle(color: ink.secondary),
+      floatingLabelStyle: const TextStyle(color: Palette.white),
+      hintStyle: TextStyle(color: ink.secondary),
+      helperStyle: TextStyle(color: ink.secondary),
+      errorStyle: const TextStyle(color: Palette.dangerOnGlass),
+      errorMaxLines: 3,
+      contentPadding: const EdgeInsets.symmetric(
+        horizontal: Space.m,
+        vertical: Space.m,
+      ),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(Radii.field),
+        borderSide: BorderSide.none,
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(Radii.field),
+        borderSide: BorderSide.none,
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(Radii.field),
+        borderSide: const BorderSide(color: Palette.secondary),
+      ),
+      errorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(Radii.field),
+        borderSide: const BorderSide(color: Palette.dangerOnGlass),
+      ),
+      focusedErrorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(Radii.field),
+        borderSide: const BorderSide(color: Palette.dangerOnGlass, width: 1.5),
+      ),
+    ),
+    textSelectionTheme: const TextSelectionThemeData(
+      cursorColor: Palette.white,
+      selectionColor: Palette.highlight,
+      selectionHandleColor: Palette.white,
     ),
     switchTheme: SwitchThemeData(
       thumbColor: WidgetStateProperty.resolveWith(
@@ -161,7 +233,7 @@ ThemeData _buildGlassTheme(SceneTheme scene, ThemeData appTheme) {
       style: ButtonStyle(
         foregroundColor: WidgetStateProperty.resolveWith(
           (states) => states.contains(WidgetState.selected)
-              ? const Color(0xFF0B1F33)
+              ? Palette.onWhite
               : Colors.white,
         ),
         backgroundColor: WidgetStateProperty.resolveWith(
@@ -180,6 +252,46 @@ ThemeData _buildGlassTheme(SceneTheme scene, ThemeData appTheme) {
     datePickerTheme: appTheme.datePickerTheme,
   );
 }
+
+final ButtonStyle _iosFilled = ElevatedButton.styleFrom(
+  elevation: 0,
+  backgroundColor: Colors.white,
+  foregroundColor: Palette.onWhite,
+  disabledBackgroundColor: Palette.subtleFill,
+  disabledForegroundColor: Palette.secondary,
+  minimumSize: const Size(44, 48),
+  padding: const EdgeInsets.symmetric(horizontal: Space.l + 4),
+  textStyle: TypeScale.headline,
+  shape: RoundedRectangleBorder(
+    borderRadius: BorderRadius.circular(Radii.button),
+  ),
+);
+
+/// Theme Cupertino cua nen kinh (tieu de lon, thanh dieu huong, picker,
+/// nut Cupertino): chu trang. Phai dat bang widget [CupertinoTheme] rieng vi
+/// [Theme] long nhau dung lai CupertinoTheme cua to tien (bo qua
+/// `cupertinoOverrideTheme`).
+CupertinoThemeData glassCupertinoTheme(SceneTheme scene) =>
+    _cupertinoCache[scene] ??= CupertinoThemeData(
+      brightness: Brightness.dark,
+      primaryColor: Palette.white,
+      primaryContrastingColor: Palette.onWhite,
+      barBackgroundColor: Palette.navBar,
+      scaffoldBackgroundColor: const Color(0x00000000),
+      textTheme: AppTheme.cupertinoTextTheme(
+        primary: Palette.white,
+        foreground: Palette.white,
+        secondary: GlassInk.forTheme(scene).secondary,
+      ),
+    );
+
+final Map<SceneTheme, CupertinoThemeData> _cupertinoCache = {};
+
+/// Theme kinh day du (Material + Cupertino) cho mot cay con.
+Widget glassThemed(SceneTheme scene, ThemeData appTheme, Widget child) => Theme(
+  data: glassThemeFor(scene, appTheme),
+  child: CupertinoTheme(data: glassCupertinoTheme(scene), child: child),
+);
 
 /// Nen canh + theme kinh cho mot man hinh phu. [child] thuong la Scaffold
 /// (nen trong suot nho theme).
@@ -216,7 +328,10 @@ class GlassPage extends StatelessWidget {
                 st,
                 MediaQuery.maybeHighContrastOf(context) ?? false,
               ),
-              child: child,
+              child: CupertinoTheme(
+                data: glassCupertinoTheme(st),
+                child: child,
+              ),
             ),
           ),
         ),

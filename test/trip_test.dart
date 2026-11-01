@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -25,6 +26,8 @@ import 'package:sky_weather_app/services/route_service.dart';
 import 'package:sky_weather_app/services/trip_location.dart';
 import 'package:sky_weather_app/services/trip_notifier.dart';
 import 'package:sky_weather_app/ui/weather/app_scene.dart';
+import 'package:sky_weather_app/ui/weather/widgets/home_navigation.dart';
+import 'package:sky_weather_app/ui/weather/widgets/home_tab_scope.dart';
 import 'package:sky_weather_app/utils/theme.dart';
 
 // Du lieu gia CHI dung trong test.
@@ -263,14 +266,19 @@ void main() {
       expect(route.availableSampleCount, 0);
       expect(route.hasCompleteForecastCoverage, isFalse);
       expect(route.hasCompleteHazardCoverage, isFalse);
-      expect(route.samples.every((s) => s.hazard == RouteHazard.unknown), isTrue);
+      expect(
+        route.samples.every((s) => s.hazard == RouteHazard.unknown),
+        isTrue,
+      );
       expect(routeHazardScore(route), greaterThan(0));
       expect(routeWeatherSummary(route), contains('Chưa có dự báo'));
-      expect(routeCoverageNote(route), contains('không đồng nghĩa tuyến an toàn'));
       expect(
-        routeWeatherPolylines(route).every(
-          (p) => p.color == hazardColor(RouteHazard.unknown),
-        ),
+        routeCoverageNote(route),
+        contains('không đồng nghĩa tuyến an toàn'),
+      );
+      expect(
+        routeWeatherPolylines(route)
+            .every((p) => p.color == hazardColor(RouteHazard.unknown)),
         isTrue,
       );
     });
@@ -287,41 +295,119 @@ void main() {
       expect(route.hasCompleteForecastCoverage, isTrue);
       expect(route.hasCompleteHazardCoverage, isFalse);
       expect(route.hasOwnModelForecasts, isTrue);
-      expect(route.samples.every((s) => s.hazard == RouteHazard.unknown), isTrue);
-      expect(routeWeatherSummary(route), contains('Chưa đủ dữ liệu'));
-      expect(routeCoverageNote(route), contains('không dự báo dông hay gió giật'));
+      expect(
+        route.samples.every((s) => s.hazard == RouteHazard.lowRain),
+        isTrue,
+      );
+      expect(route.hasCompleteRainCoverage, isTrue);
+      expect(routeHazardScore(route), 0);
+      expect(routeWeatherSummary(route), contains('10%'));
+      expect(routeWeatherSummary(route), contains('0.0 mm/giờ'));
+      expect(routeWeatherSummary(route), isNot(contains('an toàn')));
+      expect(
+        routeCoverageNote(route),
+        contains('chưa đủ cơ sở loại trừ dông và gió giật'),
+      );
       samples.first.addAll({'precipitation': 12.0, 'alert': true});
       expect(TripRoute.fromJson(body).samples.first.hazard, RouteHazard.heavy);
     });
 
-    test('legacy fields distinguish complete, partial and unknown coverage', () {
-      final body = _routeJson(_line, HcmTime.now(_clock), stormLat: -1);
-      final complete = TripRoute.fromJson(body);
-      expect(complete.hasCompleteHazardCoverage, isTrue);
-      expect(complete.samples.first.hazard, RouteHazard.none);
+    test('AI rain, partial and invalid data stay distinct from low rain', () {
+      final body = _limitedRouteJson(_line, HcmTime.now(_clock), ownAi: true);
       final samples = body['samples'] as List<Map<String, dynamic>>;
-      samples.last.addAll({
-        'temperature': null,
-        'precipitation': null,
-        'rain_probability': null,
-        'weather_code': null,
-        'wind_gusts': null,
-        'source': null,
-      });
-      final partial = TripRoute.fromJson(body);
-      expect(partial.availableSampleCount, samples.length - 1);
-      expect(partial.hasCompleteForecastCoverage, isFalse);
-      expect(partial.hasCompleteHazardCoverage, isFalse);
-      expect(routeWeatherSummary(partial), contains('chưa đầy đủ'));
-      expect(partial.samples.last.hazard, RouteHazard.unknown);
+      samples.first['rain_probability'] = 0.8;
+      samples.last['precipitation'] = null;
+      final route = TripRoute.fromJson(body);
+      expect(route.samples.first.hazard, RouteHazard.rain);
+      expect(route.samples.last.hazard, RouteHazard.unknown);
+      expect(route.hasCompleteRainCoverage, isFalse);
+      expect(route.hasCompleteHazardCoverage, isFalse);
+      expect(
+        routeWeatherSummary(route),
+        contains('${samples.length - 1}/${samples.length} điểm'),
+      );
+      expect(routeWeatherSummary(route), contains('80%'));
+      expect(
+        hazardColor(RouteHazard.lowRain),
+        isNot(hazardColor(RouteHazard.none)),
+      );
+      expect(
+        hazardColor(RouteHazard.lowRain),
+        isNot(hazardColor(RouteHazard.unknown)),
+      );
+      for (final invalid in [null, -0.1, double.nan, double.infinity]) {
+        final sample = RouteSample(
+          point: const LatLng(10.7, 106.7),
+          eta: HcmTime.now(_clock),
+          source: 'ai',
+          precipitation: invalid,
+          rainProbability: 0.1,
+        );
+        expect(sample.rainAssessmentComplete, isFalse);
+        expect(sample.hazard, RouteHazard.unknown);
+      }
     });
 
-    test('GET /route: tham so + parse', () async {
+    test(
+      'summary keeps known rain maximum when the other metric is missing',
+      () {
+        final body = _limitedRouteJson(_line, HcmTime.now(_clock), ownAi: true);
+        final samples = body['samples'] as List<Map<String, dynamic>>;
+        samples.last.addAll({'precipitation': 3.0, 'rain_probability': null});
+        var route = TripRoute.fromJson(body);
+        expect(routeWeatherSummary(route), contains('3.0 mm/giờ'));
+        expect(routeWeatherSummary(route), contains('10%'));
+        expect(routeWeatherSummary(route), contains('Đủ chỉ số mưa'));
+        expect(route.samples.last.hazard, RouteHazard.rain);
+        samples.first.addAll({'precipitation': null, 'rain_probability': 0.9});
+        route = TripRoute.fromJson(body);
+        expect(routeWeatherSummary(route), contains('90%'));
+        expect(routeWeatherSummary(route), contains('3.0 mm/giờ'));
+        for (final s in samples) {
+          s['rain_probability'] = null;
+        }
+        route = TripRoute.fromJson(body);
+        expect(routeWeatherSummary(route), contains('chưa rõ xác suất'));
+        expect(routeWeatherSummary(route), contains('3.0 mm/giờ'));
+        expect(route.hasCompleteRainCoverage, isFalse);
+      },
+    );
+
+    test(
+      'legacy fields distinguish complete, partial and unknown coverage',
+      () {
+        final body = _routeJson(_line, HcmTime.now(_clock), stormLat: -1);
+        final complete = TripRoute.fromJson(body);
+        expect(complete.hasCompleteHazardCoverage, isTrue);
+        expect(complete.samples.first.hazard, RouteHazard.none);
+        final samples = body['samples'] as List<Map<String, dynamic>>;
+        samples.last.addAll({
+          'temperature': null,
+          'precipitation': null,
+          'rain_probability': null,
+          'weather_code': null,
+          'wind_gusts': null,
+          'source': null,
+        });
+        final partial = TripRoute.fromJson(body);
+        expect(partial.availableSampleCount, samples.length - 1);
+        expect(partial.hasCompleteForecastCoverage, isFalse);
+        expect(partial.hasCompleteHazardCoverage, isFalse);
+        expect(routeWeatherSummary(partial), contains('chưa đầy đủ'));
+        expect(partial.samples.last.hazard, RouteHazard.unknown);
+      },
+    );
+
+    test('POST /route: GPS only in JSON body + parse', () async {
       late Uri seen;
+      late Map<String, dynamic> sent;
       final svc = RouteService(
         baseUrl: 'http://x',
         client: MockClient((req) async {
           seen = req.url;
+          expect(req.method, 'POST');
+          expect(req.headers['content-type'], contains('application/json'));
+          sent = jsonDecode(req.body) as Map<String, dynamic>;
           return http.Response.bytes(
             utf8.encode(
               jsonEncode(_routeJson(_line, DateTime.utc(2026, 10, 17, 14))),
@@ -337,8 +423,14 @@ void main() {
         profile: TripProfile.cycling,
       );
       expect(seen.path, '/route');
-      expect(seen.queryParameters['profile'], 'cycling');
-      expect(seen.queryParameters['depart_at'], '2026-10-17T14:00:00+07:00');
+      expect(seen.hasQuery, isFalse);
+      expect(seen.toString(), 'http://x/route');
+      expect(sent['from_lat'], 10.7);
+      expect(sent['from_lon'], 106.7);
+      expect(sent['to_lat'], 10.8);
+      expect(sent['to_lon'], 106.7);
+      expect(sent['profile'], 'cycling');
+      expect(sent['depart_at'], '2026-10-17T14:00:00+07:00');
       expect(r.geometry, hasLength(11));
       expect(r.alert, isTrue);
       expect(r.worstAlert!.isStorm, isTrue);
@@ -627,17 +719,25 @@ void main() {
       Size size = const Size(390, 2600),
       double textScale = 1,
       _FakeRoutes? routes,
+      _FakeApi? api,
+      Widget Function(Widget screen)? wrap,
     }) async {
       tester.view.physicalSize = size;
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.reset);
       final trip = TripProvider(
         routes: routes ?? _FakeRoutes(),
-        api: _FakeApi(),
+        api: api ?? _FakeApi(),
         location: _FakeLocation(),
         notifier: _FakeNotifier(),
         clock: _clock,
         tickEvery: null,
+      );
+      final screen = TripScreen(
+        locations: LocationProvider(apiService: _FakeApi()),
+        showTiles: false,
+        gps: _FakeGps(),
+        quickStart: quickStart,
       );
       await tester.pumpWidget(
         MultiProvider(
@@ -660,12 +760,7 @@ void main() {
               ),
               child: AppSceneScope(child: child!),
             ),
-            home: TripScreen(
-              locations: LocationProvider(apiService: _FakeApi()),
-              showTiles: false,
-              gps: _FakeGps(),
-              quickStart: quickStart,
-            ),
+            home: wrap == null ? screen : wrap(screen),
           ),
         ),
       );
@@ -673,9 +768,57 @@ void main() {
       return trip;
     }
 
+    testWidgets('Ra ngoài: mo lai tab khi du lieu > 10 phut -> tai lai', (
+      tester,
+    ) async {
+      final saved = _real;
+      addTearDown(() => _real = saved);
+      final api = _FakeApi();
+      final selected = ValueNotifier(HomeTab.trip);
+      final reselect = ChangeNotifier();
+      addTearDown(selected.dispose);
+      addTearDown(reselect.dispose);
+      final trip = await pump(
+        tester,
+        quickStart: true,
+        api: api,
+        wrap: (screen) => HomeTabScope(
+          tab: HomeTab.trip,
+          selected: selected,
+          reselected: reselect,
+          child: screen,
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+      // Tieu de trung voi nhan tab.
+      expect(find.text('Ra ngoài'), findsOneWidget);
+      expect(find.text('Chuyến đi'), findsNothing);
+      expect(api.nearestCalls, 1);
+      expect(find.textContaining('Cập nhật 14:20'), findsOneWidget);
+
+      Future<void> reopen() async {
+        selected.value = HomeTab.today;
+        selected.value = HomeTab.trip;
+        await tester.pump();
+        await tester.pump();
+      }
+
+      // Con moi: khong tai lai.
+      _real = saved.add(const Duration(minutes: 5));
+      await reopen();
+      expect(api.nearestCalls, 1);
+      // Qua 10 phut: tai lai + gio cap nhat moi.
+      _real = saved.add(const Duration(minutes: 11));
+      await reopen();
+      expect(api.nearestCalls, 2);
+      expect(find.textContaining('Cập nhật 14:31'), findsOneWidget);
+      trip.dispose();
+    });
+
     testWidgets('ke hoach, dang di (nut lon), ket thuc', (tester) async {
       final trip = await pump(tester);
-      expect(find.text('Chuyến đi'), findsOneWidget);
+      expect(find.text('Ra ngoài'), findsOneWidget);
       expect(find.text('Có tuyến đường'), findsOneWidget);
       expect(find.text('LỊCH SỬ CHUYẾN ĐI'), findsOneWidget);
 
@@ -690,7 +833,7 @@ void main() {
       expect(find.text('Không thao tác khi đang lái xe'), findsOneWidget);
       final pause = find.ancestor(
         of: find.text('Tạm dừng'),
-        matching: find.byType(SizedBox),
+        matching: find.byType(ConstrainedBox),
       );
       expect(tester.getSize(pause.first).height, greaterThanOrEqualTo(64));
 
@@ -717,12 +860,12 @@ void main() {
       // Nut lon >= 64 dp, nut phu >= 48 dp.
       final big = find.ancestor(
         of: find.text('Bắt đầu theo dõi'),
-        matching: find.byType(FilledButton),
+        matching: find.byType(CupertinoButton),
       );
       expect(tester.getSize(big).height, greaterThanOrEqualTo(64));
       final pick = find.ancestor(
         of: find.text('Chọn điểm đến'),
-        matching: find.byType(OutlinedButton),
+        matching: find.byType(CupertinoButton),
       );
       expect(tester.getSize(pick).height, greaterThanOrEqualTo(48));
       await tester.tap(pick);
@@ -744,9 +887,15 @@ void main() {
       await tester.pump();
       await tester.pump();
       expect(tester.takeException(), isNull);
-      await tester.scrollUntilVisible(find.text('Chọn điểm đến'), 200);
-      await tester.tap(find.text('Chọn điểm đến'));
-      await tester.pump();
+      final destination = find.widgetWithText(CupertinoButton, 'Chọn điểm đến');
+      await tester.scrollUntilVisible(destination, 200);
+      await tester.ensureVisible(destination);
+      await tester.pumpAndSettle();
+      expect(destination.hitTestable(), findsOneWidget);
+      await tester.tap(destination.hitTestable());
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(find.text('Xe máy'), -200);
+      expect(find.text('Xe máy'), findsOneWidget);
       expect(tester.takeException(), isNull);
       trip.dispose();
     });
@@ -755,8 +904,11 @@ void main() {
       testWidgets('limited route coverage (own AI: $ownAi)', (tester) async {
         final trip = await pump(
           tester,
+          size: const Size(320, 3000),
+          textScale: 2,
           routes: _FakeRoutes(
-            build: (geo, depart) => _limitedRouteJson(geo, depart, ownAi: ownAi),
+            build: (geo, depart) =>
+                _limitedRouteJson(geo, depart, ownAi: ownAi),
           ),
         );
         await trip.planRoute(
@@ -771,8 +923,9 @@ void main() {
         expect(find.text(routeCoverageNote(trip.plan!)!), findsOneWidget);
         expect(
           find.text('Chưa đủ dữ liệu để kết luận giờ đi tốt nhất.'),
-          findsOneWidget,
+          ownAi ? findsNothing : findsOneWidget,
         );
+        expect(tester.takeException(), isNull);
         expect(
           find.text('Không có đoạn mưa lớn, dông hay gió giật trên tuyến.'),
           findsNothing,

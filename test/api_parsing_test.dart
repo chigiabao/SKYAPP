@@ -86,7 +86,6 @@ void main() {
     test('current weather', () {
       final c = CurrentWeather.fromJson(
         jsonDecode(_currentJson) as Map<String, dynamic>,
-        locationName: 'HCM',
       );
       expect(c.temperature, 26.2);
       expect(c.feelsLike, 32.6);
@@ -103,7 +102,7 @@ void main() {
         'timestamp': '2026-10-10T23:00:00',
         'temperature': 26,
         'humidity': null,
-      }, locationName: 'HCM');
+      });
       expect(c.humidity, isNull);
       expect(c.pressure, isNull);
       expect(c.feelsLike, isNull);
@@ -115,7 +114,7 @@ void main() {
         'hourly': jsonDecode(_hourlyJson),
         'daily': jsonDecode(_dailyJson),
         'ai': null,
-      }, locationName: 'HCM');
+      });
       expect(data.hourlyForecast, hasLength(1));
       expect(data.hourlyForecast.first.precipitation, 42); // 41.5 -> 42 %
       expect(data.dailyForecast.single.precipitationMm, 13.49);
@@ -159,15 +158,20 @@ void main() {
         baseUrl: 'http://test',
       );
       await expectLater(
-        offline.fetchWithCacheFallback(),
+        offline.fetchWeatherData(),
         throwsA(isA<ApiException>()),
       );
+      expect(await offline.loadCachedResult(), isNull);
 
       await ApiService(
         client: _client(),
         baseUrl: 'http://test',
       ).fetchWeatherData();
-      final result = await offline.fetchWithCacheFallback();
+      await expectLater(
+        offline.fetchWeatherData(),
+        throwsA(isA<ApiException>()),
+      );
+      final result = (await offline.loadCachedResult())!;
       expect(result.fromCache, isTrue);
       expect(result.data.current.lastUpdated, DateTime.utc(2026, 10, 10, 23));
     });

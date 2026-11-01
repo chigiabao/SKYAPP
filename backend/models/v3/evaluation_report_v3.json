@@ -1,0 +1,857 @@
+{
+ "model_version": "lgbm-hcmc-global-v3-20261023",
+ "test_window": [
+  "2025-10-01 00:00:00",
+  "2026-10-21 23:00:00"
+ ],
+ "test_mean_score_served": {
+  "temperature_mae": 0.54539,
+  "rain_f1": 0.57445,
+  "rain_brier": 0.10509,
+  "baseline_persistence_mae": 1.81731,
+  "baseline_climatology_mae": 1.08844,
+  "baseline_persistence_f1": 0.48075,
+  "baseline_climatology_f1": 0.45187,
+  "baseline_climatology_brier": 0.13021,
+  "rain_brier_skill": 0.19293,
+  "beats_baselines": true,
+  "cells": 67,
+  "rows": 620621
+ },
+ "test_mean_score_model_only": {
+  "temperature_mae": 0.54555,
+  "rain_f1": 0.57445,
+  "rain_brier": 0.10509,
+  "baseline_persistence_mae": 1.81731,
+  "baseline_climatology_mae": 1.08844,
+  "baseline_persistence_f1": 0.48075,
+  "baseline_climatology_f1": 0.45187,
+  "baseline_climatology_brier": 0.13021,
+  "rain_brier_skill": 0.19293,
+  "beats_baselines": true,
+  "cells": 67,
+  "rows": 620621
+ },
+ "test_bootstrap_ci": {
+  "method": "block bootstrap, 7-day blocks of test days (56 blocks), 1000 replicates, pooled over cells, percentile 95 % CI",
+  "n_boot": 1000,
+  "block_days": 7,
+  "blocks": 56,
+  "days": 386,
+  "1h": {
+   "mae_model": {
+    "value": 0.3403,
+    "ci95": [
+     0.32175,
+     0.35977
+    ]
+   },
+   "mae_persistence": {
+    "value": 0.68676,
+    "ci95": [
+     0.66913,
+     0.70679
+    ]
+   },
+   "mae_climatology": {
+    "value": 1.08836,
+    "ci95": [
+     1.01915,
+     1.16822
+    ]
+   },
+   "mae_gain_vs_best_baseline": {
+    "value": 0.34646,
+    "ci95": [
+     0.31404,
+     0.37857
+    ]
+   },
+   "f1_model": {
+    "value": 0.67911,
+    "ci95": [
+     0.65373,
+     0.70165
+    ]
+   },
+   "f1_persistence": {
+    "value": 0.66069,
+    "ci95": [
+     0.6353,
+     0.68296
+    ]
+   },
+   "f1_climatology": {
+    "value": 0.45225,
+    "ci95": [
+     0.41551,
+     0.48174
+    ]
+   },
+   "f1_gain_vs_best_baseline": {
+    "value": 0.01842,
+    "ci95": [
+     0.01336,
+     0.02323
+    ]
+   },
+   "brier_model": {
+    "value": 0.08267,
+    "ci95": [
+     0.06849,
+     0.09662
+    ]
+   },
+   "brier_model_uncalibrated": {
+    "value": 0.08267,
+    "ci95": [
+     0.06849,
+     0.09662
+    ]
+   },
+   "brier_climatology": {
+    "value": 0.13019,
+    "ci95": [
+     0.10854,
+     0.15223
+    ]
+   },
+   "bss": {
+    "value": 0.36501,
+    "ci95": [
+     0.3409,
+     0.3882
+    ]
+   }
+  },
+  "3h": {
+   "mae_model": {
+    "value": 0.58425,
+    "ci95": [
+     0.55159,
+     0.61918
+    ]
+   },
+   "mae_persistence": {
+    "value": 1.75291,
+    "ci95": [
+     1.67292,
+     1.83196
+    ]
+   },
+   "mae_climatology": {
+    "value": 1.08842,
+    "ci95": [
+     1.01866,
+     1.16848
+    ]
+   },
+   "mae_gain_vs_best_baseline": {
+    "value": 0.50416,
+    "ci95": [
+     0.43704,
+     0.58136
+    ]
+   },
+   "f1_model": {
+    "value": 0.53826,
+    "ci95": [
+     0.50139,
+     0.5706
+    ]
+   },
+   "f1_persistence": {
+    "value": 0.44701,
+    "ci95": [
+     0.40734,
+     0.48308
+    ]
+   },
+   "f1_climatology": {
+    "value": 0.45226,
+    "ci95": [
+     0.41513,
+     0.48187
+    ]
+   },
+   "f1_gain_vs_best_baseline": {
+    "value": 0.086,
+    "ci95": [
+     0.05881,
+     0.0953
+    ]
+   },
+   "brier_model": {
+    "value": 0.11293,
+    "ci95": [
+     0.09316,
+     0.13322
+    ]
+   },
+   "brier_model_uncalibrated": {
+    "value": 0.11293,
+    "ci95": [
+     0.09316,
+     0.13322
+    ]
+   },
+   "brier_climatology": {
+    "value": 0.13021,
+    "ci95": [
+     0.10861,
+     0.15214
+    ]
+   },
+   "bss": {
+    "value": 0.13272,
+    "ci95": [
+     0.10481,
+     0.16077
+    ]
+   }
+  },
+  "6h": {
+   "mae_model": {
+    "value": 0.71163,
+    "ci95": [
+     0.67344,
+     0.74987
+    ]
+   },
+   "mae_persistence": {
+    "value": 3.01225,
+    "ci95": [
+     2.83865,
+     3.18241
+    ]
+   },
+   "mae_climatology": {
+    "value": 1.08855,
+    "ci95": [
+     1.01922,
+     1.16999
+    ]
+   },
+   "mae_gain_vs_best_baseline": {
+    "value": 0.37692,
+    "ci95": [
+     0.31287,
+     0.44943
+    ]
+   },
+   "f1_model": {
+    "value": 0.50954,
+    "ci95": [
+     0.47398,
+     0.54158
+    ]
+   },
+   "f1_persistence": {
+    "value": 0.33587,
+    "ci95": [
+     0.29138,
+     0.37792
+    ]
+   },
+   "f1_climatology": {
+    "value": 0.45227,
+    "ci95": [
+     0.41411,
+     0.48266
+    ]
+   },
+   "f1_gain_vs_best_baseline": {
+    "value": 0.05727,
+    "ci95": [
+     0.03383,
+     0.08118
+    ]
+   },
+   "brier_model": {
+    "value": 0.11967,
+    "ci95": [
+     0.09881,
+     0.14102
+    ]
+   },
+   "brier_model_uncalibrated": {
+    "value": 0.11967,
+    "ci95": [
+     0.09881,
+     0.14102
+    ]
+   },
+   "brier_climatology": {
+    "value": 0.13023,
+    "ci95": [
+     0.10803,
+     0.15213
+    ]
+   },
+   "bss": {
+    "value": 0.08108,
+    "ci95": [
+     0.05672,
+     0.10581
+    ]
+   }
+  },
+  "all": {
+   "mae_model": {
+    "value": 0.54536,
+    "ci95": [
+     0.51597,
+     0.57651
+    ]
+   },
+   "mae_persistence": {
+    "value": 1.81709,
+    "ci95": [
+     1.72646,
+     1.90653
+    ]
+   },
+   "mae_climatology": {
+    "value": 1.08844,
+    "ci95": [
+     1.019,
+     1.1689
+    ]
+   },
+   "mae_gain_vs_best_baseline": {
+    "value": 0.54308,
+    "ci95": [
+     0.47705,
+     0.61895
+    ]
+   },
+   "f1_model": {
+    "value": 0.57362,
+    "ci95": [
+     0.54136,
+     0.60129
+    ]
+   },
+   "f1_persistence": {
+    "value": 0.48123,
+    "ci95": [
+     0.44622,
+     0.51433
+    ]
+   },
+   "f1_climatology": {
+    "value": 0.45226,
+    "ci95": [
+     0.41482,
+     0.48198
+    ]
+   },
+   "f1_gain_vs_best_baseline": {
+    "value": 0.09239,
+    "ci95": [
+     0.07841,
+     0.10468
+    ]
+   },
+   "brier_model": {
+    "value": 0.10509,
+    "ci95": [
+     0.08698,
+     0.12409
+    ]
+   },
+   "brier_model_uncalibrated": {
+    "value": 0.10509,
+    "ci95": [
+     0.08698,
+     0.12409
+    ]
+   },
+   "brier_climatology": {
+    "value": 0.13021,
+    "ci95": [
+     0.10872,
+     0.15206
+    ]
+   },
+   "bss": {
+    "value": 0.19295,
+    "ci95": [
+     0.17019,
+     0.21564
+    ]
+   }
+  }
+ },
+ "rain_calibration": {
+  "selection": {
+   "1h": {
+    "candidates": {
+     "none": {
+      "val_es_brier": 0.063869,
+      "val_es_ece": 0.01626,
+      "val_select_brier": 0.078772,
+      "val_select_ece": 0.00707
+     },
+     "isotonic": {
+      "val_es_brier": 0.063282,
+      "val_es_ece": 0.0,
+      "val_select_brier": 0.07889,
+      "val_select_ece": 0.01247
+     },
+     "platt": {
+      "val_es_brier": 0.063364,
+      "val_es_ece": 0.00226,
+      "val_select_brier": 0.078955,
+      "val_select_ece": 0.01316
+     }
+    },
+    "chosen": "none",
+    "isotonic_knots": 342,
+    "platt": {
+     "method": "platt",
+     "a": 1.0576003806105874,
+     "b": -0.2100485478630407
+    }
+   },
+   "3h": {
+    "candidates": {
+     "none": {
+      "val_es_brier": 0.083122,
+      "val_es_ece": 0.01767,
+      "val_select_brier": 0.105278,
+      "val_select_ece": 0.00647
+     },
+     "isotonic": {
+      "val_es_brier": 0.082549,
+      "val_es_ece": 0.0,
+      "val_select_brier": 0.105747,
+      "val_select_ece": 0.01815
+     },
+     "platt": {
+      "val_es_brier": 0.082635,
+      "val_es_ece": 0.00221,
+      "val_select_brier": 0.105706,
+      "val_select_ece": 0.01889
+     }
+    },
+    "chosen": "none",
+    "isotonic_knots": 336,
+    "platt": {
+     "method": "platt",
+     "a": 1.106324295956351,
+     "b": -0.11078373094040084
+    }
+   },
+   "6h": {
+    "candidates": {
+     "none": {
+      "val_es_brier": 0.089735,
+      "val_es_ece": 0.01665,
+      "val_select_brier": 0.112241,
+      "val_select_ece": 0.00845
+     },
+     "isotonic": {
+      "val_es_brier": 0.089248,
+      "val_es_ece": 0.0,
+      "val_select_brier": 0.112447,
+      "val_select_ece": 0.01597
+     },
+     "platt": {
+      "val_es_brier": 0.089367,
+      "val_es_ece": 0.00391,
+      "val_select_brier": 0.112448,
+      "val_select_ece": 0.01774
+     }
+    },
+    "chosen": "none",
+    "isotonic_knots": 363,
+    "platt": {
+     "method": "platt",
+     "a": 1.0856207380232394,
+     "b": -0.09424653035202914
+    }
+   }
+  },
+  "test": {
+   "1h": {
+    "brier_uncalibrated": 0.082671,
+    "brier_served": 0.082671,
+    "brier_climatology": 0.130193,
+    "ece_uncalibrated": 0.00719,
+    "ece_served": 0.00719,
+    "reliability_uncalibrated": [
+     [
+      0.0234,
+      0.0256,
+      390526
+     ],
+     [
+      0.1432,
+      0.1542,
+      55528
+     ],
+     [
+      0.2476,
+      0.2653,
+      34519
+     ],
+     [
+      0.3477,
+      0.3697,
+      26942
+     ],
+     [
+      0.4493,
+      0.4749,
+      22462
+     ],
+     [
+      0.5495,
+      0.5716,
+      20950
+     ],
+     [
+      0.6499,
+      0.6712,
+      19894
+     ],
+     [
+      0.7499,
+      0.7594,
+      19264
+     ],
+     [
+      0.8493,
+      0.8445,
+      17967
+     ],
+     [
+      0.9384,
+      0.9321,
+      12569
+     ]
+    ],
+    "reliability_served": [
+     [
+      0.0234,
+      0.0256,
+      390526
+     ],
+     [
+      0.1432,
+      0.1542,
+      55528
+     ],
+     [
+      0.2476,
+      0.2653,
+      34519
+     ],
+     [
+      0.3477,
+      0.3697,
+      26942
+     ],
+     [
+      0.4493,
+      0.4749,
+      22462
+     ],
+     [
+      0.5495,
+      0.5716,
+      20950
+     ],
+     [
+      0.6499,
+      0.6712,
+      19894
+     ],
+     [
+      0.7499,
+      0.7594,
+      19264
+     ],
+     [
+      0.8493,
+      0.8445,
+      17967
+     ],
+     [
+      0.9384,
+      0.9321,
+      12569
+     ]
+    ]
+   },
+   "3h": {
+    "brier_uncalibrated": 0.112926,
+    "brier_served": 0.112926,
+    "brier_climatology": 0.130207,
+    "ece_uncalibrated": 0.01865,
+    "ece_served": 0.01865,
+    "reliability_uncalibrated": [
+     [
+      0.0282,
+      0.0378,
+      328559
+     ],
+     [
+      0.1453,
+      0.1792,
+      93937
+     ],
+     [
+      0.2469,
+      0.279,
+      59828
+     ],
+     [
+      0.3478,
+      0.3744,
+      42532
+     ],
+     [
+      0.4484,
+      0.4538,
+      32671
+     ],
+     [
+      0.5477,
+      0.5348,
+      25595
+     ],
+     [
+      0.6475,
+      0.6158,
+      19056
+     ],
+     [
+      0.7461,
+      0.6944,
+      13243
+     ],
+     [
+      0.8353,
+      0.7624,
+      4840
+     ],
+     [
+      0.9137,
+      0.7965,
+      226
+     ]
+    ],
+    "reliability_served": [
+     [
+      0.0282,
+      0.0378,
+      328559
+     ],
+     [
+      0.1453,
+      0.1792,
+      93937
+     ],
+     [
+      0.2469,
+      0.279,
+      59828
+     ],
+     [
+      0.3478,
+      0.3744,
+      42532
+     ],
+     [
+      0.4484,
+      0.4538,
+      32671
+     ],
+     [
+      0.5477,
+      0.5348,
+      25595
+     ],
+     [
+      0.6475,
+      0.6158,
+      19056
+     ],
+     [
+      0.7461,
+      0.6944,
+      13243
+     ],
+     [
+      0.8353,
+      0.7624,
+      4840
+     ],
+     [
+      0.9137,
+      0.7965,
+      226
+     ]
+    ]
+   },
+   "6h": {
+    "brier_uncalibrated": 0.119674,
+    "brier_served": 0.119674,
+    "brier_climatology": 0.130233,
+    "ece_uncalibrated": 0.02416,
+    "ece_served": 0.02416,
+    "reliability_uncalibrated": [
+     [
+      0.0316,
+      0.0456,
+      319824
+     ],
+     [
+      0.1444,
+      0.1854,
+      105079
+     ],
+     [
+      0.2464,
+      0.281,
+      61924
+     ],
+     [
+      0.3476,
+      0.3711,
+      42371
+     ],
+     [
+      0.4485,
+      0.4516,
+      33786
+     ],
+     [
+      0.5474,
+      0.5188,
+      27055
+     ],
+     [
+      0.6455,
+      0.5983,
+      18243
+     ],
+     [
+      0.7437,
+      0.6466,
+      9725
+     ],
+     [
+      0.8297,
+      0.6581,
+      2264
+     ],
+     [
+      0.9072,
+      0.8667,
+      15
+     ]
+    ],
+    "reliability_served": [
+     [
+      0.0316,
+      0.0456,
+      319824
+     ],
+     [
+      0.1444,
+      0.1854,
+      105079
+     ],
+     [
+      0.2464,
+      0.281,
+      61924
+     ],
+     [
+      0.3476,
+      0.3711,
+      42371
+     ],
+     [
+      0.4485,
+      0.4516,
+      33786
+     ],
+     [
+      0.5474,
+      0.5188,
+      27055
+     ],
+     [
+      0.6455,
+      0.5983,
+      18243
+     ],
+     [
+      0.7437,
+      0.6466,
+      9725
+     ],
+     [
+      0.8297,
+      0.6581,
+      2264
+     ],
+     [
+      0.9072,
+      0.8667,
+      15
+     ]
+    ]
+   }
+  }
+ },
+ "fallback_analysis": [
+  {
+   "cell_id": "om-8.6819-106.5892",
+   "horizon": "1h",
+   "fails": [
+    "mae"
+   ],
+   "val_select_before": {
+    "mae": 0.2149,
+    "mae_persistence": 0.198,
+    "mae_climatology": 0.6418,
+    "f1": 0.6736,
+    "f1_persistence": 0.6684,
+    "f1_climatology": 0.4333,
+    "brier": 0.09214,
+    "brier_climatology": 0.1464
+   },
+   "val_select_after_mae": 0.1949,
+   "rule": {
+    "temperature_weight": 0.25
+   },
+   "test_model_only": {
+    "mae": 0.2375,
+    "f1": 0.699,
+    "brier": 0.0733,
+    "beats": false
+   },
+   "test_served": {
+    "mae": 0.2063,
+    "f1": 0.699,
+    "brier": 0.0733,
+    "mae_persistence": 0.2107,
+    "mae_climatology": 0.8258,
+    "f1_persistence": 0.6901,
+    "f1_climatology": 0.443,
+    "brier_climatology": 0.13002,
+    "beats": true
+   }
+  }
+ ],
+ "cells_beating_baselines_test": {
+  "served": 62,
+  "model_only": 62,
+  "cells": 67
+ }
+}

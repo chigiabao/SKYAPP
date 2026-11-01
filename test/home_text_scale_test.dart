@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -7,67 +8,62 @@ import 'package:sky_weather_app/models/app_settings.dart';
 import 'package:sky_weather_app/models/weather.dart';
 import 'package:sky_weather_app/providers/weather_provider.dart';
 import 'package:sky_weather_app/screens/home_screen.dart';
-import 'package:sky_weather_app/services/api_service.dart';
 import 'package:sky_weather_app/ui/weather/widgets/hourly_strip.dart';
 import 'package:sky_weather_app/utils/formatters.dart';
 import 'package:sky_weather_app/utils/theme.dart';
+import 'package:sky_weather_app/widgets/ai_forecast_card.dart';
+
+import 'support/fake_weather_repository.dart';
 
 /// Du lieu gia CHI dung trong test (khong goi mang).
-class _FakeApi extends ApiService {
-  final DateTime now;
-  _FakeApi(this.now);
-
-  @override
-  Future<WeatherData> fetchWeatherData({DateTime? at}) async {
-    final base = HcmTime.startOfHour(now);
-    return WeatherData(
-      current: CurrentWeather(
-        locationName: 'TP. Hồ Chí Minh',
-        temperature: 26.2,
-        feelsLike: 32.6,
-        condition: WeatherCondition.cloudy,
-        lastUpdated: base,
-        humidity: 93,
-        windSpeed: 11.8,
-        windGusts: 27.6,
-        windDirection: 135,
-        cloudCover: 91,
-        precipitationMm: 0.4,
-        pressure: 1011.3,
-        visibilityKm: 16.96,
-      ),
-      hourlyForecast: [
-        for (var i = 0; i < 12; i++)
-          HourlyForecast(
-            time: base.add(Duration(hours: i)),
-            temperature: 25.7,
-            condition: WeatherCondition.rainy,
-            rainProbability: 1.0,
-          ),
+WeatherData _fakeWeather(DateTime now) {
+  final base = HcmTime.startOfHour(now);
+  return WeatherData(
+    current: CurrentWeather(
+      temperature: 26.2,
+      feelsLike: 32.6,
+      condition: WeatherCondition.cloudy,
+      lastUpdated: base,
+      humidity: 93,
+      windSpeed: 11.8,
+      windGusts: 27.6,
+      windDirection: 135,
+      cloudCover: 91,
+      precipitationMm: 0.4,
+      pressure: 1011.3,
+      visibilityKm: 16.96,
+    ),
+    hourlyForecast: [
+      for (var i = 0; i < 12; i++)
+        HourlyForecast(
+          time: base.add(Duration(hours: i)),
+          temperature: 25.7,
+          condition: WeatherCondition.rainy,
+          rainProbability: 1.0,
+        ),
+    ],
+    dailyForecast: [
+      for (var i = 0; i < 7; i++)
+        DailyForecast(
+          date: base.add(Duration(days: i)),
+          tempMin: 24,
+          tempMax: 30.4,
+          condition: WeatherCondition.showers,
+          precipitationMm: i == 0 ? 0.4 : 113.5,
+          precipitationMedian: i == 0 ? 0.4 : 12.6,
+          rainDayProbability: i.isEven ? 1.0 : null,
+        ),
+    ],
+    aiForecast: AIForecast(
+      issuedAt: base,
+      modelVersion: 'lgbm-test',
+      predictions: const [
+        AIPrediction(timeLabel: '1h', temperature: 26, rainProbability: 0.11),
+        AIPrediction(timeLabel: '3h', temperature: 25, rainProbability: 1.0),
+        AIPrediction(timeLabel: '6h', temperature: 25, rainProbability: 0.16),
       ],
-      dailyForecast: [
-        for (var i = 0; i < 7; i++)
-          DailyForecast(
-            date: base.add(Duration(days: i)),
-            tempMin: 24,
-            tempMax: 30.4,
-            condition: WeatherCondition.showers,
-            precipitationMm: i == 0 ? 0.4 : 113.5,
-            precipitationMedian: i == 0 ? 0.4 : 12.6,
-            rainDayProbability: i.isEven ? 1.0 : null,
-          ),
-      ],
-      aiForecast: AIForecast(
-        issuedAt: base,
-        modelVersion: 'lgbm-test',
-        predictions: const [
-          AIPrediction(timeLabel: '1h', temperature: 26, rainProbability: 0.11),
-          AIPrediction(timeLabel: '3h', temperature: 25, rainProbability: 1.0),
-          AIPrediction(timeLabel: '6h', temperature: 25, rainProbability: 0.16),
-        ],
-      ),
-    );
-  }
+    ),
+  );
 }
 
 Future<void> _pumpHome(
@@ -81,7 +77,7 @@ Future<void> _pumpHome(
 
   final now = HcmTime.now();
   final provider = WeatherProvider(
-    apiService: _FakeApi(now),
+    apiService: FakeWeatherRepository.fixed((_) => _fakeWeather(now)),
     initialSettings: const AppSettings(),
   );
 
@@ -118,10 +114,11 @@ void main() {
             scale: scale,
             theme: dark ? AppTheme.darkTheme : AppTheme.lightTheme,
           );
-          expect(find.text('TP. Hồ Chí Minh'), findsOneWidget);
+          expect(find.text('Tân Sơn Nhất'), findsOneWidget);
 
           // Cuon qua toan bo trang; ghi nhan cac the da hien.
           final seen = <String>{};
+          var sawCompactAi = false;
           for (final conditions in [false, true]) {
             if (conditions) {
               final scrollable = find
@@ -147,26 +144,44 @@ void main() {
               await tester.pump();
               expect(
                 tester
-                    .widget<SegmentedButton<bool>>(
-                      find.byType(SegmentedButton<bool>),
+                    .widget<CupertinoSlidingSegmentedControl<bool>>(
+                      find.byType(CupertinoSlidingSegmentedControl<bool>),
                     )
-                    .selected,
-                {true},
+                    .groupValue,
+                true,
               );
             }
-            for (var i = 0; i < 10; i++) {
+            final position = tester
+                .state<ScrollableState>(
+                  find
+                      .descendant(
+                        of: find.byType(CustomScrollView),
+                        matching: find.byType(Scrollable),
+                      )
+                      .first,
+                )
+                .position;
+            for (var i = 0; i < 40; i++) {
+              final ai = find.byType(AIForecastCard);
+              if (ai.evaluate().isNotEmpty) {
+                expect(tester.widget<AIForecastCard>(ai).compact, isTrue);
+                sawCompactAi = true;
+              }
               for (final t in ['THEO GIỜ', 'DỰ BÁO 7 NGÀY', 'CHỈ SỐ UV']) {
                 if (find.text(t).evaluate().isNotEmpty) seen.add(t);
               }
+              final before = position.pixels;
               await tester.drag(
                 find.byType(CustomScrollView),
                 const Offset(0, -300),
               );
               await tester.pump();
               expect(tester.takeException(), isNull);
+              if (position.pixels == before) break;
             }
           }
           expect(seen, containsAll(['THEO GIỜ', 'DỰ BÁO 7 NGÀY', 'CHỈ SỐ UV']));
+          expect(sawCompactAi, isTrue);
           // Bat ky RenderFlex overflow nao se nem FlutterError -> takeException.
           expect(tester.takeException(), isNull);
         },

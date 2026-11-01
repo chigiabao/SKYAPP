@@ -5,19 +5,25 @@ Run AFTER scripts/train_global_v3.py (it reads metadata_v3.json for the per-cell
 the existing rain models, and merges new keys into evaluation_v3.json without touching old ones).
 If train_global_v3.py is re-run, re-run this script too.
 
+Split: the four windows of train_global_v3.py (train / val_es / val_select / test). Rows before
+2021-01-01 are not used here (memory/time budget; the base v3 point models use all years).
+Early stopping and the legacy conformal offset use val_es; the serving gate uses val_select.
+
 1. Temperature interval: LightGBM quantile models p10 / p90 for 1/3/6 h. Served interval =
-   [min(q10, point), max(q90, point)] widened/narrowed by a split-conformal offset fitted on val
-   (CQR) - applied only if raw val coverage is outside 80% +/- 3 pp. Coverage reported on test.
-2. Rain probability calibration: isotonic regression checked on val (fit on 2024-07-08..09-30,
-   checked on 10-01..12-24). Applied (refit on the whole val) only if it lowers the Brier score
-   on the checking half by >= 1 %. Brier / reliability reported on test.
+   [min(q10, point), max(q90, point)] widened/narrowed by a split-conformal offset fitted on val_es
+   (CQR) - applied only if raw coverage is outside 80% +/- 3 pp. Coverage reported on test.
+   (Superseded at serving time by train_global_v3_interval.py, which must run after this script.)
+2. Rain probability calibration: done by train_global_v3.py (serving_policy_v3.json: fitted on val_es,
+   method chosen on val_select). If that file exists this script fits no calibrator and reports the
+   served (policy-applied) probabilities. Legacy path without it: isotonic fit on the first half of val_es,
+   checked on the second half, applied (refit on all val_es) only if Brier improves >= 1 %.
 3. New targets, 1/3/6 h: humidity, wind_speed, wind_gusts (L2 regression, metric MAE) and
    precipitation_mm (expected value, Tweedie objective; metric RMSE, because the mean is the
    RMSE-optimal forecast and MAE rewards always predicting 0 mm; MAE is reported too).
    Baselines: persistence (value at t) and per-cell climatology (train mean by target month x hour).
 
 SERVING GATE ("verify before extending"): a cell counts as a win for a target when the model's
-metric is lower than BOTH baselines at ALL three horizons on the test window. A target is
+metric is lower than BOTH baselines at ALL three horizons on the val_select window. A target is
 enabled in predict_for_location only if it wins in >= 80 % of the evaluated cells. Disabled
 targets stay in evaluation_v3.json but are never served.
 
@@ -59,7 +65,8 @@ GATE_SHARE = 0.80
 COVERAGE_TARGET = 0.80
 COVERAGE_TOL = 0.03
 ISO_MIN_GAIN = 0.01
-ISO_FIT_END = pd.Timestamp("2024-09-30 23:00")
+ISO_FIT_END = pd.Timestamp("2024-03-31 23:00")   # legacy calibration: first half of val_es
+EXT_DATA_START = pd.Timestamp("2021-01-01 00:00")
 NEW_TARGETS = {          # name -> (source column, objective, primary metric)
     "humidity": ("humidity", "regression", "mae"),
     "wind_speed": ("wind_speed", "regression", "mae"),
@@ -84,8 +91,8 @@ def load(con, static, snapshot) -> pd.DataFrame:
     frames = []
     for cid in sorted(snapshot)[:SMOKE or None]:
         first, last, _ = snapshot[cid]
-        df = pd.read_sql("SELECT * FROM hourly WHERE cell_id = ? AND timestamp <= ? ORDER BY timestamp",
-                         con, params=(cid, last))
+        df = pd.read_sql("SELECT * FROM hourly WHERE cell_id = ? AND timestamp >= ? AND timestamp <= ? "
+                         "ORDER BY timestamp", con, params=(cid, str(EXT_DATA_START - pd.Timedelta(days=2)), last))
         df["timestamp"] = pd.to_datetime(df["timestamp"])
         df = df.drop_duplicates("timestamp").set_index("timestamp")
         df = df.reindex(pd.date_range(df.index.min(), df.index.max(), freq="h"))
@@ -99,7 +106,7 @@ def load(con, static, snapshot) -> pd.DataFrame:
             for name, (src, _, _) in NEW_TARGETS.items():
                 g[f"{name}_target_{h}h"] = df[src].shift(-h).astype(np.float32)
         g["cell_id"] = cid
-        g = g[g.timestamp >= pd.Timestamp(first)].dropna(subset=cols)
+        g = g[g.timestamp >= max(pd.Timestamp(first), EXT_DATA_START)].dropna(subset=cols)
         frames.append(g)
     return pd.concat(frames, ignore_index=True)
 
@@ -166,6 +173,57 @@ def reliability(p, y, bins=10):
     return out
 
 
+def select_new_targets(val, predictions, clim):
+    """Freeze the serving gate from validation only, before inspecting final test."""
+    cells = sorted(set(val.cell_id))
+    gate = {}
+    for name, (src, _, metric) in NEW_TARGETS.items():
+        wins = []
+        for h in HORIZONS:
+            tt = val.timestamp + pd.Timedelta(hours=h)
+            baseline = clim.reindex(pd.MultiIndex.from_arrays([val.cell_id, tt.dt.month, tt.dt.hour]))
+            f = pd.DataFrame({"cell_id": val.cell_id.values, "y": val[f"{name}_target_{h}h"].values,
+                              "m": predictions[f"{name}_{h}h"], "p": val[src].values,
+                              "c": baseline[name].values}).replace([np.inf, -np.inf], np.nan).dropna()
+            errors = f[["m", "p", "c"]].sub(f.y, axis=0)
+            losses = errors.abs() if metric == "mae" else errors ** 2
+            scores = losses.groupby(f.cell_id).mean()
+            wins.append((scores.m < scores[["p", "c"]].min(axis=1)).reindex(cells, fill_value=False))
+        per_cell = pd.concat(wins, axis=1).all(axis=1)
+        share = float(per_cell.mean()) if cells else 0.0
+        gate[name] = {"metric": metric, "selection_split": "validation", "cells_won": int(per_cell.sum()),
+                      "cells": len(cells), "share": round(share, 4), "enabled": share >= GATE_SHARE,
+                      "won": per_cell.to_dict()}
+    return gate
+
+
+def merge_evaluation(ev, metrics, enabled):
+    """Add extension metrics while preserving the base rain metrics and their climatology."""
+    for cid, e in ev.items():
+        src = e.get("alias_of", cid)
+        mm = metrics[metrics.cell_id == src]
+        if mm.empty:
+            continue
+        for h in ("1h", "3h", "6h"):
+            r = mm[mm.horizon == h].iloc[0]
+            e[f"temperature_interval_coverage_{h}"] = round(r["cov"], 4)
+            e[f"temperature_interval_coverage_raw_{h}"] = round(r.cov_raw, 4)
+            e[f"temperature_interval_width_{h}"] = round(r.width, 3)
+            e[f"rain_ece_{h}"] = round(r.ece_served, 4)
+            for n, (_, _, metric) in NEW_TARGETS.items():
+                for met in ("mae", "rmse") if n == "precipitation_mm" else ("mae",):
+                    e[f"{n}_{met}_{h}"] = round(r[f"{n}_{met}_m"], 3)
+                    e[f"baseline_persistence_{n}_{met}_{h}"] = round(r[f"{n}_{met}_p"], 3)
+                    e[f"baseline_climatology_{n}_{met}_{h}"] = round(r[f"{n}_{met}_c"], 3)
+        for n, (_, _, metric) in NEW_TARGETS.items():
+            e[f"beats_baselines_{n}"] = bool((mm[f"{n}_{metric}_m"] <
+                                             mm[[f"{n}_{metric}_p", f"{n}_{metric}_c"]].min(axis=1)).all())
+        e["gate_selection_split"] = "validation"
+        e["enabled_targets"] = enabled
+        e["interval_nominal_coverage"] = COVERAGE_TARGET
+    return ev
+
+
 def main():
     global OUT, OUTW, LOG
     ap = argparse.ArgumentParser()
@@ -184,16 +242,18 @@ def main():
     data = load(con, static, meta["data_snapshot"])
     con.close()
     log(f"rows={len(data):,} cells={data.cell_id.nunique()} load={time.time() - t0:.0f}s")
-    train, val, test = T.split(data)
-    test_cells = [c for c in meta["test_cells"] if c in set(test.cell_id)]
-    val, test = val[val.cell_id.isin(test_cells)], test[test.cell_id.isin(test_cells)]
+    train, val_es, val, test = T.split(data)        # val = val_select (gate); val_es = early stopping
+    test_cells = [c for c in meta["test_cells"] + meta.get("late_cells_evaluated_on_test", []) if c in set(test.cell_id)]
+    test = test[test.cell_id.isin(test_cells)]
     del data
-    assert (train.timestamp + pd.Timedelta(hours=T.MAXH)).max() < T.VAL_START
+    assert (train.timestamp + pd.Timedelta(hours=T.MAXH)).max() < T.VAL_ES_START
+    assert (val_es.timestamp + pd.Timedelta(hours=T.MAXH)).max() < T.VAL_SEL_START
     assert (val.timestamp + pd.Timedelta(hours=T.MAXH)).max() < T.TEST_START
-    log(f"train={len(train):,} val={len(val):,} test={len(test):,} (v3 metadata: {meta['split']['rows']})")
+    log(f"train={len(train):,} val_es={len(val_es):,} val_select={len(val):,} test={len(test):,} "
+        f"(v3 metadata: {meta['split']['rows']})")
 
     clim = climatology(train)
-    models, iters = train_all(train, val)
+    models, iters = train_all(train, val_es)
     del train
     cols = feature_columns_v3()
     old = {k: joblib.load(OUT / f"{n}_model_{h}h.pkl") for h in HORIZONS
@@ -203,25 +263,41 @@ def main():
         X = d[cols].values
         return {k: m.predict(X) for k, m in {**old, **models}.items()}
 
-    pv, pt = predict(val), predict(test)
+    pv = predict(val)
+    gate = select_new_targets(val, pv, clim)
+    pv_es = predict(val_es)
+    enabled = ["temperature", "rain_probability", "temperature_interval"] + [n for n in NEW_TARGETS if gate[n]["enabled"]]
+    for n, g in gate.items():
+        log(f"validation gate {n}: {g['cells_won']}/{g['cells']} -> {'ON' if g['enabled'] else 'OFF'}")
 
-    # ---- temperature interval (conformal decision on val only)
+    policy = ai_model._load_policy(meta, OUT)
+
+    def served_point(d, predictions, h):
+        return ai_model.apply_policy(policy, h, d.cell_id.astype(str).values, predictions[f"temp_{h}h"],
+                                      predictions[f"rain_{h}h"], d.temperature.values, d.precipitation.values)
+
+    # ---- temperature interval (conformal decision on val_es only)
     conformal = {}
     for h in HORIZONS:
-        ok = val[f"temp_target_{h}h"].notna().values
-        y = val[f"temp_target_{h}h"].values[ok]
-        lo, hi = ai_model.temperature_interval(pv[f"temp_p10_{h}h"][ok], pv[f"temp_p90_{h}h"][ok], pv[f"temp_{h}h"][ok], 0.0)
+        ok = val_es[f"temp_target_{h}h"].notna().values
+        y = val_es[f"temp_target_{h}h"].values[ok]
+        lo, hi = ai_model.temperature_interval(pv_es[f"temp_p10_{h}h"][ok], pv_es[f"temp_p90_{h}h"][ok],
+                                               served_point(val_es, pv_es, h)[0][ok], 0.0)
         raw_cov = float(((y >= lo) & (y <= hi)).mean())
         off = conformal_offset(lo, hi, y) if abs(raw_cov - COVERAGE_TARGET) > COVERAGE_TOL else 0.0
         conformal[f"{h}h"] = {"val_raw_coverage": round(raw_cov, 4), "offset": round(off, 4), "applied": off != 0.0}
         log(f"interval {h}h: val raw coverage={raw_cov:.3f} offset={off:.3f}")
 
-    # ---- rain calibration (decision on val halves, then refit on full val)
+    # ---- rain calibration: owned by train_global_v3.py when serving_policy_v3.json exists
     calib = {}
     for h in HORIZONS:
-        y = val[f"rain_target_{h}h"].values
+        if policy.get("rain_calibration"):
+            calib[f"{h}h"] = {"applied": False, "base_policy_method": policy["rain_calibration"][f"{h}h"]["method"],
+                              "note": f"calibrated by train_global_v3.py ({ai_model.POLICY_FILE})"}
+            continue
+        y = val_es[f"rain_target_{h}h"].values
         ok = ~np.isnan(y)
-        p, y, ts = pv[f"rain_{h}h"][ok], y[ok], val.timestamp.values[ok]
+        p, y, ts = pv_es[f"rain_{h}h"][ok], y[ok], val_es.timestamp.values[ok]
         a, b = ts <= np.datetime64(ISO_FIT_END), ts > np.datetime64(ISO_FIT_END)
         iso = IsotonicRegression(out_of_bounds="clip", y_min=0, y_max=1).fit(p[a], y[a])
         br_raw, br_iso = float(((p[b] - y[b]) ** 2).mean()), float(((iso.predict(p[b]) - y[b]) ** 2).mean())
@@ -235,15 +311,20 @@ def main():
     calibrators = {h: joblib.load(OUTW / f"rain_calibrator_{h}h.pkl") for h in HORIZONS if calib[f"{h}h"]["applied"]}
 
     # ---- per-cell test metrics
+    pt = predict(test)  # Reporting only: all serving decisions above are frozen.
     rows, rel = [], {}
     for h in HORIZONS:
         tt = test.timestamp + pd.Timedelta(hours=h)
         cl = clim.reindex(pd.MultiIndex.from_arrays([test.cell_id, tt.dt.month, tt.dt.hour]))
-        lo, hi = ai_model.temperature_interval(pt[f"temp_p10_{h}h"], pt[f"temp_p90_{h}h"], pt[f"temp_{h}h"],
+        temp, prob = served_point(test, pt, h)
+        lo, hi = ai_model.temperature_interval(pt[f"temp_p10_{h}h"], pt[f"temp_p90_{h}h"], temp,
                                                conformal[f"{h}h"]["offset"])
-        lo0, hi0 = ai_model.temperature_interval(pt[f"temp_p10_{h}h"], pt[f"temp_p90_{h}h"], pt[f"temp_{h}h"], 0.0)
+        lo0, hi0 = ai_model.temperature_interval(pt[f"temp_p10_{h}h"], pt[f"temp_p90_{h}h"], temp, 0.0)
         praw = pt[f"rain_{h}h"]
-        pcal = calibrators[h].predict(praw) if h in calibrators else praw
+        if policy.get("rain_calibration"):   # exactly what is served: calibration + per-cell fallback
+            pcal = prob
+        else:
+            pcal = calibrators[h].predict(praw) if h in calibrators else praw
         f = pd.DataFrame({"cell_id": test.cell_id.values, "yt": test[f"temp_target_{h}h"].values,
                           "lo": lo, "hi": hi, "lo0": lo0, "hi0": hi0,
                           "yr": test[f"rain_target_{h}h"].values, "praw": praw, "pcal": pcal,
@@ -271,18 +352,6 @@ def main():
     m = pd.DataFrame(rows)
     m.to_csv(OUTW / "per_cell_metrics_ext.csv", index=False)
 
-    # ---- gate
-    gate = {}
-    ncell = m.cell_id.nunique()
-    for n, (_, _, metric) in NEW_TARGETS.items():
-        win = m[f"{n}_{metric}_m"] < m[[f"{n}_{metric}_p", f"{n}_{metric}_c"]].min(axis=1)
-        per_cell = win.groupby(m.cell_id).all()
-        share = float(per_cell.mean())
-        gate[n] = {"metric": metric, "cells_won": int(per_cell.sum()), "cells": ncell, "share": round(share, 4),
-                   "enabled": share >= GATE_SHARE, "won": per_cell.to_dict()}
-        log(f"gate {n}: {per_cell.sum()}/{ncell} cells ({share:.1%}) -> {'ON' if share >= GATE_SHARE else 'OFF'}")
-    enabled = ["temperature", "rain_probability", "temperature_interval"] + [n for n in NEW_TARGETS if gate[n]["enabled"]]
-
     # ---- model files (all trained models saved; serving loads only enabled ones)
     for key, mdl in models.items():
         name, h = key.rsplit("_", 1)
@@ -291,29 +360,7 @@ def main():
 
     # ---- merge into evaluation_v3.json (old keys untouched)
     ev = json.loads((OUT / "evaluation_v3.json").read_text(encoding="utf-8"))
-    for cid, e in ev.items():
-        src = e.get("alias_of", cid)
-        mm = m[m.cell_id == src]
-        if mm.empty:
-            continue
-        for h in ("1h", "3h", "6h"):
-            r = mm[mm.horizon == h].iloc[0]
-            e[f"temperature_interval_coverage_{h}"] = round(r["cov"], 4)
-            e[f"temperature_interval_coverage_raw_{h}"] = round(r.cov_raw, 4)
-            e[f"temperature_interval_width_{h}"] = round(r.width, 3)
-            e[f"rain_brier_{h}"] = round(r.brier_served, 5)
-            e[f"rain_brier_uncalibrated_{h}"] = round(r.brier_raw, 5)
-            e[f"baseline_climatology_brier_{h}"] = round(r.brier_clim, 5)
-            e[f"rain_ece_{h}"] = round(r.ece_served, 4)
-            for n, (_, _, metric) in NEW_TARGETS.items():
-                for met in ("mae", "rmse") if n == "precipitation_mm" else ("mae",):
-                    e[f"{n}_{met}_{h}"] = round(r[f"{n}_{met}_m"], 3)
-                    e[f"baseline_persistence_{n}_{met}_{h}"] = round(r[f"{n}_{met}_p"], 3)
-                    e[f"baseline_climatology_{n}_{met}_{h}"] = round(r[f"{n}_{met}_c"], 3)
-        for n in NEW_TARGETS:
-            e[f"beats_baselines_{n}"] = bool(gate[n]["won"][src])
-        e["enabled_targets"] = enabled
-        e["interval_nominal_coverage"] = COVERAGE_TARGET
+    merge_evaluation(ev, m, enabled)
     (OUTW / "evaluation_v3.json").write_text(json.dumps(ev, ensure_ascii=False, indent=1), encoding="utf-8")
 
     agg = m.drop(columns="cell_id").groupby("horizon").mean().round(4)
@@ -322,8 +369,12 @@ def main():
         "base_model_version": meta["model_version"],
         "trained_at": datetime.now().isoformat(timespec="seconds"),
         "data": "same per-cell snapshot and split as metadata_v3.json",
-        "rows": {"val": len(val), "test": len(test)},
-        "serving_rule": f"A target is served only if, on the test window, the model beats BOTH persistence and "
+        "rows": {"val_es": len(val_es), "val_select": len(val), "test": len(test)},
+        "data_start": str(EXT_DATA_START),
+        "gate_selection_split": "validation",
+        "gate_window": "val_select",
+        "selection_cutoff": str((val.timestamp + pd.Timedelta(hours=T.MAXH)).max()),
+        "serving_rule": f"A target is served only if, on the val_select window, the model beats BOTH persistence and "
                         f"climatology (primary metric) at ALL of 1/3/6 h in >= {GATE_SHARE:.0%} of the cells. "
                         f"Disabled targets are still evaluated in evaluation_v3.json but not returned.",
         "enabled_targets": enabled,
@@ -336,8 +387,10 @@ def main():
                      "test_mean_coverage_raw": {h: float(agg.loc[h, "cov_raw"]) for h in agg.index},
                      "test_cell_coverage_min_max": {h: [round(float(g["cov"].min()), 4), round(float(g["cov"].max()), 4)]
                                                     for h, g in m.groupby("horizon")}},
-        "rain_calibration": {"method": f"isotonic, fit on val <= {ISO_FIT_END:%Y-%m-%d}, checked on the rest of val; "
-                             f"applied (refit on all val) if Brier improves >= {ISO_MIN_GAIN:.0%}", "per_horizon": calib,
+        "rain_calibration": {"method": (f"base model policy ({ai_model.POLICY_FILE}): fitted on val_es, chosen on "
+                                        "val_select; no extension calibrator") if policy else
+                             (f"isotonic, fit on val_es <= {ISO_FIT_END:%Y-%m-%d}, checked on the rest of val_es; "
+                              f"applied (refit on all val_es) if Brier improves >= {ISO_MIN_GAIN:.0%}"), "per_horizon": calib,
                              "test_reliability_bins": rel},
         "precipitation_mm_method": "expected value (LightGBM Tweedie, variance power 1.5); primary metric RMSE",
         "test_mean_metrics": agg.to_dict(orient="index"),

@@ -246,7 +246,7 @@ class _RainRefreshState extends State<RainRefresh>
   Widget build(BuildContext context) {
     return Stack(
       children: [
-        RefreshIndicator(
+        RefreshIndicator.adaptive(
           onRefresh: _refresh,
           color: Palette.white,
           backgroundColor: widget.backgroundColor,

@@ -1,0 +1,2 @@
+# LightGBM text models contain byte offsets; do not normalize their line endings.
+backend/models/**/*.txt -text

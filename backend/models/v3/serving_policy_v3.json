@@ -1,0 +1,83 @@
+{
+  "model_version": "lgbm-hcmc-global-v3-20261023",
+  "rain_calibration": {
+    "1h": {
+      "method": "none"
+    },
+    "3h": {
+      "method": "none"
+    },
+    "6h": {
+      "method": "none"
+    }
+  },
+  "fallback": {
+    "om-8.6819-106.5892": {
+      "1h": {
+        "temperature_weight": 0.25
+      }
+    }
+  },
+  "fallback_rule": "per (cell, horizon) failing beats_baselines on val_select: temperature = w*model + (1-w)*persistence, rain probability = w*p + (1-w)*[rain at t]; w chosen on val_select, kept only if it improves the failing metric there",
+  "selection_rule": {
+    "rule_description": "Per (target, horizon), booster version is selected based on superior metric on val_select. Test metrics are strictly held out for final reporting.",
+    "decisions": {
+      "temperature_1h": {
+        "selected": "current",
+        "metric": "mae",
+        "val_select_current_mae": 0.33924646980252343,
+        "val_select_backup_mae": 0.34004272627450105,
+        "test_current_mae": 0.3402987855606079,
+        "test_backup_mae": 0.34374600109446063
+      },
+      "rain_1h": {
+        "selected": "current",
+        "metric": "f1",
+        "val_select_current_f1": 0.7101921908816956,
+        "val_select_backup_f1": 0.7034487665190402,
+        "test_current_f1": 0.6781355956306007,
+        "test_backup_f1": 0.6852494832906689
+      },
+      "temperature_3h": {
+        "selected": "current",
+        "metric": "mae",
+        "val_select_current_mae": 0.5580594299657792,
+        "val_select_backup_mae": 0.5692851516632909,
+        "test_current_mae": 0.5842541604563287,
+        "test_backup_mae": 0.5793771410637201
+      },
+      "rain_3h": {
+        "selected": "current",
+        "metric": "f1",
+        "val_select_current_f1": 0.5988473677495937,
+        "val_select_backup_f1": 0.5951461759553733,
+        "test_current_f1": 0.5368944065894825,
+        "test_backup_f1": 0.5548129491443766
+      },
+      "temperature_6h": {
+        "selected": "current",
+        "metric": "mae",
+        "val_select_current_mae": 0.6789936017072832,
+        "val_select_backup_mae": 0.6902475191887367,
+        "test_current_mae": 0.7116271790471679,
+        "test_backup_mae": 0.698808282402557
+      },
+      "rain_6h": {
+        "selected": "current",
+        "metric": "f1",
+        "val_select_current_f1": 0.5694271699860548,
+        "val_select_backup_f1": 0.553247070855288,
+        "test_current_f1": 0.508323467552923,
+        "test_backup_f1": 0.5130518815818249
+      }
+    },
+    "booster_source": {
+      "temperature_1h": "v3",
+      "rain_1h": "v3",
+      "temperature_3h": "v3",
+      "rain_3h": "v3",
+      "temperature_6h": "v3",
+      "rain_6h": "v3"
+    }
+  }
+}

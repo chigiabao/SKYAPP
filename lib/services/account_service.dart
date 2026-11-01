@@ -36,6 +36,7 @@ enum AccountErrorKind {
 
   /// 429: dang nhap sai qua nhieu lan.
   locked,
+  insecureTransport,
   server,
 }
 
@@ -64,6 +65,7 @@ class AccountException implements Exception {
     AccountErrorKind.invalid => 'Dữ liệu không hợp lệ.',
     AccountErrorKind.locked =>
       'Đăng nhập sai quá nhiều lần. Vui lòng thử lại sau 15 phút.',
+    AccountErrorKind.insecureTransport => 'Tài khoản và đồng bộ cần máy chủ HTTPS. Dữ liệu trên máy vẫn giữ nguyên.',
     AccountErrorKind.server => 'Máy chủ đang gặp lỗi.',
   };
 
@@ -95,10 +97,12 @@ class AuthSession {
     required this.token,
     required this.email,
     required this.expiresAt,
+    this.serverUrl,
   });
 
   final String token;
   final String email;
+  final String? serverUrl;
 
   /// Unix giay (UTC).
   final int expiresAt;
@@ -110,13 +114,21 @@ class AuthSession {
     'token': token,
     'email': email,
     'expires_at': expiresAt,
+    'server_url': serverUrl,
   };
 
   static AuthSession? tryFromJson(Object? j) {
     if (j is! Map) return null;
     final t = j['token'], e = j['email'], x = j['expires_at'];
     if (t is! String || t.isEmpty || e is! String || x is! int) return null;
-    return AuthSession(token: t, email: e, expiresAt: x);
+    return AuthSession(
+      token: t,
+      email: e,
+      expiresAt: x,
+      serverUrl: j['server_url'] is String
+          ? ApiConfig.normalizeBaseUrl(j['server_url'] as String)
+          : null,
+    );
   }
 }
 
@@ -287,14 +299,26 @@ class AccountService {
     http.Client? client,
     this._baseUrl,
     this.timeout = ApiConfig.timeout,
-  }) : _client = client ?? http.Client();
+  }) : _client = client ?? http.Client(),
+       _credentialServer = ApiConfig.normalizeBaseUrl(
+         _baseUrl ?? ApiConfig.baseUrl,
+       );
 
   final http.Client _client;
   final String? _baseUrl;
+  String? _credentialServer;
+  int _credentialEpoch = 0;
+
+  void bindSession(AuthSession? session) {
+    _credentialEpoch++;
+    _credentialServer = session?.serverUrl;
+  }
 
   /// Doc moi lan goi: ApiConfig.baseUrl co the doi luc chay.
   String get baseUrl => _baseUrl ?? ApiConfig.baseUrl;
   final Duration timeout;
+
+  void close() => _client.close();
 
   Future<AuthSession> register(String email, String password) =>
       _auth('/auth/register', email, password);
@@ -302,7 +326,32 @@ class AccountService {
   Future<AuthSession> login(String email, String password) =>
       _auth('/auth/login', email, password);
 
+  Future<void> requestPasswordReset(String email) async {
+    await _send(
+      'POST',
+      '/auth/password-reset/request',
+      body: {'email': email.trim()},
+    );
+  }
+
+  Future<void> resetPassword(
+    String email,
+    String token,
+    String password,
+  ) async {
+    await _send(
+      'POST',
+      '/auth/password-reset/confirm',
+      body: {
+        'email': email.trim(),
+        'token': token.trim(),
+        'password': password,
+      },
+    );
+  }
+
   Future<AuthSession> _auth(String path, String email, String password) async {
+    final server = ApiConfig.normalizeBaseUrl(baseUrl);
     final j = await _send(
       'POST',
       path,
@@ -314,9 +363,11 @@ class AccountService {
             'token': j['token'],
             'email': j['email'] ?? email.trim().toLowerCase(),
             'expires_at': j['expires_at'],
+            'server_url': server,
           })
         : null;
     if (s == null) throw AccountException(AccountErrorKind.server);
+    bindSession(s);
     return s;
   }
 
@@ -343,7 +394,7 @@ class AccountService {
     if (containsGpsKey(data)) {
       throw AccountException(
         AccountErrorKind.invalid,
-        message: 'Không đồng bộ toạ độ GPS.',
+        message: 'Không đồng bộ tọa độ GPS.',
       );
     }
     return RemoteDoc.fromJson(
@@ -383,7 +434,19 @@ class AccountService {
     Object? body,
     bool login = false,
   }) async {
-    final req = http.Request(method, Uri.parse('$baseUrl$path'));
+    final server = ApiConfig.normalizeBaseUrl(baseUrl);
+    final serverEpoch = ApiConfig.serverChanges.value;
+    final credentialEpoch = _credentialEpoch;
+    final sensitive = token != null || path.startsWith('/auth/');
+    if (server == null) throw AccountException(AccountErrorKind.invalid);
+    if (sensitive && Uri.parse(server).scheme != 'https') {
+      throw AccountException(AccountErrorKind.insecureTransport);
+    }
+    if (token != null && server != _credentialServer) {
+      throw AccountException(AccountErrorKind.unauthorized);
+    }
+    final req = http.Request(method, Uri.parse('$server$path'));
+    req.followRedirects = false;
     req.headers['Accept'] = 'application/json';
     if (token != null) req.headers['Authorization'] = 'Bearer $token';
     if (body != null) {
@@ -398,10 +461,19 @@ class AccountService {
     } on TimeoutException {
       throw AccountException(AccountErrorKind.timeout);
     } catch (e) {
-      debugPrint('AccountService $method $path: $e');
+      if (!path.startsWith('/auth/password-reset/')) {
+        debugPrint('AccountService $method $path: $e');
+      }
       throw AccountException(AccountErrorKind.network);
     }
     dynamic json;
+    if (sensitive &&
+        (server != ApiConfig.normalizeBaseUrl(baseUrl) ||
+            credentialEpoch != _credentialEpoch ||
+            (_baseUrl == null &&
+                serverEpoch != ApiConfig.serverChanges.value))) {
+      throw AccountException(AccountErrorKind.unauthorized);
+    }
     if (res.bodyBytes.isNotEmpty) {
       try {
         json = jsonDecode(utf8.decode(res.bodyBytes));
@@ -451,7 +523,12 @@ class AccountService {
       case 429:
         throw AccountException(AccountErrorKind.locked, message: msg);
       default:
-        throw AccountException(AccountErrorKind.server);
+        throw AccountException(
+          AccountErrorKind.server,
+          message: code == 503 && path.startsWith('/auth/password-reset/')
+              ? msg
+              : null,
+        );
     }
   }
 }

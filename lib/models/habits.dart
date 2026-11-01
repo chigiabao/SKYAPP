@@ -116,9 +116,7 @@ class HabitData {
   /// tat hoac chua co du lieu.
   Map<int, double> hourBonus(Activity a) {
     if (!enabled) return const {};
-    final out = <int, double>{
-      for (final h in openHours) h: kOpenBonus,
-    };
+    final out = <int, double>{for (final h in openHours) h: kOpenBonus};
     for (final h in habitHours(a)) {
       out[h] = kHabitBonus;
     }

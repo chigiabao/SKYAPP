@@ -102,7 +102,7 @@ void main() {
         expect(title, findsOneWidget);
         final titleRect = tester.getRect(title);
         final block = tester.getRect(
-          find.byKey(const ValueKey<String>("compact-title")),
+          find.byKey(const ValueKey<String>('compact-title')),
         );
         expect(find.byTooltip('Làm mới'), findsNothing);
         // Tieu de gon can giua man hinh.

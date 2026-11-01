@@ -17,8 +17,9 @@ from pydantic import BaseModel, Field, field_validator
 
 import database
 from database import now_local
+from rate_limit import client_ip_from_request
 from routers.admin import require_admin
-from routers.weather import _resolve_location
+from routers.weather_core import resolve_location
 
 TS_FMT = "%Y-%m-%d %H:%M:%S"
 RATE_LIMIT = 10                # submissions ...
@@ -34,7 +35,7 @@ _hits_lock = threading.Lock()
 
 
 def rate_limit(request: Request) -> None:
-    ip = request.client.host if request.client else "?"
+    ip = client_ip_from_request(request)
     now = time.monotonic()
     with _hits_lock:
         for k in [k for k, q in _hits.items() if not q or now - q[-1] > RATE_WINDOW_S]:
@@ -74,7 +75,7 @@ def post_feedback(body: FeedbackIn, _: None = Depends(rate_limit)):
     """Store one feedback item. Returns {id, created_at, kind, cell_id, verified: false}."""
     cell_id = None
     if body.location_id:
-        cell_id = _resolve_location(body.location_id).cell_id   # 404 for an unknown location
+        cell_id = resolve_location(body.location_id).cell_id   # 404 for an unknown location
     obs = body.observed or Observed()
     created = now_local().strftime(TS_FMT)
     with database.get_db() as conn:

@@ -165,8 +165,8 @@ void main() {
           condition: 'Mưa rào',
           rainPercent3h: 70,
         ),
-        'Phường Bến Thành, 15:00 17/10: 31°, mưa rào, khả năng mưa 3 giờ '
-        'tới 70%. – Sky Weather (dữ liệu mô hình Open-Meteo)',
+        'Phường Bến Thành, 17/10 15:00: 31°, mưa rào, khả năng mưa 3 giờ '
+        'tới 70%. – Sky Weather (dự báo AI của nhóm)',
       );
     });
 
@@ -180,7 +180,7 @@ void main() {
           formatTempValue: (c) => c.round().toString(),
         ),
         startsWith(
-          'Phường Bến Thành, 15:00 17/10: 31°, mưa rào, khả năng '
+          'Phường Bến Thành, 17/10 15:00: 31°, mưa rào, khả năng '
           'mưa 3 giờ tới 70%.',
         ),
       );
@@ -192,6 +192,59 @@ void main() {
           formatTempValue: (c) => '$c',
         ),
         isNull,
+      );
+    });
+
+    test('gio thuc te khong tinh la kha nang mua; chu ky theo nguon', () {
+      final observedNow = [
+        HourlyForecast(
+          time: _now,
+          temperature: 31,
+          condition: WeatherCondition.showers,
+          rainProbability: 1.0, // backend: 1/0 cho gio thuc te
+          source: DataSource.observed,
+        ),
+        HourlyForecast(
+          time: _now.add(const Duration(hours: 1)),
+          temperature: 30,
+          condition: WeatherCondition.showers,
+          rainProbability: 0.4,
+          source: DataSource.ai,
+        ),
+      ];
+      expect(rainNext3h(observedNow, _now), 40);
+      expect(rainNext3h(observedNow.take(1).toList(), _now), isNull);
+      final current = CurrentWeather(
+        temperature: 31,
+        condition: WeatherCondition.showers,
+        lastUpdated: _now,
+        source: DataSource.observed,
+      );
+      String? text(List<HourlyForecast> h, {bool replay = false}) =>
+          forecastShareText(
+            placeName: 'X',
+            nowHcm: _now,
+            hours: h,
+            current: current,
+            formatTempValue: (c) => c.round().toString(),
+            replay: replay,
+          );
+      expect(text(observedNow), endsWith(kShareSignatureAnalysis));
+      expect(text(observedNow), contains('khả năng mưa 3 giờ tới 40%'));
+      expect(
+        text(observedNow.take(1).toList()),
+        endsWith(kShareSignatureAnalysisOnly),
+      );
+      expect(text(observedNow, replay: true), endsWith(kShareSignatureReplay));
+      expect(
+        activityShareText(
+          placeName: 'X',
+          activities: const [Activity.running],
+          hours: _hours(),
+          nowHcm: _now,
+          replay: true,
+        ),
+        endsWith(kShareSignatureReplay),
       );
     });
 
@@ -266,7 +319,10 @@ void main() {
       expect(find.text(kFeedbackDisclaimer), findsOneWidget);
       expect(find.text('0/1000'), findsOneWidget);
 
-      await tester.enterText(find.byType(TextField), 'Mưa to');
+      await tester.enterText(
+        find.byKey(const ValueKey('feedback-message')),
+        'Mưa to',
+      );
       await tester.pump();
       expect(find.text('6/1000'), findsOneWidget);
 
@@ -293,12 +349,46 @@ void main() {
       await pump(tester, status: 429);
 
       expect(find.text('Ở chỗ bạn đang mưa không?'), findsNothing);
-      await tester.enterText(find.byType(TextField), 'Nút bị lỗi');
+      await tester.enterText(
+        find.byKey(const ValueKey('feedback-message')),
+        'Nút bị lỗi',
+      );
       await tester.pump();
       await tester.tap(find.text('Gửi'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
-      expect(find.textContaining('thử lại sau'), findsWidgets);
+      // Loi chi hien mot lan (tren man hinh), khong lap lai bang thong bao.
+      expect(find.textContaining('thử lại sau'), findsOneWidget);
+    });
+
+    testWidgets('cau tra loi khong bat buoc bo chon duoc; o nhap iOS', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(400, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      await pump(tester, kind: FeedbackKind.wrongForecast);
+      expect(find.byType(TextField), findsNothing);
+      expect(find.byType(Card), findsNothing);
+      expect(find.text('Nội dung'), findsOneWidget);
+      final deselect = find.byKey(const ValueKey('segment-deselect'));
+      expect(deselect, findsNothing);
+      expect(find.text('Gửi'), findsOneWidget);
+      await tester.tap(find.text('Có'));
+      await tester.pump();
+      expect(deselect, findsOneWidget);
+      expect(
+        find.text('Chọn một câu trả lời hoặc nhập nội dung để gửi.'),
+        findsNothing,
+      );
+      await tester.tap(deselect);
+      await tester.pump();
+      expect(deselect, findsNothing);
+      // Khong con cau tra loi nao -> chua gui duoc.
+      expect(
+        find.text('Chọn một câu trả lời hoặc nhập nội dung để gửi.'),
+        findsOneWidget,
+      );
     });
   });
 }

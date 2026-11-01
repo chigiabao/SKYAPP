@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sky_weather_app/services/background_check.dart';
+import 'package:sky_weather_app/background/background_check.dart';
 import 'package:sky_weather_app/services/gps_service.dart';
 
 /// Cau hinh iOS / web khong build duoc tren Windows: doc file de bat loi

@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -46,12 +47,14 @@ class _FakeApi extends ApiService {
   final double? uv;
   final int? aqi;
   @override
-  Future<WeatherData> fetchWeatherData({DateTime? at}) async {
+  Future<WeatherData> fetchWeatherDataFor(
+    String locationId, {
+    DateTime? at,
+  }) async {
     final base = HcmTime.startOfHour(nowHcm);
     final today = HcmTime.startOfDay(nowHcm);
     return WeatherData(
       current: CurrentWeather(
-        locationName: ApiConfig.locationName,
         temperature: 26.2,
         feelsLike: 32.6,
         condition: conditionFromWmo(code),
@@ -211,9 +214,11 @@ Future<void> _openHomeConditions(WidgetTester tester) async {
   await tester.pump();
   expect(
     tester
-        .widget<SegmentedButton<bool>>(find.byType(SegmentedButton<bool>))
-        .selected,
-    {true},
+        .widget<CupertinoSlidingSegmentedControl<bool>>(
+          find.byType(CupertinoSlidingSegmentedControl<bool>),
+        )
+        .groupValue,
+    true,
   );
 }
 
@@ -490,7 +495,7 @@ void main() {
       expect(
         find.descendant(
           of: find.byType(SliverAppBar),
-          matching: find.text('TP. Hồ Chí Minh'),
+          matching: find.text('Tân Sơn Nhất'),
         ),
         findsOneWidget,
       );
@@ -526,8 +531,9 @@ void main() {
         tester,
       ) async {
         await _pumpHome(tester, size: const Size(1024, 768), scale: scale);
-        expect(find.text('DỰ BÁO 7 NGÀY'), findsOneWidget); // cot phai
-        expect(find.text('TP. Hồ Chí Minh'), findsOneWidget);
+        await _revealHomeTarget(tester, find.text('DỰ BÁO 7 NGÀY'));
+        expect(find.text('DỰ BÁO 7 NGÀY'), findsOneWidget);
+        expect(find.text('Tân Sơn Nhất'), findsOneWidget);
         for (var i = 0; i < 8; i++) {
           await tester.drag(
             find.byType(CustomScrollView),
@@ -651,7 +657,7 @@ void main() {
             find.byType(WeatherBackground).first,
           );
           final disc = bg.celestial!.discRect;
-          for (final t in ['TP. Hồ Chí Minh', '26°', 'Nhiều mây']) {
+          for (final t in ['Tân Sơn Nhất', '26°', 'Nhiều mây']) {
             final f = find.text(t);
             if (f.evaluate().isEmpty) continue;
             expect(
@@ -701,7 +707,7 @@ void main() {
         for (var step = 0; step < 12; step++) {
           final header = find.byType(SliverAppBar);
           expect(
-            find.descendant(of: header, matching: find.text('TP. Hồ Chí Minh')),
+            find.descendant(of: header, matching: find.text('Tân Sơn Nhất')),
             findsOneWidget,
           );
           for (final e
@@ -732,7 +738,7 @@ void main() {
         await tester.pump();
         final location = find.descendant(
           of: find.byType(SliverAppBar),
-          matching: find.text('TP. Hồ Chí Minh'),
+          matching: find.text('Tân Sơn Nhất'),
         );
         expect(location, findsOneWidget);
         expect(opacityOf(location.evaluate().first), 1.0);
@@ -771,24 +777,28 @@ void main() {
       expect(find.text('Bản đồ'), findsWidgets);
       // Ban do flutter_map: attribution OpenStreetMap.
       expect(find.textContaining('OpenStreetMap'), findsWidgets);
-      await tester.tap(find.byTooltip('Quay lại'));
-      await tester.pumpAndSettle();
+      // Tab goc: khong co nut quay lai; thanh tab van hien.
+      expect(find.byTooltip('Quay lại'), findsNothing);
+      expect(find.byKey(const ValueKey('ios-tab-bar')), findsOneWidget);
       await tester.tap(find.byTooltip('Danh sách địa điểm'));
       await tester.pumpAndSettle();
-      expect(find.text('Địa điểm'), findsOneWidget);
+      // Tieu de trang + nhan tab.
+      expect(find.text('Địa điểm'), findsNWidgets(2));
       expect(find.text('Đang xem'), findsOneWidget);
     });
 
     testWidgets('khong ro ri ticker khi roi Home', (tester) async {
       await _pumpHome(tester, reduceMotion: false, code: 61);
       expect(WeatherBackground.debugRunningTickers, greaterThan(0));
-      final nav = tester.state<NavigatorState>(find.byType(Navigator));
+      // Navigator goc (phu ca thanh tab).
+      final nav = tester.state<NavigatorState>(find.byType(Navigator).first);
       nav.push(MaterialPageRoute(builder: (_) => const SettingsScreen()));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 500));
       nav.pop();
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 500));
+      // Cupertino's reverse spring can outlast the nominal 500 ms duration.
+      await tester.pump(const Duration(seconds: 1));
       expect(WeatherBackground.debugLiveStates, 1);
       await tester.pumpWidget(const SizedBox());
       await tester.pump();

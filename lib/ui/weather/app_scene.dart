@@ -1,8 +1,8 @@
 /// Noi DUY NHAT tinh canh nen cua app tu du lieu that.
 ///
 /// * `isDay` = [isDaytime] tai [WeatherProvider.nowHcm] (che do xem lai ->
-///   thoi diem xem lai) cho diem du lieu [ApiConfig.latitude] /
-///   [ApiConfig.longitude].
+///   thoi diem xem lai) tai toa do dia diem dang xem
+///   ([WeatherProvider.place]).
 /// * `scene` = [effectiveScene] ([resolveScene] (ma WMO, isDay, gio, tam nhin,
 ///   may) cua thoi tiet hien tai, [SceneOverride]).
 /// * Khi dang tai lai (du lieu tam thoi null) giu canh cu de khong nhay nen.
@@ -46,9 +46,12 @@ int wmoForCondition(WeatherCondition c) {
   }
 }
 
-/// Ngay/dem tai diem du lieu cua app.
-bool isDayAt(DateTime hcm) =>
-    isDaytime(hcm, lat: ApiConfig.latitude, lon: ApiConfig.longitude);
+/// Ngay/dem tai toa do [lat]/[lon] (mac dinh: diem du lieu mac dinh).
+bool isDayAt(
+  DateTime hcm, {
+  double lat = ApiConfig.latitude,
+  double lon = ApiConfig.longitude,
+}) => isDaytime(hcm, lat: lat, lon: lon);
 
 /// Ket qua tinh canh: tat ca man hinh dung chung.
 @immutable
@@ -81,7 +84,12 @@ class AppSceneData {
     SceneOverride? sceneOverride,
     WeatherScene? previous,
   }) {
-    final bool realIsDay = isDayAt(provider.nowHcm);
+    final place = provider.place;
+    final bool realIsDay = isDayAt(
+      provider.nowHcm,
+      lat: place.lat,
+      lon: place.lon,
+    );
     final CurrentWeather? c = provider.currentWeather;
     final WeatherScene resolved;
     if (c != null) {
@@ -198,6 +206,21 @@ class AppScene extends InheritedWidget {
     return AppSceneData.compute(
       provider: context.watch<WeatherProvider>(),
       sceneOverride: maybeSceneOverride(context),
+    );
+  }
+
+  /// Nhu [of] nhung khong loi khi thieu ca [AppScene] lan [WeatherProvider]
+  /// (vd. sheet mo tu man hinh test toi gian) -> null. Khong lang nghe
+  /// provider (dung duoc trong onPressed).
+  static AppSceneData? maybeOf(BuildContext context) {
+    final AppScene? s = context.getInheritedWidgetOfExactType<AppScene>();
+    if (s != null) return s.data;
+    final provider = Provider.of<WeatherProvider?>(context, listen: false);
+    if (provider == null) return null;
+    // Goi tu su kien (mo sheet): khong dang ky lang nghe.
+    return AppSceneData.compute(
+      provider: provider,
+      sceneOverride: maybeSceneOverride(context, listen: false),
     );
   }
 

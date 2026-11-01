@@ -1,10 +1,9 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
 
 import '../design_tokens.dart';
-import '../glass_ink.dart';
 import 'collapsing_header.dart';
 
-/// Unframed current conditions; values and guidance come from the provider.
+/// Unframed conditions; missing readings are never filled with placeholders.
 class HomeWeatherOverview extends StatelessWidget {
   const HomeWeatherOverview({
     super.key,
@@ -17,190 +16,244 @@ class HomeWeatherOverview extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ink = GlassInk.of(context);
+    final compact = MediaQuery.sizeOf(context).height <= 700;
+    final centered = MediaQuery.sizeOf(context).width < 900;
+    final alignment = centered
+        ? CrossAxisAlignment.center
+        : CrossAxisAlignment.start;
+    final textAlign = centered ? TextAlign.center : TextAlign.start;
     return Semantics(
       container: true,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: Space.xl),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              info.detail,
-              style: const TextStyle(
-                fontSize: 14,
-                height: 1.5,
+      child: SizedBox(
+        width: double.infinity,
+        child: Padding(
+          padding: EdgeInsets.symmetric(vertical: compact ? 0 : Space.xl),
+          child: LayoutBuilder(
+            builder: (context, box) {
+              final scaler = TextScaler.linear(
+                (MediaQuery.textScalerOf(context).scale(96) / 96).clamp(
+                  1.0,
+                  TypeScale.heroMaxScale,
+                ),
+              );
+              final temperatureStyle = TypeScale.hero.copyWith(
+                fontFeatures: TypeScale.tabular,
                 color: Palette.white,
-              ),
-            ),
-            const SizedBox(height: Space.s),
-            Wrap(
-              spacing: Space.xl,
-              runSpacing: Space.s,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                if (info.temperature != null)
-                  Semantics(
-                    label: info.semanticsTemp,
-                    excludeSemantics: info.semanticsTemp != null,
-                    child: Text(
-                      info.temperature!,
-                      textScaler: TextScaler.linear(
-                        (MediaQuery.textScalerOf(context).scale(80) / 80).clamp(
-                          1.0,
-                          1.3,
-                        ),
+              );
+              // Du lieu cu: lam mo so lon + ghi ro thoi diem ngay ben duoi,
+              // de khong trong nhu nhiet do hien tai.
+              final stale = info.isStale && info.staleAt != null;
+              final temperature = Semantics(
+                label: info.semanticsTemp,
+                excludeSemantics: info.semanticsTemp != null,
+                child: Text(
+                  info.temperature ?? '',
+                  key: const ValueKey('hero-temperature'),
+                  textScaler: scaler,
+                  style: stale
+                      ? temperatureStyle.copyWith(
+                          color: Palette.white.withValues(
+                            alpha: Opacities.staleHero,
+                          ),
+                        )
+                      : temperatureStyle,
+                ),
+              );
+              final staleAt = stale
+                  ? Padding(
+                      padding: const EdgeInsets.only(top: Space.xs),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            CupertinoIcons.clock,
+                            size: 15,
+                            color: Palette.stale,
+                          ),
+                          const SizedBox(width: Space.xs),
+                          Flexible(
+                            child: ExcludeSemantics(
+                              child: Text(
+                                info.staleAt!,
+                                key: const ValueKey('hero-stale-at'),
+                                style: TypeScale.subhead.copyWith(
+                                  color: Palette.stale,
+                                  fontWeight: FontWeight.w600,
+                                  fontFeatures: TypeScale.tabular,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                      style: const TextStyle(
-                        fontSize: 80,
-                        height: 1.1,
-                        fontWeight: FontWeight.w500,
-                        letterSpacing: 0,
+                    )
+                  : null;
+              final condition = Text(
+                info.condition ?? '',
+                textAlign: textAlign,
+                style: TypeScale.condition.copyWith(
+                  height: 1.4,
+                  fontWeight: FontWeight.w500,
+                  color: Palette.white,
+                ),
+              );
+              final temperatureMeasure = TextPainter(
+                text: TextSpan(
+                  text: info.temperature,
+                  style: temperatureStyle.copyWith(
+                    fontFamily: DefaultTextStyle.of(context).style.fontFamily,
+                  ),
+                ),
+                textScaler: scaler,
+                textDirection: Directionality.of(context),
+              )..layout();
+              // Only share a line when both readings retain their full size.
+              final inline =
+                  compact &&
+                  info.temperature != null &&
+                  info.condition != null &&
+                  MediaQuery.textScalerOf(context).scale(20) <= 26 &&
+                  temperatureMeasure.width +
+                          Space.m +
+                          MediaQuery.textScalerOf(context).scale(96) <=
+                      box.maxWidth;
+              temperatureMeasure.dispose();
+              return Column(
+                crossAxisAlignment: alignment,
+                children: [
+                  Text(
+                    info.detail,
+                    textAlign: textAlign,
+                    style: TypeScale.footnote.copyWith(
+                      height: 1.4,
+                      color: Palette.secondary,
+                    ),
+                  ),
+                  if (info.temperature != null) ...[
+                    SizedBox(height: compact ? Space.xs : Space.s),
+                    if (inline)
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          temperature,
+                          const SizedBox(width: Space.m),
+                          Flexible(child: condition),
+                        ],
+                      )
+                    else
+                      temperature,
+                    ?staleAt,
+                  ],
+                  if (info.condition != null && !inline) condition,
+                  if (info.highLow != null) ...[
+                    const SizedBox(height: Space.xs),
+                    Text(
+                      info.highLow!,
+                      textAlign: textAlign,
+                      style: TypeScale.subhead.copyWith(
+                        height: 1.5,
                         fontFeatures: TypeScale.tabular,
                         color: Palette.white,
                       ),
                     ),
-                  ),
-                if (info.condition != null)
-                  ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 340),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Hiện tại',
-                          style: TextStyle(
-                            fontSize: 14,
-                            height: 1.5,
-                            color: Palette.white,
-                          ),
-                        ),
-                        Text(
-                          info.condition!,
-                          style: const TextStyle(
-                            fontSize: 22,
-                            height: 1.3,
-                            fontWeight: FontWeight.w600,
-                            color: Palette.white,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-              ],
-            ),
-            if (info.highLow != null) ...[
-              const SizedBox(height: Space.s),
-              Text(
-                info.highLow!,
-                style: const TextStyle(
-                  fontSize: 15,
-                  height: 1.5,
-                  fontFeatures: TypeScale.tabular,
-                  color: Palette.white,
-                ),
-              ),
-            ],
-            if (info.temperature != null) ...[
-              const SizedBox(height: Space.xl),
-              DecoratedBox(
-                decoration: BoxDecoration(
-                  border: Border(
-                    left: BorderSide(
-                      color: info.todayRain ? ink.rain : Palette.tempMild,
-                      width: 3,
-                    ),
-                  ),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.only(left: Space.l),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        info.today ?? 'Chưa có dự báo theo giờ',
-                        style: const TextStyle(
-                          fontSize: 18,
-                          height: 1.45,
-                          fontWeight: FontWeight.w600,
-                          color: Palette.white,
-                        ),
-                      ),
-                      const SizedBox(height: Space.m),
-                      FilledButton.icon(
-                        onPressed: onTrip,
-                        style: FilledButton.styleFrom(
-                          backgroundColor: Palette.white,
-                          foregroundColor: Palette.onAlert,
-                          minimumSize: const Size(48, 48),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 12,
-                          ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                        ),
-                        icon: const Icon(Icons.directions_walk_rounded),
-                        label: const Text(
-                          'Lên kế hoạch ra ngoài',
-                          textAlign: TextAlign.center,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-            const SizedBox(height: Space.l),
-            Semantics(
-              liveRegion: info.isStale,
-              child: Wrap(
-                spacing: Space.m,
-                runSpacing: Space.xs,
-                children: [
-                  if (info.isStale)
-                    const Text(
-                      'Dữ liệu cũ',
-                      style: TextStyle(
-                        color: Palette.white,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  if (info.sourceLabel != null)
+                  ],
+                  if (info.temperature != null) ...[
+                    SizedBox(height: compact ? Space.s : Space.l),
                     Text(
-                      info.sourceLabel!,
-                      style: const TextStyle(
+                      info.today ?? 'Chưa có dự báo theo giờ',
+                      textAlign: textAlign,
+                      style: TypeScale.callout.copyWith(
+                        height: 1.45,
+                        fontWeight: FontWeight.w500,
                         color: Palette.white,
-                        fontSize: 14,
                       ),
                     ),
-                  if (info.updated != null)
-                    Text(
-                      info.updated!,
-                      style: const TextStyle(
-                        color: Palette.white,
-                        fontSize: 14,
+                    CupertinoButton(
+                      onPressed: onTrip,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: Space.m,
+                        vertical: Space.s,
+                      ),
+                      minimumSize: const Size(48, 48),
+                      pressedOpacity: MediaQuery.disableAnimationsOf(context)
+                          ? 1
+                          : Opacities.pressed,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Flexible(
+                            child: Text(
+                              'Lên kế hoạch ra ngoài',
+                              textAlign: textAlign,
+                              style: TypeScale.subhead.copyWith(
+                                color: Palette.rain,
+                                fontWeight: FontWeight.w600,
+                                height: 1.4,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          const Icon(
+                            CupertinoIcons.chevron_right,
+                            size: 14,
+                            color: Palette.rain,
+                          ),
+                        ],
                       ),
                     ),
-                  if (info.cachedNote != null)
-                    Text(
-                      info.cachedNote!,
-                      style: const TextStyle(
-                        color: Palette.white,
-                        fontSize: 14,
+                  ],
+                  if (info.updated != null ||
+                      info.sourceLabel != null ||
+                      info.isStale ||
+                      info.cachedNote != null ||
+                      info.refreshing) ...[
+                    SizedBox(height: compact ? Space.xs : Space.s),
+                    Semantics(
+                      liveRegion: info.isStale,
+                      child: Column(
+                        crossAxisAlignment: alignment,
+                        children: [
+                          if (info.isStale)
+                            Text(
+                              'Dữ liệu cũ',
+                              style: TypeScale.footnote.copyWith(
+                                color: Palette.stale,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          if (info.updated != null || info.sourceLabel != null)
+                            Text(
+                              [?info.updated, ?info.sourceLabel].join(' · '),
+                              textAlign: textAlign,
+                              style: TypeScale.caption1.copyWith(
+                                color: Palette.secondary,
+                                height: 1.5,
+                                fontFeatures: TypeScale.tabular,
+                              ),
+                            ),
+                          if (info.cachedNote != null)
+                            Text(
+                              info.cachedNote!,
+                              textAlign: textAlign,
+                              style: TypeScale.footnote.copyWith(
+                                color: Palette.secondary,
+                              ),
+                            ),
+                          if (info.refreshing)
+                            Text(
+                              'Đang cập nhật...',
+                              style: TypeScale.footnote.copyWith(
+                                color: Palette.secondary,
+                              ),
+                            ),
+                        ],
                       ),
                     ),
-                  if (info.refreshing)
-                    const Text(
-                      'Đang cập nhật...',
-                      style: TextStyle(color: Palette.white, fontSize: 14),
-                    ),
+                  ],
                 ],
-              ),
-            ),
-          ],
+              );
+            },
+          ),
         ),
       ),
     );

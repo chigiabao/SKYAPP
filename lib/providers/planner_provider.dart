@@ -16,6 +16,9 @@ import 'location_provider.dart';
 import 'preferences_provider.dart';
 import 'weather_provider.dart';
 
+part 'planner/planner_storage.dart';
+part 'planner/planner_brief.dart';
+
 /// Cai dat canh bao + lich su thong bao trong app + hoat dong yeu thich /
 /// lich hoat dong. Tinh toan tren thiet bi; luu bang SharedPreferences.
 ///
@@ -41,7 +44,7 @@ class PlannerProvider extends ChangeNotifier {
   /// Id thong bao buoi sang (nhac 1..40, canh bao tu 1000).
   static const int morningBriefId = 900;
 
-  /// So chong trung rieng (khong phai lich su hien thi): "Xoá lịch sử" hay
+  /// So chong trung rieng (khong phai lich su hien thi): "Xóa lịch sử" hay
   /// gioi han [historyLimit] khong lam gui lai canh bao con hieu luc. Muc co
   /// `end` < bay gio bi don.
   static const String ledgerKey = 'planner_alert_ledger_v1';
@@ -121,50 +124,16 @@ class PlannerProvider extends ChangeNotifier {
   Future<void> _load() async {
     try {
       final p = await SharedPreferences.getInstance();
-      final s = p.getString(alertSettingsKey);
-      if (s != null) {
-        final j = jsonDecode(s);
-        if (j is Map<String, dynamic>) _settings = AlertSettings.fromJson(j);
-      }
-      _history = _readNotices(p, historyKey) ?? const [];
-      _ledger = _readNotices(p, ledgerKey) ?? const [];
-      final a = p.getString(activityKey);
-      if (a != null) {
-        final j = jsonDecode(a);
-        if (j is Map) {
-          final fav = j['favorites'];
-          if (fav is List) {
-            _favorites = [
-              for (final f in fav) ...Activity.values.where((x) => x.name == f),
-            ];
-          }
-          _sensitivity = Sensitivity.values.firstWhere(
-            (x) => x.name == j['sensitivity'],
-            orElse: () => Sensitivity.normal,
-          );
-          final r = j['routines'];
-          if (r is List) {
-            _routines = [for (final e in r) ?ActivityRoutine.tryFromJson(e)];
-          }
-        }
-      }
-      final n = p.getString(notifyKey);
-      if (n != null) {
-        final j = jsonDecode(n);
-        if (j is Map<String, dynamic>) {
-          _notifySettings = NotifySettings.fromJson(j);
-        }
-      }
-      final cm = p.getString(commuteKey);
-      if (cm != null) {
-        final j = jsonDecode(cm);
-        if (j is Map<String, dynamic>) _commute = CommuteSettings.fromJson(j);
-      }
-      final hb = p.getString(habitKey);
-      if (hb != null) {
-        final j = jsonDecode(hb);
-        if (j is Map<String, dynamic>) _habits = HabitData.fromJson(j);
-      }
+      final d = _PlannerStorage.loadAll(p);
+      if (d.settings != null) _settings = d.settings!;
+      _history = d.history;
+      _ledger = d.ledger;
+      if (d.favorites != null) _favorites = d.favorites!;
+      if (d.sensitivity != null) _sensitivity = d.sensitivity!;
+      if (d.routines != null) _routines = d.routines!;
+      if (d.notifySettings != null) _notifySettings = d.notifySettings!;
+      if (d.commute != null) _commute = d.commute!;
+      if (d.habits != null) _habits = d.habits!;
     } catch (e) {
       // Khong co plugin (test) / du lieu hong -> mac dinh.
       debugPrint('PlannerProvider.load: $e');
@@ -211,40 +180,16 @@ class PlannerProvider extends ChangeNotifier {
     return r;
   }
 
-  /// SharedPreferences da `reload()` (thay ban ghi cua isolate khac); null
-  /// neu khong co plugin.
-  Future<SharedPreferences?> _freshPrefs() async {
-    try {
-      final p = await SharedPreferences.getInstance();
-      await p.reload();
-      return p;
-    } catch (e) {
-      debugPrint('PlannerProvider.reload: $e');
-      return null;
-    }
-  }
+  Future<SharedPreferences?> _freshPrefs() => _PlannerStorage.freshPrefs();
 
-  static List<AlertNotice>? _readNotices(SharedPreferences p, String key) {
-    try {
-      final h = p.getString(key);
-      if (h == null) return null;
-      final j = jsonDecode(h);
-      if (j is! List) return null;
-      return [for (final e in j) ?AlertNotice.tryFromJson(e)];
-    } catch (e) {
-      debugPrint('PlannerProvider.read $key: $e');
-      return null;
-    }
-  }
+  static List<AlertNotice>? _readNotices(SharedPreferences p, String key) =>
+      _PlannerStorage.readNotices(p, key);
 
   static Future<void> _putNotices(
     SharedPreferences? p,
     String key,
     List<AlertNotice> v,
-  ) async {
-    if (p == null) return;
-    await p.setString(key, jsonEncode([for (final n in v) n.toJson()]));
-  }
+  ) => _PlannerStorage.putNotices(p, key, v);
 
   /// Cho moi lan ghi / gui dang do (isolate nen can truoc khi ket thuc).
   Future<void> flush() async {
@@ -265,14 +210,8 @@ class PlannerProvider extends ChangeNotifier {
     g.whenComplete(() => _pending.remove(g));
   }
 
-  Future<void> _writeNow(String key, Object value) async {
-    try {
-      final p = await SharedPreferences.getInstance();
-      await p.setString(key, jsonEncode(value));
-    } catch (e) {
-      debugPrint('PlannerProvider.save: $e');
-    }
-  }
+  Future<void> _writeNow(String key, Object value) =>
+      _PlannerStorage.writeNow(key, value);
 
   Future<void> _saveActivity() => _write(activityKey, {
     'favorites': [for (final f in _favorites) f.name],
@@ -389,32 +328,15 @@ class PlannerProvider extends ChangeNotifier {
   /// Lan gui thong bao buoi sang tiep theo (gio TP.HCM that) + noi dung tu
   /// du lieu truc tiep gan nhat cua Nha / Noi lam. null = tat / roi vao gio
   /// yen lang ma nguoi dung khong cho phep.
-  ({DateTime at, String body})? _planBrief(DateTime now) {
-    final c = _commute;
-    if (!_notifySettings.system || !c.briefEnabled) return null;
-    var at = HcmTime.startOfDay(
-      now,
-    ).add(Duration(hours: c.briefHour, minutes: c.briefMinute));
-    if (!at.isAfter(now)) at = at.add(const Duration(days: 1));
-    if (!c.briefInQuiet && _settings.inQuietHours(at)) return null;
-    final ids = <String>{?c.homeId, ?c.workId};
-    final body = morningBrief(
-      [
-        for (final id in ids)
-          (name: _names[id] ?? id, hours: _liveHours[id]),
-      ],
-      at,
-      c,
-    );
-    return (
-      at: at,
-      body:
-          body ??
-          (ids.isEmpty
-              ? 'Chọn Nhà và Nơi làm trong Cài đặt để nhận tóm tắt mưa.'
-              : 'Chưa có dự báo mới cho hôm nay. Mở Sky Weather để cập nhật.'),
-    );
-  }
+  ({DateTime at, String body})? _planBrief(DateTime now) =>
+      _PlannerBriefHelper.planBrief(
+        now: now,
+        commute: _commute,
+        notifySettings: _notifySettings,
+        settings: _settings,
+        names: _names,
+        liveHours: _liveHours,
+      );
 
   /// Gio di / ve, dia diem, thong bao buoi sang.
   void setCommute(CommuteSettings c) {
@@ -622,8 +544,18 @@ class PlannerProvider extends ChangeNotifier {
   }) {
     if (replay || hours.isEmpty) return;
     _liveHours[placeId] = hours;
-    _names[placeId] = placeName;
+    // Khong ghi de ten that bang ten rong.
+    if (placeName.isNotEmpty) _names[placeId] = placeName;
   }
+
+  /// Ghi du lieu truc tiep cua dia diem dang xem trong [wp] (xem
+  /// [noteLiveHours]) -> nhac hoat dong co diem thoi tiet.
+  void noteLive(WeatherProvider wp) => noteLiveHours(
+    wp.locationId,
+    wp.place.name,
+    wp.hourlyForecast,
+    replay: wp.isReplay,
+  );
 
   // ---- Hoat dong ----
 

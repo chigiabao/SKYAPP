@@ -98,7 +98,12 @@ HourScore? alternativeSlot(
       final t = slot.add(Duration(hours: d));
       if (t.isBefore(notBefore)) continue;
       final s = scoreRoutineAt(r, hours, t);
-      if (s == null || s.score < 55 || s.score < base + 15) continue;
+      if (s == null ||
+          s.missing.isNotEmpty ||
+          s.score < 55 ||
+          s.score < base + 15) {
+        continue;
+      }
       if (best == null || s.score > best.score) best = s;
     }
   }
@@ -183,8 +188,12 @@ ReminderPlan planReminders(
       ];
       if (score == null) {
         parts.add('Chưa có dự báo cho khung giờ này');
+      } else if (score.missing.isNotEmpty) {
+        parts.add('Thiếu dữ liệu: ${score.missing.join(', ')}');
+        final risks = score.penalties.keys;
+        if (risks.isNotEmpty) parts.add('Lưu ý ${risks.join(', ')}');
       } else {
-        final rating = WindowRating.of(score.score);
+        final rating = score.rating;
         final worst = score.penalties.entries.isEmpty
             ? null
             : score.penalties.entries.reduce(
@@ -238,9 +247,8 @@ ReminderPlan planReminders(
   ], skipped);
 }
 
-String _lead(Duration d) => d.inMinutes % 60 == 0
-    ? '${d.inHours} giờ'
-    : '${d.inMinutes} phút';
+String _lead(Duration d) =>
+    d.inMinutes % 60 == 0 ? '${d.inHours} giờ' : '${d.inMinutes} phút';
 
 /// Id thong bao he thong cua mot canh bao (on dinh giua cac lan chay, theo
 /// khoa chong trung: "Cập nhật" thay the thong bao cu cung khoa). Khoang

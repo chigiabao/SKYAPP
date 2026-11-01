@@ -34,6 +34,18 @@ class WeatherData(BaseModel):
     us_aqi: Optional[float] = None
     pm2_5: Optional[float] = None
     pm10: Optional[float] = None
+    # Own long-range AI hours only: calibrated range (interval_level, e.g. 0.8 = 80 % range, NOT 80 %
+    # accuracy); null where the horizon band failed its coverage gate or no interval artifact exists.
+    temperature_p10: Optional[float] = None
+    temperature_p90: Optional[float] = None
+    humidity_p10: Optional[float] = None
+    humidity_p90: Optional[float] = None
+    wind_speed_p10: Optional[float] = None
+    wind_speed_p90: Optional[float] = None
+    cloud_cover_p10: Optional[float] = None
+    cloud_cover_p90: Optional[float] = None
+    precipitation_p90: Optional[float] = None  # one-sided upper bound (mm/h)
+    interval_level: Optional[float] = None
 
 
 class DailySummary(BaseModel):
@@ -54,6 +66,9 @@ class DailySummary(BaseModel):
     source: Optional[str] = None
     uv_index_max: Optional[float] = None
     us_aqi_max: Optional[float] = None
+    # "high" | "medium" | "low" (see routers.weather._day_confidence) and a short Vietnamese note.
+    confidence: Optional[str] = None
+    skill_note: Optional[str] = None
 
 
 class LocationInfo(BaseModel):

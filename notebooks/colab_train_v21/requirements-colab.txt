@@ -1,0 +1,14 @@
+# Long-range v2.1 training on Google Colab. Pinned to the local backend environment
+# Requires Python >= 3.12 (numpy 2.5.3 and scipy 1.18.1 need >= 3.12).
+# (Python 3.14.8, backend/requirements.txt, 2026-10-31) so boosters, V3 pickles and parity match.
+# If Colab has no wheel for a pin, the notebook stops: change the pin here on purpose (it is
+# recorded in metadata.json "versions" and checked by the local --phase verify).
+lightgbm==4.7.0
+numpy==2.5.3
+pandas==3.0.6
+scikit-learn==1.9.1
+scipy==1.18.1
+joblib==1.6.0
+tzdata==2026.5
+matplotlib==3.11.2
+psutil==7.2.2

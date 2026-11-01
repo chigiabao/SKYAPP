@@ -77,6 +77,10 @@ class Place {
 
   bool get isDefault => id == defaultId;
 
+  /// Nhu [detail] nhung vung truoc sap nhap doi sang chu de hieu
+  /// ("TP.HCM cũ" -> "Khu vực TP.HCM"); dung cho moi dong phu hien thi.
+  String get friendlyDetail => friendlyRegion(detail);
+
   /// Dong phu duoi ten (dau trang, danh sach).
   String get detail {
     if (region != null && region!.isNotEmpty) return region!;
@@ -258,6 +262,13 @@ extension PlaceLabelText on PlaceLabel {
     PlaceLabel.favorite => 'Yêu thích',
     PlaceLabel.custom => 'Tên riêng',
   };
+
+  /// Nhan ngan cho cot hep (so sanh 3 cot): "Nơi làm", "Trường".
+  String get shortText => switch (this) {
+    PlaceLabel.work => 'Nơi làm',
+    PlaceLabel.school => 'Trường',
+    _ => text,
+  };
 }
 
 /// Dia diem nguoi dung da luu: CHI luu id dia diem + nhan (khong luu toa do).
@@ -282,6 +293,12 @@ class SavedPlace {
     }
     return label == PlaceLabel.none ? null : label.text;
   }
+
+  /// Nhu [labelText] nhung dung nhan ngan (cot hep).
+  String? get shortLabelText =>
+      label == PlaceLabel.custom || label == PlaceLabel.none
+      ? labelText
+      : label.shortText;
 
   SavedPlace copyWith({PlaceLabel? label, String? customName}) => SavedPlace(
     locationId: locationId,
@@ -333,6 +350,7 @@ class MapCell {
     this.precipitation,
     this.source,
     this.validTime,
+    this.observedAt,
     this.outlookSource,
     this.maxOffsetHours,
   });
@@ -364,6 +382,15 @@ class MapCell {
 
   /// Thoi diem cua khung (gio TP.HCM).
   final DateTime? validTime;
+
+  /// Actual reading time, distinct from the requested map frame.
+  final DateTime? observedAt;
+
+  bool isStaleAt(DateTime nowHcm) {
+    if (source != DataSource.observed || observedAt == null) return false;
+    final age = nowHcm.difference(observedAt!);
+    return age.isNegative || age > const Duration(hours: 3);
+  }
 
   /// Nguon cua phan "3 gio toi": 'forecast' | 'ai' | null.
   final String? outlookSource;
@@ -402,6 +429,7 @@ class MapCell {
       precipitation: d(json['precipitation']),
       source: parseDataSource(json['source']),
       validTime: HcmTime.tryParse(json['valid_time']?.toString()),
+      observedAt: HcmTime.tryParse(json['observed_at']?.toString()),
       outlookSource: switch (json['outlook_source']) {
         'forecast' => 'forecast',
         'ai' => 'ai',
@@ -429,6 +457,7 @@ class MapCell {
     'precipitation': precipitation,
     'source': source?.name,
     'valid_time': validTime == null ? null : HcmTime.toIso(validTime!),
+    'observed_at': observedAt == null ? null : HcmTime.toIso(observedAt!),
     'outlook_source': outlookSource,
     'max_offset_hours': maxOffsetHours,
   };
@@ -531,4 +560,11 @@ class CityBoundary {
     }
     return false;
   }
+}
+
+/// Vung truoc sap nhap ("TP.HCM cũ") -> "Khu vực TP.HCM" de nguoi dung de
+/// hieu; chuoi khac giu nguyen.
+String friendlyRegion(String region) {
+  final m = RegExp(r'^(.+?)\s+cũ$').firstMatch(region.trim());
+  return m == null ? region : 'Khu vực ${m.group(1)}';
 }

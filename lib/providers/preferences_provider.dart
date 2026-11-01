@@ -27,14 +27,17 @@ enum HomeMetric {
   final bool fullWidth;
 }
 
-/// Cai dat ca nhan hoa: don vi, chi so trang chu, tro nang.
-///
-/// Nhiet do (°C/°F) va giao dien Sang/Toi van o [WeatherProvider]
-/// (AppSettings) de giu tuong thich.
+/// Cai dat ca nhan hoa: moi don vi (ke ca °C/°F), chi so trang chu, tro nang.
+/// Giao dien Sang/Toi khong con luu (da bo); 'themeMode' cu bi bo qua.
 class PreferencesProvider extends ChangeNotifier {
-  PreferencesProvider();
+  /// [units]: gia tri ban dau (test). App that goi [load] truoc runApp
+  /// (main.dart) de khong nhay giao dien o frame dau.
+  PreferencesProvider({UnitPrefs? units}) : _units = units ?? const UnitPrefs();
 
   static const String prefsKey = 'preferences_v1';
+
+  /// Khoa cu (truoc khi gom vao [prefsKey]): chi doc de chuyen doi.
+  static const String legacyCelsiusKey = 'isCelsius';
 
   /// Cac muc co chu trong app (nhan voi textScaler cua he thong).
   static const List<double> textScaleOptions = [0.9, 1.0, 1.15, 1.3];
@@ -42,7 +45,7 @@ class PreferencesProvider extends ChangeNotifier {
   /// Tran tren cua he so chu sau khi nhan (tranh vo bo cuc).
   static const double maxTextScale = 3.0;
 
-  UnitPrefs _units = const UnitPrefs();
+  UnitPrefs _units;
   List<HomeMetric> _order = HomeMetric.values;
   Set<HomeMetric> _hidden = const {};
   double _textScale = 1.0;
@@ -83,15 +86,43 @@ class PreferencesProvider extends ChangeNotifier {
 
   /// Don vi da luu (dung ca trong tac vu nen, khong can provider).
   static UnitPrefs unitsFromPrefs(SharedPreferences? p) {
+    if (p == null) return const UnitPrefs();
     try {
-      final raw = p?.getString(prefsKey);
-      if (raw == null) return const UnitPrefs();
-      final j = jsonDecode(raw);
-      final u = j is Map ? j['units'] : null;
+      final u = readStored(p).json['units'];
       return UnitPrefs.fromJson(u is Map ? Map<String, dynamic>.from(u) : null);
     } catch (_) {
       return const UnitPrefs();
     }
+  }
+
+  /// JSON da luu, bo sung tu khoa cu neu thieu (°C/°F truoc day luu rieng
+  /// qua AppSettings); xoa truong 'themeMode' cu (da bo). [migrated]: co
+  /// lay tu khoa cu -> nen ghi lai.
+  static ({Map<String, dynamic> json, bool migrated}) readStored(
+    SharedPreferences p,
+  ) {
+    var j = <String, dynamic>{};
+    final raw = p.getString(prefsKey);
+    if (raw != null) {
+      try {
+        final d = jsonDecode(raw);
+        if (d is Map) j = Map<String, dynamic>.from(d);
+      } catch (_) {}
+    }
+    var migrated = false;
+    final u = j['units'];
+    final units = u is Map ? Map<String, dynamic>.from(u) : <String, dynamic>{};
+    if (!units.containsKey('temp')) {
+      final c = p.get(legacyCelsiusKey);
+      if (c is bool) {
+        units['temp'] = (c ? TempUnit.celsius : TempUnit.fahrenheit).name;
+        j['units'] = units;
+        migrated = true;
+      }
+    }
+    // Ban cu luu che do Sang/Toi (da bo): ghi lai de xoa truong thua.
+    if (j.remove('themeMode') != null) migrated = true;
+    return (json: j, migrated: migrated);
   }
 
   // ---- Doc / ghi ----
@@ -101,11 +132,11 @@ class PreferencesProvider extends ChangeNotifier {
   Future<void> _load() async {
     try {
       final p = await SharedPreferences.getInstance();
-      final raw = p.getString(prefsKey);
-      if (raw == null) return;
-      final j = jsonDecode(raw);
-      if (j is Map<String, dynamic>) _apply(j);
+      final stored = readStored(p);
+      if (stored.json.isEmpty) return;
+      _apply(stored.json);
       notifyListeners();
+      if (stored.migrated) await _save();
     } catch (e) {
       debugPrint('PreferencesProvider.load: $e');
     }
@@ -144,8 +175,14 @@ class PreferencesProvider extends ChangeNotifier {
   }
 
   void _apply(Map<String, dynamic> j) {
+    // Ban cu (truoc khi gom °C/°F vao day) thieu 'temp': giu gia tri hien tai
+    // thay vi dat ve mac dinh. 'themeMode' cu (da bo) bi bo qua.
     final u = j['units'];
+    final temp = _units.temp;
     _units = UnitPrefs.fromJson(u is Map ? Map<String, dynamic>.from(u) : null);
+    if (u is! Map || !u.containsKey('temp')) {
+      _units = _units.copyWith(temp: temp);
+    }
     _order = normalizeOrder(j['metricOrder']);
     final hidden = j['hiddenMetrics'];
     _hidden = {
@@ -183,6 +220,10 @@ class PreferencesProvider extends ChangeNotifier {
     _units = u;
     _changed();
   }
+
+  void setTemperatureUnit(bool celsius) => setUnits(
+    _units.copyWith(temp: celsius ? TempUnit.celsius : TempUnit.fahrenheit),
+  );
 
   // ---- Chi so trang chu ----
 

@@ -7,10 +7,13 @@ from unittest.mock import Mock
 import pytest
 from fastapi.testclient import TestClient
 
+import ai_model
+import long_range_model_v2 as long_range_model
 import main
-from conftest import REAL_DB, point_app_at
+from conftest import point_app_at
 from database import LOCAL_TZ
 from routers import weather
+from routers.weather_map import _replay_ai_rain
 
 OTHER = "om-10.3691-107.0976"   # Vung Tau cell (series_id == cell_id)
 NWP_COLS = ("location_id", "issued_at", "timestamp", "temperature", "weather_code", "precipitation",
@@ -21,11 +24,11 @@ NWP_COLS = ("location_id", "issued_at", "timestamp", "temperature", "weather_cod
 def no_own_model(monkeypatch):
     def unavailable(*args, **kwargs):
         raise ValueError("untrained: synthetic unavailable model")
-    monkeypatch.setattr(weather.long_range_model, "predict", unavailable)
-    monkeypatch.setattr(weather.long_range_model, "status", lambda: {
+    monkeypatch.setattr(long_range_model, "predict", unavailable)
+    monkeypatch.setattr(long_range_model, "status", lambda: {
         "status": "untrained", "cell_ids": [], "trained_through": None,
     })
-    monkeypatch.setattr(weather.long_range_model, "artifact_revision", lambda: ("map-test", 1), raising=False)
+    monkeypatch.setattr(long_range_model, "artifact_revision", lambda: ("map-test", 1), raising=False)
     weather.invalidate_climatology()
     yield
     weather.invalidate_climatology()
@@ -45,8 +48,8 @@ def own_model(no_own_model, monkeypatch):
             } for h in range(1, 169)},
         }
     predictor = Mock(side_effect=predict)
-    monkeypatch.setattr(weather.long_range_model, "predict", predictor)
-    monkeypatch.setattr(weather.long_range_model, "status", lambda: {
+    monkeypatch.setattr(long_range_model, "predict", predictor)
+    monkeypatch.setattr(long_range_model, "status", lambda: {
         "status": "available", "cell_ids": [OTHER],
         "trained_through": "2024-06-01T00:00:00+07:00",
     })
@@ -54,10 +57,8 @@ def own_model(no_own_model, monkeypatch):
 
 
 @pytest.fixture
-def real_client(monkeypatch):
-    if not REAL_DB.exists():
-        pytest.skip("real weather.db not found")
-    point_app_at(monkeypatch, REAL_DB)
+def real_client(monkeypatch, real_db_snapshot):
+    point_app_at(monkeypatch, real_db_snapshot)
     # No lifespan: a read-only contract check must not migrate or warm the real DB.
     yield TestClient(main.app)
 
@@ -191,14 +192,14 @@ def test_meta_rejects_fresh_but_invalid_model_input(client, syn_db, own_model):
 def test_replay_cache_rechecks_guard_after_revision(monkeypatch):
     now = datetime(2024, 6, 10, 14)
     series = ((OTHER, OTHER),)
-    monkeypatch.setattr(weather.ai_model, 'load_history_from_db', lambda **kwargs: [None] * 48)
+    monkeypatch.setattr(ai_model, 'load_history_from_db', lambda **kwargs: [None] * 48)
     predictor = Mock(return_value={
         'issued_at': now.replace(tzinfo=LOCAL_TZ).isoformat(),
         'predictions': {f'{h}h': {'rain_probability': 0.7} for h in (1, 2, 3)},
     })
-    monkeypatch.setattr(weather.long_range_model, 'predict', predictor)
-    assert weather._replay_ai_rain(now, series, ('model', 1, 'db', 1)) == {OTHER: 0.7}
+    monkeypatch.setattr(long_range_model, 'predict', predictor)
+    assert _replay_ai_rain(now, series, ('model', 1, 'db', 1)) == {OTHER: 0.7}
     predictor.side_effect = ValueError('replay_leakage: new training cutoff')
-    assert weather._replay_ai_rain(now, series, ('model', 2, 'db', 1)) == {}
-    assert weather._replay_ai_rain(now, series, ('model', 2, 'db', 2)) == {}
+    assert _replay_ai_rain(now, series, ('model', 2, 'db', 1)) == {}
+    assert _replay_ai_rain(now, series, ('model', 2, 'db', 2)) == {}
     assert predictor.call_count == 3

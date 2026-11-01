@@ -1,14 +1,16 @@
 """Historical replay, own-model sources, no external fallback, and short-range AI verification."""
 import sqlite3
 from datetime import datetime, timedelta
+from unittest.mock import Mock
 
 import pytest
 from fastapi.testclient import TestClient
 
+import ai_model
 import main
 from conftest import FROZEN_NOW, LAST_TS, freeze_now, point_app_at, write_db
 from database import LOCAL_TZ, WEATHER_COLUMNS, migrate
-from routers import weather as weather_router
+from routers import weather as weather_router, weather_ai, weather_series
 
 T = datetime(2023, 6, 20, 12, 0)          # replay time inside the synthetic data
 T_ISO = T.isoformat()
@@ -191,14 +193,14 @@ def test_daily_live_ai_aggregation(client, live_nwp, monkeypatch):
         forecast[t] = WeatherData(timestamp=t.replace(tzinfo=LOCAL_TZ), temperature=25.0 + k % 24 / 10,
                                  rain_probability=(40 + k % 24) / 100, precipitation=0.0,
                                  weather_code=codes.get(t, 3), source='ai')
-    monkeypatch.setattr(weather_router, '_own_forecast_rows', lambda sid, now: forecast)
+    monkeypatch.setattr(weather_series, '_own_forecast_rows', lambda sid, now: forecast)
     days = client.get("/weather/daily", params={"days": 4}).json()
     assert [d["date"] for d in days] == ["2023-06-24", "2023-06-25", "2023-06-26", "2023-06-27"]
     assert days[0]["source"] == "observed"
     assert [d['source'] for d in days[1:]] == ['ai'] * 3
     assert [d["weather_code"] for d in days[1:]] == [3, 53, 95]
     for d in days[1:]:
-        assert d['rain_day_probability'] is None  # no calibrated daily-event target
+        assert d['rain_day_probability'] == 0.63  # max hourly probability, not a calibrated >=1 mm event
         assert d['precipitation_total'] == 0.0
         assert d['precipitation_median'] is None
         assert d['wind_gusts_max'] is None
@@ -239,9 +241,43 @@ def test_ai_forecast_at_no_leak(tmp_path, syn_rows, monkeypatch):
     assert bodies[0]["issued_at"] == T_ISO + "+07:00"
 
 
-def test_ai_verify_past(client, syn_rows):
-    body = client.get("/weather/ai-verify", params={"at": T_ISO}).json()
-    assert body["issued_at"] == T_ISO + "+07:00" and "model_version" in body
+@pytest.fixture
+def verification_replay(monkeypatch):
+    def predict(until, loc):
+        issued = until.replace(tzinfo=LOCAL_TZ)
+        return {"issued_at": issued.isoformat(), "model_version": "synthetic-replay",
+                "evaluation": {"cell_id": loc.cell_id},
+                "predictions": {f"{h}h": {"target_time": (issued + timedelta(hours=h)).isoformat(),
+                                            "temperature": 30.0 + h, "rain_probability": 0.2}
+                                for h in (1, 3, 6)}}
+
+    # Synthetic model provenance precedes the fixture issues; no real model cutoff is bypassed.
+    monkeypatch.setattr(ai_model, "verification_cutoff", lambda _: "2023-01-01T00:00")
+    predictor = Mock(side_effect=predict)
+    monkeypatch.setattr(weather_ai, "_ai_issue", predictor)
+    return predictor
+
+
+def test_ai_verify_past(client, syn_rows, verification_replay):
+    missing = client.get("/weather/ai-verify", params={"at": T_ISO})
+    assert missing.status_code == 200
+    unavailable = missing.json()
+    assert unavailable["issued_at"] == T_ISO + "+07:00"
+    assert unavailable["verification_mode"] == "unavailable" and unavailable["horizons"] == []
+    assert unavailable["unavailable_reason"] == "no_archived_forecast"
+    assert unavailable["forecast_source"] is None and unavailable["evaluation"] is None
+    repeated = client.get("/weather/ai-verify", params={"at": T_ISO})
+    assert repeated.status_code == 200 and repeated.json() == unavailable
+    verification_replay.assert_not_called()
+
+    response = client.get("/weather/ai-verify", params={"at": T_ISO, "retrospective": True})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["issued_at"] == T_ISO + "+07:00" and body["model_version"] == "synthetic-replay"
+    assert body["verification_mode"] == "retrospective" and body["forecast_source"] == "current_model_replay"
+    assert body["evaluation_source"] == "current_model_test" and body["unavailable_reason"] is None
+    verification_replay.assert_called_once()
+    assert verification_replay.call_args.args[0] == T
     by_ts = {r["timestamp"]: r for r in syn_rows if r["timestamp"].startswith("2023-")}
     assert [h["horizon"] for h in body["horizons"]] == ["1h", "3h", "6h"]
     for h, k in zip(body["horizons"], (1, 3, 6)):
@@ -250,27 +286,47 @@ def test_ai_verify_past(client, syn_rows):
         row = by_ts[target.strftime("%Y-%m-%d %H:%M:%S")]
         assert h["actual_temperature"] == row["temperature"]
         assert h["actual_precipitation"] == row["precipitation"]
-        assert h["actual_rain"] is (row["precipitation"] >= 0.1)
+        assert h["actual_rain"] is (row["precipitation"] > 0.1)
         assert h["abs_error_temperature"] == round(abs(h["predicted_temperature"] - row["temperature"]), 2)
+        assert h["predicted_temperature"] == 30.0 + k
         assert 0 <= h["predicted_rain_probability"] <= 1
 
 
-def test_ai_verify_future_targets_are_null(client, monkeypatch):
-    freeze_now(monkeypatch, LIVE_NOW)   # latest row 23:00; at 21:00 -> 1h known, 3h/6h in the future
-    body = client.get("/weather/ai-verify", params={"at": "2023-06-24T21:00"}).json()
+def test_ai_verify_future_targets_are_null(client, syn_db, monkeypatch, verification_replay):
+    freeze_now(monkeypatch, LIVE_NOW)   # at 21:00 -> 1h known, 3h/6h in the future
+    with sqlite3.connect(syn_db) as con:
+        con.executemany("INSERT INTO hourly_weather (location_id, timestamp, temperature, precipitation) "
+                        "VALUES ('tsn', ?, 40.0, 5.0)",
+                        [("2023-06-25 00:00:00",), ("2023-06-25 03:00:00",)])
+    response = client.get("/weather/ai-verify", params={"at": "2023-06-24T21:00", "retrospective": True})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["issued_at"] == "2023-06-24T21:00:00+07:00"
+    assert body["verification_mode"] == "retrospective" and body["forecast_source"] == "current_model_replay"
+    assert [h["horizon"] for h in body["horizons"]] == ["1h", "3h", "6h"]
+    verification_replay.assert_called_once()
     h1, h3, h6 = body["horizons"]
     assert h1["actual_temperature"] is not None and h1["actual_rain"] is not None
+    assert h1["actual_precipitation"] is not None
+    assert h1["abs_error_temperature"] == round(abs(h1["predicted_temperature"] - h1["actual_temperature"]), 2)
     for h in (h3, h6):
+        assert _ts(h["target_time"]) > LIVE_NOW
         assert h["actual_temperature"] is None and h["actual_precipitation"] is None
         assert h["actual_rain"] is None and h["abs_error_temperature"] is None
         assert h["predicted_temperature"] is not None
 
 
-def test_ai_verify_default_is_now_minus_6h(client, monkeypatch):
+def test_ai_verify_default_is_now_minus_6h(client, monkeypatch, verification_replay):
     freeze_now(monkeypatch, LIVE_NOW)
-    body = client.get("/weather/ai-verify").json()
+    response = client.get("/weather/ai-verify")
+    assert response.status_code == 200
+    body = response.json()
     assert body["issued_at"] == "2023-06-24T17:00:00+07:00"
-    assert all(h["actual_temperature"] is not None for h in body["horizons"])
+    assert body["verification_mode"] == "unavailable" and body["horizons"] == []
+    assert body["unavailable_reason"] == "no_archived_forecast" and body["forecast_source"] is None
+    repeated = client.get("/weather/ai-verify")
+    assert repeated.status_code == 200 and repeated.json() == body
+    verification_replay.assert_not_called()
 
 
 # --- UV index and air quality -------------------------------------------------------------------------
@@ -313,7 +369,7 @@ def test_own_forecast_never_borrows_external_uv_aqi(client, live_nwp, monkeypatc
     forecast = {LAST_TS + timedelta(hours=h): WeatherData(
         timestamp=(LAST_TS + timedelta(hours=h)).replace(tzinfo=LOCAL_TZ), temperature=28.0,
         rain_probability=0.2, precipitation=0.0, source='ai') for h in range(1, 169)}
-    monkeypatch.setattr(weather_router, '_own_forecast_rows', lambda sid, now: forecast)
+    monkeypatch.setattr(weather_series, '_own_forecast_rows', lambda sid, now: forecast)
     items = client.get("/weather/hourly", params={"hours": 6}).json()
     assert all(x['us_aqi'] is None and x['uv_index'] is None for x in items)
     days = client.get("/weather/daily", params={"days": 2}).json()

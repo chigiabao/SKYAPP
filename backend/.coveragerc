@@ -1,0 +1,13 @@
+[run]
+source = .
+data_file = ../build/backend.coverage
+# Offline preparation/training is outside the no-training runtime test gate.
+omit =
+    tests/*
+    scripts/*
+    convert_excel_to_sqlite.py
+
+[report]
+fail_under = 80
+show_missing = True
+skip_covered = True

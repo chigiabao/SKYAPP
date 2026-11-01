@@ -1,0 +1,29 @@
+# Standalone Linux nginx.conf; replace every __PLACEHOLDER__ before nginx -t.
+# Do not include other vhosts/logging configs: they can re-enable raw request logs.
+error_log /dev/null crit;
+
+events {}
+
+http {
+    # No request target (even path), query, headers, client IP or request body.
+    log_format privacy_metrics '$time_iso8601 status=$status '
+                               'bytes=$body_bytes_sent seconds=$request_time';
+    access_log /var/log/nginx/sky-weather-access.log privacy_metrics;
+
+    server {
+        # Explicit address:port only; there is deliberately no HTTP listener.
+        listen __TLS_LISTEN_ADDRESS__ ssl default_server;
+        server_name __SERVER_NAME__;
+        ssl_certificate "__TLS_CERTIFICATE_PATH__";
+        ssl_certificate_key "__TLS_PRIVATE_KEY_PATH__";
+        ssl_protocols TLSv1.2 TLSv1.3;
+
+        location / {
+            proxy_pass http://127.0.0.1:8000;
+            proxy_set_header Host $host;
+            proxy_set_header X-Forwarded-For $remote_addr;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_read_timeout 120s;
+        }
+    }
+}

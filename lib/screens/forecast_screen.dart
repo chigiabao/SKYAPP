@@ -1,7 +1,7 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../config/api_config.dart';
 import '../models/units.dart';
 import '../models/weather.dart';
 import '../providers/planner_provider.dart';
@@ -10,14 +10,18 @@ import '../providers/weather_provider.dart';
 import '../services/feedback_service.dart';
 import '../services/share_service.dart';
 import '../ui/weather/widgets/glass_page.dart';
+import '../ui/weather/widgets/ios_page.dart';
 import '../ui/weather/design_tokens.dart';
-import '../utils/constants.dart';
+import '../ui/weather/widgets/adaptive_dialog.dart';
+import '../widgets/ai_unavailable_card.dart';
 import '../widgets/planner_cards.dart';
 import 'forecast/forecast_charts.dart';
-import 'forecast/forecast_format.dart';
+import '../utils/forecast_format.dart';
 import 'forecast/forecast_source.dart';
 import 'forecast/forecast_widgets.dart';
 import 'feedback_screen.dart';
+import '../ui/weather/widgets/ios_toast.dart';
+import '../utils/haptics.dart';
 
 export 'forecast/forecast_source.dart' show ForecastSource;
 
@@ -100,7 +104,7 @@ class _ForecastScreenState extends State<ForecastScreen> {
     ];
     if (dayHours.isEmpty) return const [];
     return [
-      const SizedBox(height: AppSizes.paddingM),
+      const SizedBox(height: Space.l),
       ActivitySuggestionCard(
         title: 'GỢI Ý HOẠT ĐỘNG TRONG NGÀY',
         activities: planner.favorites,
@@ -135,23 +139,22 @@ class _ForecastScreenState extends State<ForecastScreen> {
     Widget body;
     String title = 'Dự báo chi tiết';
     if (days.isEmpty || selectedIndex < 0) {
-      body = _StateView(provider: provider, hasDays: days.isNotEmpty);
+      body = SliverFillRemaining(
+        hasScrollBody: false,
+        child: _StateView(provider: provider, hasDays: days.isNotEmpty),
+      );
     } else {
       final day = days[selectedIndex];
       title = ForecastFormat.title(day.date);
-      final width = MediaQuery.sizeOf(context).width;
-      final hPad = width > Space.contentMaxWidth + 2 * AppSizes.paddingM
-          ? (width - Space.contentMaxWidth) / 2
-          : AppSizes.paddingM;
-      body = RefreshIndicator(
-        onRefresh: provider.fetchWeatherData,
-        child: ListView(
-          padding: EdgeInsets.fromLTRB(
-            hPad,
-            AppSizes.paddingS,
-            hPad,
-            AppSizes.paddingXL,
-          ),
+      final hPad = iosPageHPad(context);
+      body = SliverPadding(
+        padding: EdgeInsets.fromLTRB(
+          hPad,
+          Space.s,
+          hPad,
+          Space.xxl + MediaQuery.paddingOf(context).bottom,
+        ),
+        sliver: SliverList.list(
           children: _stagger([
             if (provider.error != null) ...[
               ForecastMessageCard(
@@ -164,7 +167,7 @@ class _ForecastScreenState extends State<ForecastScreen> {
                   child: const Text('Thử lại'),
                 ),
               ),
-              const SizedBox(height: AppSizes.paddingM),
+              const SizedBox(height: Space.l),
             ],
             DayPicker(
               days: days,
@@ -172,7 +175,7 @@ class _ForecastScreenState extends State<ForecastScreen> {
               nowHcm: now,
               onSelect: (i) => _select(days, i),
             ),
-            const SizedBox(height: AppSizes.paddingM),
+            const SizedBox(height: Space.l),
             ForecastSourceInfo(
               source:
                   widget.source ??
@@ -183,8 +186,13 @@ class _ForecastScreenState extends State<ForecastScreen> {
               isFromCache: provider.isFromCache,
               cachedAt: provider.cachedAt,
             ),
-            const SizedBox(height: AppSizes.paddingM),
-            DaySummaryCard(day: day, provider: provider, hours: hours),
+            const SizedBox(height: Space.l),
+            if (day.confidence == ForecastConfidence.low ||
+                day.confidence == ForecastConfidence.medium) ...[
+              DayConfidenceNotice(day: day),
+              const SizedBox(height: Space.l),
+            ],
+            DaySummaryCard(day: day, hours: hours),
             ..._activitySection(context, day, hours, now),
             ..._hourlySection(day, hours, now, provider),
             ..._dailySection(context, days, selectedIndex, now, provider),
@@ -193,33 +201,35 @@ class _ForecastScreenState extends State<ForecastScreen> {
       );
     }
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
-        titleTextStyle: AppTextStyles.heading2.copyWith(
-          color: Theme.of(context).textTheme.titleLarge?.color,
+    return IosPageScaffold(
+      title: title,
+      onRefresh: withRefreshHaptic(() async {
+        await provider.fetchWeatherData();
+        return provider.error == null;
+      }),
+      actions: [
+        IosBarButton(
+          tooltip: 'Báo dự báo sai',
+          icon: CupertinoIcons.exclamationmark_bubble,
+          onPressed: () => _openWrongForecast(context, provider, hours),
         ),
-        actions: [
-          IconButton(
-            tooltip: 'Báo dự báo sai',
-            icon: const Icon(Icons.report_outlined),
-            onPressed: () => _openWrongForecast(context, provider, hours),
-          ),
-          _ShareMenu(provider: provider, hours: hours),
-          IconButton(
+        _ShareMenu(provider: provider, hours: hours),
+        if (provider.isLoading)
+          const SizedBox(
+            width: 44,
+            height: 44,
+            child: Center(
+              child: CupertinoActivityIndicator(color: Palette.white),
+            ),
+          )
+        else
+          IosBarButton(
             tooltip: 'Làm mới',
-            icon: const Icon(Icons.refresh_rounded),
-            onPressed: provider.isLoading ? null : provider.fetchWeatherData,
+            icon: CupertinoIcons.refresh,
+            onPressed: provider.fetchWeatherData,
           ),
-        ],
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(2),
-          child: provider.isLoading
-              ? const LinearProgressIndicator(minHeight: 2)
-              : const SizedBox(height: 2),
-        ),
-      ),
-      body: body,
+      ],
+      slivers: [body],
     );
   }
 
@@ -287,18 +297,15 @@ class _ForecastScreenState extends State<ForecastScreen> {
     final nowHour = HcmTime.startOfHour(now);
     final idx = shown.indexWhere((h) => HcmTime.startOfHour(h.time) == nowHour);
     final nowIndex = idx < 0 ? null : idx;
+    final units = PreferencesProvider.unitsOf(context);
 
     return [
       ForecastSectionTitle('Nhiệt độ theo giờ', subtitle: subtitle),
-      HourlyTemperatureChart(
-        hours: shown,
-        nowIndex: nowIndex,
-        provider: provider,
-      ),
+      HourlyTemperatureChart(hours: shown, nowIndex: nowIndex, units: units),
       ForecastSectionTitle('Lượng mưa theo giờ', subtitle: _rainSummary(shown)),
       HourlyRainChart(hours: shown, nowIndex: nowIndex),
       ForecastSectionTitle(
-        'Gió theo giờ (${PreferencesProvider.unitsOf(context).windAxisUnit.label})',
+        'Gió theo giờ (${units.windAxisUnit.label})',
         subtitle: 'Tốc độ gió trung bình và gió giật trong giờ.',
       ),
       if (shown.any((h) => h.windSpeed != null || h.windGusts != null))
@@ -308,8 +315,13 @@ class _ForecastScreenState extends State<ForecastScreen> {
           icon: Icons.air_rounded,
           message: 'Chưa có số liệu gió theo giờ.',
         ),
-      const SizedBox(height: AppSizes.paddingM),
-      HourlyTable(hours: shown, nowIndex: nowIndex, provider: provider),
+      const SizedBox(height: Space.l),
+      HourlyTable(
+        hours: shown,
+        nowIndex: nowIndex,
+        place: provider.place,
+        units: units,
+      ),
     ];
   }
 
@@ -322,11 +334,16 @@ class _ForecastScreenState extends State<ForecastScreen> {
     final coverage = mms.length < shown.length
         ? 'Chỉ có lượng mưa cho ${mms.length}/${shown.length} giờ. '
         : '';
+    // Ghi ro khung gio de khong nham voi "Tổng mưa cả ngày" o the tom tat.
+    final window = shown.length >= 24
+        ? 'Cả ngày'
+        : '${ForecastFormat.hourMinute(shown.first.time)}–'
+              '${ForecastFormat.hourMinute(shown.last.time)}';
     if (rainy == 0) {
-      return '${coverage}Không có giờ nào mưa đáng kể (≥ 0,1 mm)'
+      return '$coverage$window: không có giờ nào mưa đáng kể (≥ 0,1 mm)'
           '${coverage.isEmpty ? '.' : ' trong các giờ có số liệu.'}';
     }
-    return '$coverage$rainy giờ có mưa · tổng '
+    return '$coverage$window: $rainy giờ có mưa · tổng '
         '${PreferencesProvider.unitsOf(context).rainText(total)}. '
         'Chạm cột để xem chi tiết.';
   }
@@ -343,16 +360,15 @@ class _ForecastScreenState extends State<ForecastScreen> {
     final inch = units.precip == PrecipUnit.inch;
     final windMissing = days.any((d) => d.windSpeed == null);
     final hasGusts = days.any((d) => d.windGusts != null);
-    final gustColor = p.isDark
-        ? const Color(0xFFFFCC80)
-        : const Color(0xFFB45309);
+    final gustColor = p.isDark ? Tones.gustOnDark : Tones.amberOnLight;
     final hint = 'Chạm vào một ngày để xem chi tiết.';
     return [
       ForecastSectionTitle('Nhiệt độ ${days.length} ngày', subtitle: hint),
       DailyTemperatureChart(
         days: days,
         selectedIndex: selectedIndex,
-        provider: provider,
+        nowHcm: provider.nowHcm,
+        units: units,
         onSelect: (i) => _select(days, i),
       ),
       ForecastSectionTitle(
@@ -410,37 +426,52 @@ class _ShareMenu extends StatelessWidget {
   final WeatherProvider provider;
   final List<HourlyForecast> hours;
 
-  String get _place =>
-      provider.currentWeather?.locationName ?? ApiConfig.locationName;
+  /// Ten that cua dia diem dang xem (khong dung ten thanh pho co dinh).
+  String get _place => provider.place.name;
 
   Future<void> _share(BuildContext context, String? text) async {
-    final messenger = ScaffoldMessenger.of(context);
+    final overlay = iosToastOverlay(context);
     if (text == null) {
-      messenger.showSnackBar(
-        const SnackBar(content: Text('Chưa có dữ liệu để chia sẻ.')),
-      );
+      showIosToastIn(overlay, 'Chưa có dữ liệu để chia sẻ.');
       return;
     }
     final r = await shareOrCopy(text);
     if (r == ShareOutcome.shared) return;
-    messenger.showSnackBar(
-      SnackBar(
-        content: Text(
-          r == ShareOutcome.copied
-              ? 'Thiết bị không hỗ trợ chia sẻ. Đã sao chép nội dung vào bộ nhớ tạm.'
-              : 'Không chia sẻ được.',
-        ),
-      ),
+    showIosToastIn(
+      overlay,
+      r == ShareOutcome.copied
+          ? 'Thiết bị không hỗ trợ chia sẻ. Đã sao chép nội dung vào bộ nhớ tạm.'
+          : 'Không chia sẻ được.',
+      tone: r == ShareOutcome.copied
+          ? IosToastTone.success
+          : IosToastTone.error,
     );
   }
 
   @override
   Widget build(BuildContext context) {
     final planner = maybePlanner(context);
-    return PopupMenuButton<int>(
-      tooltip: 'Chia sẻ',
-      icon: const Icon(Icons.share_outlined),
-      onSelected: (v) => _share(
+    final units = PreferencesProvider.unitsOf(context);
+    Future<void> pick() async {
+      final v = await showAppActionSheet<int>(
+        context,
+        title: 'Chia sẻ',
+        actions: [
+          const AppDialogAction(
+            label: 'Chia sẻ thời tiết',
+            value: 0,
+            icon: CupertinoIcons.cloud_sun,
+          ),
+          if (planner != null)
+            const AppDialogAction(
+              label: 'Chia sẻ gợi ý giờ hoạt động',
+              value: 1,
+              icon: CupertinoIcons.sportscourt,
+            ),
+        ],
+      );
+      if (v == null || !context.mounted) return;
+      await _share(
         context,
         v == 0
             ? forecastShareText(
@@ -448,7 +479,8 @@ class _ShareMenu extends StatelessWidget {
                 nowHcm: provider.nowHcm,
                 hours: hours,
                 current: provider.currentWeather,
-                formatTempValue: provider.formatTempValue,
+                formatTempValue: units.tempNumber,
+                replay: provider.isReplay,
               )
             : (hours.isEmpty || planner == null
                   ? null
@@ -458,16 +490,16 @@ class _ShareMenu extends StatelessWidget {
                       hours: hours,
                       nowHcm: provider.nowHcm,
                       sensitivity: planner.sensitivity,
+                      replay: provider.isReplay,
+                      units: units,
                     )),
-      ),
-      itemBuilder: (_) => [
-        const PopupMenuItem(value: 0, child: Text('Chia sẻ thời tiết')),
-        if (planner != null)
-          const PopupMenuItem(
-            value: 1,
-            child: Text('Chia sẻ gợi ý giờ hoạt động'),
-          ),
-      ],
+      );
+    }
+
+    return IosBarButton(
+      tooltip: 'Chia sẻ',
+      icon: CupertinoIcons.share,
+      onPressed: pick,
     );
   }
 }
@@ -492,7 +524,7 @@ class _StateView extends StatelessWidget {
       message = provider.error!;
     } else if (provider.weatherData?.forecastError != null) {
       icon = Icons.model_training_rounded;
-      message = provider.weatherData!.forecastError!;
+      message = aiUnavailableMessage(provider.weatherData!.forecastError);
     } else if (hasDays) {
       icon = Icons.event_busy_rounded;
       message =
@@ -504,26 +536,26 @@ class _StateView extends StatelessWidget {
 
     return Center(
       child: SingleChildScrollView(
-        padding: const EdgeInsets.all(AppSizes.paddingL),
+        padding: const EdgeInsets.all(Space.xl),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             if (provider.isLoading)
-              const CircularProgressIndicator()
+              const CupertinoActivityIndicator(radius: 14)
             else
               Icon(
                 icon,
-                size: AppSizes.iconSizeL,
+                size: IconSizes.state,
                 color: theme.textTheme.bodySmall?.color,
               ),
-            const SizedBox(height: AppSizes.paddingM),
+            const SizedBox(height: Space.l),
             Text(
               message,
               textAlign: TextAlign.center,
               style: theme.textTheme.bodyLarge,
             ),
             if (!provider.isLoading) ...[
-              const SizedBox(height: AppSizes.paddingM),
+              const SizedBox(height: Space.l),
               ElevatedButton.icon(
                 onPressed: provider.fetchWeatherData,
                 icon: const Icon(Icons.refresh_rounded),

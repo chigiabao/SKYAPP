@@ -1,13 +1,15 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sky_weather_app/models/app_settings.dart';
+import 'package:sky_weather_app/services/app_settings_store.dart';
+import 'package:sky_weather_app/models/units.dart';
 import 'package:sky_weather_app/models/weather.dart';
+import 'package:sky_weather_app/providers/preferences_provider.dart';
 import 'package:sky_weather_app/providers/weather_provider.dart';
 import 'package:sky_weather_app/services/api_service.dart';
 
@@ -123,7 +125,7 @@ void main() {
     });
 
     test('daily rain_day_probability and current extra fields', () {
-      final data = WeatherData.fromJson(_bundle(), locationName: 'HCM');
+      final data = WeatherData.fromJson(_bundle());
       final d = data.dailyForecast.first;
       expect(d.rainDayProbability, 0.8);
       expect(d.rainDayPercent, 80);
@@ -209,7 +211,11 @@ void main() {
         baseUrl: 'http://test',
         clock: _clock, // 21:30 TP.HCM
       );
-      final result = await offline.fetchWithCacheFallback();
+      await expectLater(
+        offline.fetchWeatherData(),
+        throwsA(isA<ApiException>()),
+      );
+      final result = (await offline.loadCachedResult())!;
       expect(result.fromCache, isTrue);
       expect(result.savedAt, DateTime.utc(2026, 10, 15, 19));
       // 19h, 20h da qua; giu 21h (gio hien tai), 22h, 23h
@@ -314,28 +320,87 @@ void main() {
   });
 
   group('AppSettings', () {
-    test('migrates legacy isDarkMode and reads themeMode', () async {
-      SharedPreferences.setMockInitialValues({'isDarkMode': true});
-      expect(
-        AppSettings.fromPrefs(await SharedPreferences.getInstance()).themeMode,
-        ThemeMode.dark,
-      );
+    test('migrates legacy isCelsius; legacy theme keys are ignored', () async {
       SharedPreferences.setMockInitialValues({
+        'isDarkMode': true,
         'themeMode': 'system',
         'isCelsius': false,
       });
-      final s = AppSettings.fromPrefs(await SharedPreferences.getInstance());
-      expect(s.themeMode, ThemeMode.system);
-      expect(s.isCelsius, isFalse);
+      final b = PreferencesProvider();
+      await b.load();
+      expect(b.units.isCelsius, isFalse);
+      // Da ghi sang ban ghi moi -> lan sau khong can khoa cu.
+      final prefs = await SharedPreferences.getInstance();
+      final saved = jsonDecode(prefs.getString(PreferencesProvider.prefsKey)!);
+      expect(saved.containsKey('themeMode'), isFalse);
+      expect(saved['units']['temp'], 'fahrenheit');
     });
 
-    test('provider persists theme mode', () async {
-      SharedPreferences.setMockInitialValues({});
-      final p = WeatherProvider(initialSettings: const AppSettings());
-      p.setThemeMode(ThemeMode.dark);
+    test('legacy °F merges (stale theme key ignored) into existing unit preferences', () async {
+      SharedPreferences.setMockInitialValues({
+        PreferencesProvider.prefsKey: jsonEncode({
+          'version': 1,
+          'units': {'wind': 'ms', 'precip': 'inch'},
+          'textScale': 1.15,
+        }),
+        'themeMode': 'dark',
+        'isCelsius': false,
+      });
+      final p = PreferencesProvider();
+      await p.load();
+      expect(p.units.temp, TempUnit.fahrenheit);
+      expect(p.units.wind, WindUnit.ms);
+      expect(p.units.precip, PrecipUnit.inch);
+      expect(p.textScale, 1.15);
+      // Tac vu nen (khong co provider) doc cung ket qua.
+      final stored = await SharedPreferences.getInstance();
+      expect(PreferencesProvider.unitsFromPrefs(stored).isCelsius, isFalse);
+    });
+
+    test('new preference record wins over stale legacy keys', () async {
+      SharedPreferences.setMockInitialValues({
+        PreferencesProvider.prefsKey: jsonEncode({
+          'version': 1,
+          'themeMode': 'light',
+          'units': {'temp': 'celsius'},
+        }),
+        'themeMode': 'dark',
+        'isCelsius': false,
+      });
+      final p = PreferencesProvider();
+      await p.load();
+      expect(p.units.isCelsius, isTrue);
+      // Truong giao dien cu trong ban ghi bi xoa khi ghi lai.
       await Future<void>.delayed(Duration.zero);
       final prefs = await SharedPreferences.getInstance();
-      expect(prefs.getString('themeMode'), 'dark');
+      final saved = jsonDecode(prefs.getString(PreferencesProvider.prefsKey)!);
+      expect(saved.containsKey('themeMode'), isFalse);
+    });
+
+    test('provider persists settings without a theme field', () async {
+      SharedPreferences.setMockInitialValues({});
+      final p = PreferencesProvider();
+      p.setTemperatureUnit(false);
+      await Future<void>.delayed(Duration.zero);
+      final prefs = await SharedPreferences.getInstance();
+      final saved = jsonDecode(prefs.getString(PreferencesProvider.prefsKey)!);
+      expect(saved['units']['temp'], 'fahrenheit');
+      expect(saved.containsKey('themeMode'), isFalse);
+    });
+
+    test('store round-trips settings and clears replay time', () async {
+      SharedPreferences.setMockInitialValues({});
+      final at = DateTime.utc(2026, 10, 21, 21);
+      await AppSettingsStore.save(
+        AppSettings(replayEnabled: true, replayAt: at),
+      );
+      final s = await AppSettingsStore.load();
+      expect(s.replayEnabled, isTrue);
+      expect(s.replayAt, at);
+      await AppSettingsStore.save(const AppSettings());
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.containsKey(AppSettingsStore.replayAtKey), isFalse);
+      expect((await AppSettingsStore.load()).replayEnabled, isFalse);
     });
   });
 }

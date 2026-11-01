@@ -53,9 +53,6 @@ class LightningField {
   /// Thoi diem lan chop dau tien (s) - tien cho golden test.
   double get firstStrikeTime => start[0];
 
-  /// Thoi diem bat dau lan chop [i] trong chu ky dau.
-  double strikeStart(int i) => start[i];
-
   /// Chi so lan chop dang hien (loe hoac tat dan) tai [t], null neu khong.
   int? activeStrike(double t) {
     final double tm = wrapDouble(t, period);

@@ -6,12 +6,13 @@ import 'package:sky_weather_app/ui/weather/weather_insights.dart';
 final DateTime _now = DateTime.utc(2026, 10, 16, 12, 20);
 
 List<HourlyForecast> _hours({
-  double prob = 0.1,
+  double? prob = 0.1,
   Map<int, double> probAt = const {},
   Map<int, int> codeAt = const {},
   double? gust,
   WeatherCondition condition = WeatherCondition.cloudy,
-  DataSource source = DataSource.forecast,
+  DataSource? source = DataSource.forecast,
+  double? mm,
   Map<int, double> uvAt = const {},
 }) => [
   for (var i = 0; i < 24; i++)
@@ -20,6 +21,7 @@ List<HourlyForecast> _hours({
       temperature: 30,
       condition: condition,
       rainProbability: probAt[i] ?? prob,
+      precipitationMm: mm,
       weatherCode: codeAt[i] ?? 3,
       windGusts: gust,
       source: source,
@@ -72,8 +74,122 @@ void main() {
       );
     });
 
+    test('khong gio nao >= 50% nhung dinh 49% -> mua rai rac, khong noi "khong mua"', () {
+      expect(
+        hourlySummary(_hours(probAt: {2: 0.4, 4: 0.49}), nowHcm: _now),
+        'Có thể mưa rải rác, khả năng cao nhất khoảng 16:00 (49%).',
+      );
+    });
+
     test('rong -> null', () {
       expect(hourlySummary(const [], nowHcm: _now), isNull);
+    });
+  });
+
+  group('rain summary integrity', () {
+    for (final source in [DataSource.climatology, null]) {
+      test('unsupported source $source cannot imply rain or dry weather', () {
+        final hours = _hours(source: source, prob: 0.9, codeAt: {2: 95});
+        expect(heroRainSummary(hours, nowHcm: _now), isNull);
+        expect(hourlySummary(hours, nowHcm: _now), isNull);
+      });
+    }
+
+    for (final probability in [null, double.nan, double.infinity, -0.1, 1.1]) {
+      test('missing or invalid probability $probability never implies dry', () {
+        final hours = _hours(prob: probability);
+        expect(heroRainSummary(hours, nowHcm: _now), isNull);
+        expect(hourlySummary(hours, nowHcm: _now), isNull);
+      });
+    }
+
+    test(
+      'observed probability cannot substitute for missing precipitation',
+      () {
+        final hours = _hours(source: DataSource.observed, prob: 0);
+        expect(heroRainSummary(hours, nowHcm: _now), isNull);
+        expect(hourlySummary(hours, nowHcm: _now), isNull);
+        expect(
+          heroRainSummary(
+            _hours(source: DataSource.observed, prob: null, mm: 0),
+            nowHcm: _now,
+          ),
+          'Không mưa đến tối',
+        );
+      },
+    );
+
+    test('partial, shifted, gapped and duplicate windows never imply dry', () {
+      final complete = _hours();
+      for (final hours in [
+        complete.take(1).toList(),
+        complete.skip(1).toList(),
+        [
+          for (var i = 0; i < complete.length; i++)
+            if (i != 5) complete[i],
+        ],
+        [for (var i = 0; i < complete.length; i++) complete[i == 5 ? 4 : i]],
+      ]) {
+        expect(heroRainSummary(hours, nowHcm: _now), isNull);
+        expect(hourlySummary(hours, nowHcm: _now), isNull);
+      }
+    });
+
+    test('one unknown hour cannot be covered by otherwise complete data', () {
+      final complete = _hours();
+      final unknown = _hours(prob: null);
+      final hours = [
+        for (var i = 0; i < complete.length; i++)
+          i == 5 ? unknown[i] : complete[i],
+      ];
+      expect(heroRainSummary(hours, nowHcm: _now), isNull);
+      expect(hourlySummary(hours, nowHcm: _now), isNull);
+    });
+
+    test(
+      'fresh complete AI data retains useful dry and moderate-rain summaries',
+      () {
+        expect(
+          heroRainSummary(_hours(source: DataSource.ai), nowHcm: _now),
+          'Không mưa đến tối',
+        );
+        expect(
+          heroRainSummary(_hours(probAt: {2: 0.4}), nowHcm: _now),
+          'Có thể mưa 14:00–15:00 (40%) · nên mang ô',
+        );
+        final complete = _hours();
+        expect(
+          heroRainSummary(complete.reversed.toList(), nowHcm: _now),
+          'Không mưa đến tối',
+        );
+        expect(heroRainSummary(complete, nowHcm: _now, isStale: true), isNull);
+        expect(hourlySummary(complete, nowHcm: _now, isStale: true), isNull);
+      },
+    );
+
+    test(
+      'night dry summary needs coverage through 06:00, including midnight',
+      () {
+        final evening = DateTime.utc(2026, 10, 16, 20, 30);
+        expect(heroRainSummary(_hours(), nowHcm: evening), 'Đêm nay không mưa');
+        final missingMidnight = _hours()
+            .where((h) => h.time.hour != 0)
+            .toList();
+        expect(heroRainSummary(missingMidnight, nowHcm: evening), isNull);
+      },
+    );
+
+    test('known rain remains useful without inventing a current or continuous event', () {
+      final hours = _hours(probAt: {2: 0.8, 4: 0.9});
+      final sparse = [hours[2], hours[4]];
+      expect(
+        heroRainSummary(sparse, nowHcm: _now),
+        'Mưa 14:00–15:00 · nhớ mang ô',
+      );
+      expect(
+        hourlySummary(sparse, nowHcm: _now),
+        'Có khả năng mưa từ khoảng 14:00 (80%).',
+      );
     });
   });
 

@@ -2,7 +2,47 @@
 
 Đồ án sinh viên: ứng dụng Flutter (Android, web, iOS) hiển thị thời tiết cho **TP.HCM mới** (sau sáp nhập 2025 với Bình Dương và Bà Rịa – Vũng Tàu), lấy dữ liệu từ backend FastAPI của nhóm. Dự báo live dùng LightGBM riêng, direct 1–168 giờ với 6 mục tiêu; v3 1/3/6 giờ vẫn là luồng AI ngắn hạn riêng.
 
-## Cập nhật 19/10/2026: Dự báo riêng thử nghiệm
+## Tiến độ hoàn thiện (26/10/2026)
+
+- PDF theo dõi: [Sky Weather - Tiến độ hoàn thiện](../deliverables/Sky_Weather_Tien_Do_Hoan_Thien.pdf). Nguồn trạng thái: [docs/progress_20261026.json](docs/progress_20261026.json); tạo lại bằng `python tool/build_progress_pdf.py`.
+- Đã sửa freshness/expiry AI live, giới hạn fallback v2 ở TSN, kiểm tra serving policy và nạp fallback nguyên khối; ngày thiếu dữ liệu mưa không còn bị tính là ngày khô.
+- Đã thêm khôi phục mật khẩu qua email (token một lần, hạn 15 phút, lưu hash, giới hạn yêu cầu/thử sai, thu hồi mọi phiên). Cần SMTP TLS theo `.env.example` và thử gửi email thật trước production.
+- Trang chủ dùng thẻ AI thu gọn; cài đặt được phân nhóm với trang chi tiết, giữ đầy đủ tùy chọn cũ.
+- Kiểm chứng mới: backend **789 passed, 15 skipped, 2 subtests passed** (không training); Flutter **753 passed, 7 skipped** không gồm golden; golden **16 passed**; HTTP contract FastAPI/Flutter **3 passed**. Analyzer và Ruff đạt. Logs ở `build/progress-*`.
+- Chưa kiểm chứng Docker container (daemon chưa chạy), SMTP thật, iOS signing/WidgetKit và thiết bị thật. Không retrain hay ingestion, không triển khai production trong đợt này.
+
+## Kiểm chứng trước đợt hoàn thiện (23/10/2026)
+
+- **Backend FastAPI**: **680 passed, 2 subtests passed** (`python -m pytest -q -p no:warnings`), linter **Ruff sạch** (`All checks passed!`). Rate limit mặc định `RATE_LIMIT_PER_MINUTE=120`, hàm lấy IP chuẩn hóa chống spoofing header khi có proxy tin cậy (`TRUST_PROXY=1`), rate limit chặt 5 lần/giờ/IP cho đăng ký; router `backend/routers/weather.py` gọn sạch (< 30 dòng), không re-export nội bộ xuyên module.
+- **Ứng dụng Flutter**: **749 passed, 7 skipped** (`flutter test`), `flutter analyze` **No issues found!**, golden tests nguyên vẹn. Toàn bộ 100% file mã nguồn Dart trong `lib/` đều $\le 700$ dòng (file lớn nhất 690 dòng).
+- **AI/ML v3**: Repo thu gọn chỉ còn 1 bản v3 duy nhất (giảm 386,5 MB model trùng sang `build/model-archive/`); chính sách chọn model khách quan dựa trên `val_select` sạch (`compare_v3_20261023.json`), báo cáo coverage interval trung thực theo số đo thực tế trên test (88,48% / 88,11% / 89,33% cho 1h / 3h / 6h).
+- **Nhật ký nâng cấp toàn diện**: [docs/nang_9_diem_log_20261023.md](docs/nang_9_diem_log_20261023.md).
+
+## Lịch sử cập nhật
+
+### Cập nhật dữ liệu và AI (22/10/2026)
+
+- Đã bổ sung 4.824 hàng lịch sử cho 67 ô; tải 36 CSV quan trắc NOAA ISD và 14 CSV METAR IEM có dữ liệu, lưu riêng nguồn và checksum. Có model nhiệt độ thử nghiệm bằng nhãn trạm, learning curve và kiểm tra giai đoạn mới hơn.
+- Chưa thay model phục vụ toàn app: model trạm chỉ có phạm vi ba điểm; 1h còn thua persistence, thử interval chưa đạt 90%, chưa có nhãn mưa giờ đủ điều kiện.
+- Kiểm chứng lúc đó: 650 backend tests đạt, 15 skipped, 2 subtests; coverage runtime 89,39%; 4 live Flutter tests đạt. [Báo cáo nguồn dữ liệu, metrics và giới hạn](docs/archive/data_upgrade_20261022.md).
+
+### Phần tiếp nối Claude (22/10/2026)
+
+- Backend 569 passed, 15 skipped, coverage runtime 88,73%; Flutter 733 passed, 7 skipped, coverage 83,90%; 16 golden và 3 test HTTP contract đạt. Analyzer và Ruff không issue. CI yêu cầu coverage tối thiểu 80%.
+- Hoàn tất tách bốn màn hình chính, sửa trợ năng, bảo vệ log webhook/rate limit và cách đánh giá AI. Model ứng viên chưa được đưa vào phục vụ vì interval còn dưới mục tiêu và cần kiểm chứng lại.
+- Kết quả, log và giới hạn: [docs/archive/continuation_20261022.md](docs/archive/continuation_20261022.md).
+
+### Độ tin cậy vận hành (21/10/2026)
+
+- Đã cập nhật live qua pipeline hiện có: tại 19:42 (+07), đầu vào tới **19:00 ngày 21/10/2026**, health `ready=true`, **68/68 ô mới**; bundle trả **48 giờ, 7 ngày**, `forecast_error=null`.
+- Scheduler thử lại sớm một lần sau 5 phút khi lỗi/partial, sau đó về lịch HH:05. `/health.scheduler` cho biết đang chạy/chờ/tắt/chưa khởi động, lần chạy trước và lần chạy kế tiếp. Tắt lifespan sẽ không có scheduler.
+- Ingest từ chối số không hữu hạn, mảng giờ sai, timestamp trùng và dữ liệu nhiệt độ rỗng. Một location lỗi trong batch không làm mất dữ liệu hợp lệ của các location khác.
+- Tác vụ nền Flutter yêu cầu retry với lỗi mạng/timeout/408/429/5xx; không retry 401/403 hoặc dữ liệu không hợp lệ. Kết quả từng địa điểm được giữ, thông báo không bị gửi trùng và provider được giải phóng.
+- Contract hiện tại của `rain_day_probability` cho ngày AI là max xác suất giờ khi đủ 24 giờ (thiếu giờ thì null), không phải xác suất sự kiện mưa ngày đã hiệu chuẩn.
+- Kiểm chứng lúc đó: 492 backend tests đạt, 15 bỏ qua fixture training; 721 Flutter tests đạt, 4 live tests chạy riêng đều đạt; analyze không issue.
+- Chi tiết và snapshot trước cập nhật: [docs/archive/operations_20261021.md](docs/archive/operations_20261021.md).
+
+### Dự báo riêng thử nghiệm (19/10/2026)
 
 - Đã huấn luyện thật **67 ô, 6 mục tiêu**, phiên bản `lgbm-direct-168h-20261019T105854Z`; 39,16 giây, peak RSS 259,9 MiB, 2 luồng. `backend/models/long_range/` chứa metadata, evaluation và sáu model `.txt`; `trained_through = 2024-12-24T16:00:00+07:00`.
 - Live hourly/daily/map/thời tiết dọc tuyến dùng AI riêng cho tương lai, **không fallback NWP/khí hậu**. Current/đầu vào và AQ vẫn dùng nguồn ngoài có chủ đích. `EXTERNAL_FORECAST_ENABLED=0` mặc định; bật `1` chỉ tải dự báo ngoài tham chiếu, không chuyển nguồn phục vụ live.
@@ -108,11 +148,13 @@ sky_weather_app/
 ```bash
 cd backend
 pip install -r requirements.txt
-python -m uvicorn main:app --host 0.0.0.0 --port 8000
+python -m uvicorn main:app --host 0.0.0.0 --port 8000 --workers 1 --lifespan on
 ```
 
 - Kiểm tra: mở `http://localhost:8000/health` hoặc tài liệu API tại `http://localhost:8000/docs`.
 - Khi khởi động, backend chạy ingest một lần rồi lặp lại mỗi giờ vào phút 05. Mặc định `EXTERNAL_FORECAST_ENABLED=0` vẫn cập nhật đầu vào/AQ ngoài, không tải dự báo ngoài. Bật `1` chỉ để tham chiếu, không fallback live.
+- Dùng một worker khi bật ingestion: khóa ingest và telemetry scheduler nằm trong từng process. Không mở nhiều server cùng bật ingestion cho cùng DB. `INGEST_ENABLED=0` dành cho test hoặc tiến trình chỉ phục vụ API; không dùng `--lifespan off` nếu cần scheduler.
+- Kiểm tra `/live` cho liveness, `/ready` cho khả năng phục vụ (503 khi degraded), và `/health.scheduler.next_run_at` cho lịch cập nhật. Một request upstream rỗng không còn được ghi là ingestion thành công.
 - `--host 0.0.0.0` chỉ cần khi chạy app trên điện thoại thật.
 - Test: `cd backend && python -m pytest tests -q` (chạy 2026-10-18 00:15: **196 passed**, 56 giây).
 
@@ -170,12 +212,21 @@ Bundle id / applicationId: `com.skyweather.app` (iOS và Android dùng chung). B
 
 ### 4b. Web
 
+Nhấp đúp **Start-SkyWeather.cmd** ở thư mục dự án để khởi động web + API và tự mở
+trình duyệt. Không cần sửa URL trong Cài đặt. Cần Python với các gói trong
+`backend/requirements.txt`; lần đầu hoặc bundle chưa được xác minh cần Flutter
+để build đúng chế độ cùng origin. Những lần sau dùng lại bundle đã xác minh.
+
 ```bash
-D:\flutter\bin\flutter run -d chrome          # API mặc định http://localhost:8000
-D:\flutter\bin\flutter build web              # kết quả ở build/web
+python tool/run_web.py --open                 # http://127.0.0.1:8000
+python tool/run_web.py --port 8080 --open     # port khác, không sửa Settings
+python tool/run_web.py --build --open         # build lại sau khi sửa Flutter
 ```
 
-- Trên web, API mặc định là `http://localhost:8000`. Ghi đè bằng `--dart-define=API_BASE_URL=...` như các nền tảng khác.
+- Web mặc định dùng cùng origin (scheme, host và port) với trang đang mở. Web và API được phục vụ chung bởi FastAPI, không gọi API thời tiết bên thứ ba trực tiếp. Build CI web không cần URL riêng. Không mở `build/web/index.html` qua file:// hay server chỉ phục vụ file tĩnh.
+- Các URL preview loopback cũ ở port 8000/8022/8024/8036 được bỏ một lần khi nâng cấp; giữ nguyên URL tùy chỉnh khác, tài khoản, theme và địa điểm. Sau đó mục máy chủ nâng cao vẫn dùng được khi thật sự cần.
+- Khi phát triển bằng `flutter run -d chrome` (server Flutter riêng), truyền `--dart-define=API_BASE_URL=http://localhost:8000` từ lệnh chạy; không yêu cầu người dùng tự chỉnh Settings.
+- Production: đặt `WEB_DIST` tới bản `build/web` rồi khởi động backend, reverse proxy HTTPS toàn bộ về cùng server (xem `docs/deploy.md`). App Android/iOS trên máy thật vẫn phải build sẵn `API_BASE_URL` trỏ tới máy chủ public/LAN đang hoạt động; chưa có hosting public trong repo.
 - Backend đã bật CORS cho mọi origin (`backend/main.py`).
 - Thông báo hệ thống và chạy nền (workmanager) không có trên web: app dùng bản Noop, cảnh báo vẫn hiện trong ứng dụng.
 - Trình duyệt chỉ cho dùng GPS khi trang mở qua **https** hoặc **localhost**. Nếu mở qua `http://<IP LAN>`, app báo rõ là bị chặn; khi đó hãy tìm địa điểm theo tên.
@@ -215,7 +266,16 @@ Trên iPhone: chế độ chuyến đi chạy nền nhờ `UIBackgroundModes: lo
 
 - `.gitignore` đã loại bỏ `build/`, `.dart_tool/`, `__pycache__`, `.pytest_cache`, `backend/data/*.db`, `backend/data/history/` và `*.backup-*.db`. GitHub chặn file lớn hơn 100 MB.
 - `backend/data/locations/` và `backend/models/` vẫn được commit. Hiện file lớn nhất khoảng 7 MB.
-- Các job build cần job `test` đạt analyze và test không-golden. Riêng golden (ảnh Windows) không chặn vì font/khử răng cưa Linux có thể khác; workflow chạy riêng `--tags golden` ở bước không chặn.
+- Các job build cần cả `test`, `golden` và `backend-test` đạt; pull request chạy kiểm tra nhưng không phát hành build. Golden được so trên Windows và lỗi sẽ chặn build.
+- Backend chạy Ruff và pytest với coverage runtime tối thiểu 80% (không tính script train/offline). Flutter đo LCOV tuần tự và chặn nếu coverage thấp hơn 80%.
+- Test hợp đồng gọi FastAPI qua HTTP thật với SQLite tổng hợp riêng; không ingest hoặc sửa DB live. Chạy từ thư mục dự án sau khi cài `backend/requirements-dev.txt`:
+
+```bash
+python -m ruff check --config backend/ruff.toml backend tool
+python -m unittest discover -s tool -p test_check_coverage.py
+python tool/check_coverage.py coverage/lcov.info --minimum 80
+python tool/run_backend_contract.py --flutter D:/flutter/bin/flutter.bat
+```
 
 ### 5. Huấn luyện lại mô hình
 
@@ -260,7 +320,7 @@ Các endpoint theo địa điểm nhận `location_id`: id phường/xã (từ `
 | GET | `/weather/ai-verify` | Dự báo AI phát hành tại `at` (mặc định 6 giờ trước) đặt cạnh giá trị thực tế |
 | GET | `/weather/map?offset_hours=0` | Mỗi ô lưới (67 mục, alias `tsn` được gộp) tại khung hiện tại + `offset_hours` (0–72): nhiệt độ, gió (`wind_speed`, `wind_direction`, `wind_gusts`), lượng mưa, mưa 3 giờ sau khung, `alert` (mã dông hoặc ≥ 10 mm trong 3 giờ; theo mô hình, không chính thức), `source`, `valid_time`. Chế độ xem lại (`at`) chỉ cho `offset_hours=0`, khác thì trả 400 |
 | GET | `/weather/map/meta` | `now`, `max_offset_hours` (tối đa 72; 0 khi xem lại), `issued_at` đầu vào phát hành AI; phụ thuộc model và độ mới đầu vào |
-| GET | `/route?from_lat=&from_lon=&to_lat=&to_lon=&depart_at=&profile=` | Tuyến đường từ OSRM (backend gọi; `profile` = `driving` / `cycling` / `foot`) kèm thời tiết khoảng mỗi 2 km theo giờ đến dự kiến, `alert` theo mẫu |
+| POST | `/route` | JSON body: `from_lat, from_lon, to_lat, to_lon, depart_at?, profile?`. Tuyến OSRM kèm thời tiết khoảng mỗi 2 km. Tọa độ không nằm trong URL; GET cũ trả 405. |
 | POST | `/route/along-weather` | Body `{geometry, depart_at?, duration_min?, profile?}`: làm mới thời tiết dọc tuyến app đã có, không gọi lại OSRM |
 | POST | `/feedback` | Báo lỗi / góp ý / báo dự báo sai (`kind` = `bug` / `suggestion` / `wrong_forecast`); không cần đăng nhập; 10 lần/giờ mỗi IP; trả `verified: false` |
 | GET | `/feedback/summary` | Thống kê phản hồi theo loại, theo ô, tỉ lệ báo sai dự báo mưa (quản trị) |
@@ -286,7 +346,7 @@ tiếp chỉ thuộc luồng v3 ngắn hạn. Không áp dụng các kết quả
 168h hoặc coi là xác minh Home mới; long-range chưa có prediction interval
 hay dự báo gió giật.
 
-`/weather/ai-forecast` trả thêm khoảng nhiệt độ `temperature_low`, `temperature_high` với `interval_level` = 0,9 (khoảng 90%), câu `uncertainty_note` và các mục tiêu đã qua cổng kiểm chứng (`humidity`, `wind_speed`, `wind_gusts`, `precipitation_mm`; danh sách ở `enabled_targets`) khi có `backend/models/v3/extension_v3.json`. `temperature_p10`, `temperature_p90` chỉ giữ cho client cũ và bằng đúng `temperature_low`, `temperature_high`. Trên test từ 2025, khoảng 90% phủ 91,1 / 90,2 / 90,4% ở tầm 1 / 3 / 6 giờ (chi tiết: `docs/bao_cao.md`, mục 5.11). Thẻ AI trên trang chủ hiển thị khoảng (ghi "khoảng 90%") và các mục tiêu đã bật.
+`/weather/ai-forecast` trả thêm khoảng nhiệt độ `temperature_low`, `temperature_high` với `interval_level` (độ phủ thực tế đạt được: ~0,88 ở tầm 1h/3h và ~0,89 ở 6h), câu `uncertainty_note` và các mục tiêu đã qua cổng kiểm chứng (`humidity`, `wind_speed`, `wind_gusts`, `precipitation_mm`; danh sách ở `enabled_targets`) khi có `backend/models/v3/extension_v3.json`. `temperature_p10`, `temperature_p90` chỉ giữ cho client cũ và bằng đúng `temperature_low`, `temperature_high`. Trên test từ 2025, độ phủ thực tế đạt 88,48 / 88,11 / 89,33% ở tầm 1 / 3 / 6 giờ (copy trực tiếp từ `backend/models/v3/extension_v3.json` mục `interval.test`). Thẻ AI trên trang chủ hiển thị khoảng (ghi "khoảng ~88%" theo giá trị API trả về, không làm tròn quá mức) và các mục tiêu đã bật.
 
 `/admin/retrain` đã chạy bước hiệu chỉnh khoảng nhiệt độ 90% bằng `train_global_v3_interval.py` sau hai bước huấn luyện trước đó; nếu bước này lỗi, ứng viên không được thay mô hình hiện tại. Nguồn: `backend/routers/monitor.py` và các ca kiểm thử trong `backend/tests/test_monitor.py`.
 

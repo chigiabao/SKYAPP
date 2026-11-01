@@ -1,13 +1,18 @@
 {
- "model_version": "lgbm-hcmc-global-v3-20261017+ext",
- "base_model_version": "lgbm-hcmc-global-v3-20261017",
- "trained_at": "2026-10-17T16:51:29",
+ "model_version": "lgbm-hcmc-global-v3-20261023+ext",
+ "base_model_version": "lgbm-hcmc-global-v3-20261023",
+ "trained_at": "2026-10-23T17:25:05",
  "data": "same per-cell snapshot and split as metadata_v3.json",
  "rows": {
-  "val": 272958,
-  "test": 1051629
+  "val_es": 576870,
+  "val_select": 575262,
+  "test": 620688
  },
- "serving_rule": "A target is served only if, on the test window, the model beats BOTH persistence and climatology (primary metric) at ALL of 1/3/6 h in >= 80% of the cells. Disabled targets are still evaluated in evaluation_v3.json but not returned.",
+ "data_start": "2021-01-01 00:00:00",
+ "gate_selection_split": "validation",
+ "gate_window": "val_select",
+ "selection_cutoff": "2025-09-23 23:00:00",
+ "serving_rule": "A target is served only if, on the val_select window, the model beats BOTH persistence and climatology (primary metric) at ALL of 1/3/6 h in >= 80% of the cells. Disabled targets are still evaluated in evaluation_v3.json but not returned.",
  "enabled_targets": [
   "temperature",
   "rain_probability",
@@ -20,6 +25,7 @@
  "gate": {
   "humidity": {
    "metric": "mae",
+   "selection_split": "validation",
    "cells_won": 66,
    "cells": 67,
    "share": 0.9851,
@@ -27,6 +33,7 @@
   },
   "wind_speed": {
    "metric": "mae",
+   "selection_split": "validation",
    "cells_won": 66,
    "cells": 67,
    "share": 0.9851,
@@ -34,13 +41,15 @@
   },
   "wind_gusts": {
    "metric": "mae",
-   "cells_won": 67,
+   "selection_split": "validation",
+   "cells_won": 66,
    "cells": 67,
-   "share": 1.0,
+   "share": 0.9851,
    "enabled": true
   },
   "precipitation_mm": {
    "metric": "rmse",
+   "selection_split": "validation",
    "cells_won": 67,
    "cells": 67,
    "share": 1.0,
@@ -56,165 +65,57 @@
   ],
   "models": "temperature_q05_model_{h}h.pkl / temperature_q95_model_{h}h.pkl",
   "method": "LightGBM quantile q05/q95 + Mondrian CQR (alpha=0.1); interval [qlo - off*s, qhi + off*s] then widened to contain the point forecast; s = 1 (abs) or max(qhi-qlo, MIN) (norm)",
-  "grouping": "coast_month",
+  "grouping": "const",
   "scale": "abs",
-  "calibration_level": 0.93,
+  "calibration_level": 0.91,
   "offsets": {
-   "1": 0.1306,
-   "3": 0.2336,
-   "6": 0.3177,
-   "1|coastal|m1": 0.0542,
-   "1|coastal|m10": 0.1774,
-   "1|coastal|m11": 0.1126,
-   "1|coastal|m12": 0.1105,
-   "1|coastal|m2": 0.0644,
-   "1|coastal|m3": 0.0509,
-   "1|coastal|m4": 0.0627,
-   "1|coastal|m5": 0.2994,
-   "1|coastal|m6": 0.2159,
-   "1|coastal|m7": 0.1306,
-   "1|coastal|m8": 0.1576,
-   "1|coastal|m9": 0.1212,
-   "1|inland|m1": 0.0482,
-   "1|inland|m10": 0.1279,
-   "1|inland|m11": 0.0928,
-   "1|inland|m12": 0.1205,
-   "1|inland|m2": 0.0989,
-   "1|inland|m3": 0.1022,
-   "1|inland|m4": 0.2216,
-   "1|inland|m5": 0.3028,
-   "1|inland|m6": 0.1499,
-   "1|inland|m7": 0.1127,
-   "1|inland|m8": 0.1232,
-   "1|inland|m9": 0.1332,
-   "1|island|m1": 0.0183,
-   "1|island|m10": 0.1836,
-   "1|island|m11": 0.0369,
-   "1|island|m12": 0.0327,
-   "1|island|m2": 0.0277,
-   "1|island|m3": 0.0188,
-   "1|island|m4": 0.0355,
-   "1|island|m5": 0.2307,
-   "1|island|m6": 0.2132,
-   "1|island|m7": 0.1999,
-   "1|island|m8": 0.1846,
-   "1|island|m9": 0.131,
-   "3|coastal|m1": 0.0703,
-   "3|coastal|m10": 0.2331,
-   "3|coastal|m11": 0.1395,
-   "3|coastal|m12": 0.16,
-   "3|coastal|m2": 0.1468,
-   "3|coastal|m3": 0.0816,
-   "3|coastal|m4": 0.1766,
-   "3|coastal|m5": 0.6056,
-   "3|coastal|m6": 0.4356,
-   "3|coastal|m7": 0.1485,
-   "3|coastal|m8": 0.2669,
-   "3|coastal|m9": 0.1694,
-   "3|inland|m1": 0.0154,
-   "3|inland|m10": 0.1861,
-   "3|inland|m11": 0.1933,
-   "3|inland|m12": 0.2755,
-   "3|inland|m2": 0.1399,
-   "3|inland|m3": 0.1621,
-   "3|inland|m4": 0.54,
-   "3|inland|m5": 0.6087,
-   "3|inland|m6": 0.2731,
-   "3|inland|m7": 0.0958,
-   "3|inland|m8": 0.1874,
-   "3|inland|m9": 0.1782,
-   "3|island|m1": 0.0635,
-   "3|island|m10": 0.2162,
-   "3|island|m11": -0.0438,
-   "3|island|m12": 0.0176,
-   "3|island|m2": 0.0371,
-   "3|island|m3": -0.0196,
-   "3|island|m4": -0.0012,
-   "3|island|m5": 0.4521,
-   "3|island|m6": 0.4517,
-   "3|island|m7": 0.1573,
-   "3|island|m8": 0.1882,
-   "3|island|m9": 0.0864,
-   "6|coastal|m1": 0.1419,
-   "6|coastal|m10": 0.3153,
-   "6|coastal|m11": 0.1571,
-   "6|coastal|m12": 0.2879,
-   "6|coastal|m2": 0.2537,
-   "6|coastal|m3": 0.1214,
-   "6|coastal|m4": 0.2501,
-   "6|coastal|m5": 0.7038,
-   "6|coastal|m6": 0.587,
-   "6|coastal|m7": 0.1914,
-   "6|coastal|m8": 0.3131,
-   "6|coastal|m9": 0.2265,
-   "6|inland|m1": 0.0455,
-   "6|inland|m10": 0.256,
-   "6|inland|m11": 0.2757,
-   "6|inland|m12": 0.4097,
-   "6|inland|m2": 0.2303,
-   "6|inland|m3": 0.2065,
-   "6|inland|m4": 0.6243,
-   "6|inland|m5": 0.754,
-   "6|inland|m6": 0.3785,
-   "6|inland|m7": 0.1181,
-   "6|inland|m8": 0.2128,
-   "6|inland|m9": 0.2077,
-   "6|island|m1": 0.0559,
-   "6|island|m10": 0.2637,
-   "6|island|m11": -0.0561,
-   "6|island|m12": -0.0016,
-   "6|island|m2": -0.066,
-   "6|island|m3": -0.0582,
-   "6|island|m4": 0.0731,
-   "6|island|m5": 0.5637,
-   "6|island|m6": 0.5585,
-   "6|island|m7": 0.1278,
-   "6|island|m8": 0.2218,
-   "6|island|m9": 0.1006
+   "1": 0.0772,
+   "3": 0.1607,
+   "6": 0.2377
   },
   "min_group": 300,
   "split": {
    "qtrain": [
     null,
-    "2023-12-24 23:00:00"
+    "2024-09-23 23:00:00"
    ],
    "es_fit": [
     null,
-    "2023-06-23 23:00:00"
+    "2024-03-23 23:00:00"
    ],
    "es": [
-    "2023-07-01 00:00:00",
-    "2023-12-24 23:00:00"
+    "2024-04-01 00:00:00",
+    "2024-09-23 23:00:00"
    ],
    "cal": [
-    "2024-01-01 00:00:00",
-    "2024-12-24 23:00:00"
+    "2024-10-01 00:00:00",
+    "2025-09-23 23:00:00"
    ],
    "test": [
-    "2025-01-01 00:00:00",
+    "2025-10-01 00:00:00",
     null
    ],
    "bt_train": [
     null,
-    "2022-12-24 23:00:00"
+    "2023-09-23 23:00:00"
    ],
    "bt_cal": [
-    "2023-01-01 00:00:00",
-    "2023-12-24 23:00:00"
+    "2023-10-01 00:00:00",
+    "2024-09-23 23:00:00"
    ],
    "bt_test": [
-    "2024-01-01 00:00:00",
-    "2024-12-24 23:00:00"
+    "2024-10-01 00:00:00",
+    "2025-09-23 23:00:00"
    ]
   },
   "data_start": "2021-01-01 00:00:00",
   "best_iterations": {
-   "q05_1h": 689,
-   "q95_1h": 461,
-   "q05_3h": 441,
-   "q95_3h": 295,
-   "q05_6h": 479,
-   "q95_6h": 231
+   "q05_1h": 1121,
+   "q95_1h": 445,
+   "q05_3h": 914,
+   "q95_3h": 279,
+   "q05_6h": 751,
+   "q95_6h": 293
   },
   "params": {
    "q05": {
@@ -248,451 +149,421 @@
     "alpha": 0.95
    }
   },
-  "selection": "narrowest (grouping, scale, level) with mean cell coverage >= 0.90 and every cell >= 0.85 at 1/3/6 h in a backtest one year earlier (train <= 2022, calibrate 2023, check 2024, no point model); the test window was not used for any choice",
+  "selection": "narrowest (grouping, scale, level) with mean cell coverage >= 0.90 and every cell >= 0.85 at 1/3/6 h in a backtest one year earlier (train <= 2023-09, calibrate 2023-10..2024-09, check 2024-10..2025-09, no point model); the test window was not used for any choice",
   "backtest_choice": {
-   "variant": "coast_month",
-   "scale": "abs",
-   "level": 0.93,
-   "pass": true,
-   "width": 2.400024009125124,
-   "cov_mean_1h": 0.9196,
-   "cov_mean_3h": 0.9167,
-   "cov_mean_6h": 0.9059,
-   "cov_min_1h": 0.9,
-   "cov_min_3h": 0.8945,
-   "cov_min_6h": 0.86,
-   "width_1h": 1.525,
-   "width_3h": 2.576,
-   "width_6h": 3.099
-  },
-  "backtest_holdout_choice": {
    "variant": "const",
    "scale": "abs",
    "level": 0.91,
    "pass": true,
-   "width": 2.2223314826426694,
-   "cov_mean_1h": 0.9092,
-   "cov_mean_3h": 0.9083,
-   "cov_mean_6h": 0.903,
-   "cov_min_1h": 0.8798,
-   "cov_min_3h": 0.8812,
-   "cov_min_6h": 0.8571,
-   "width_1h": 1.384,
-   "width_3h": 2.375,
-   "width_6h": 2.908
+   "width": 2.2078719471817436,
+   "cov_mean_1h": 0.904,
+   "cov_mean_3h": 0.907,
+   "cov_mean_6h": 0.907,
+   "cov_min_1h": 0.8747,
+   "cov_min_3h": 0.8793,
+   "cov_min_6h": 0.8744,
+   "width_1h": 1.39,
+   "width_3h": 2.363,
+   "width_6h": 2.871
   },
-  "test_period": "2025-01-01..2026-10-16",
+  "test_period": "2025-10-01..2026-10-21",
   "test": {
    "1h": {
-    "cov_mean": 0.9109,
-    "cov_min_cell": 0.8831,
-    "width": 1.483
+    "cov_mean": 0.8848,
+    "cov_min_cell": 0.8619,
+    "width": 1.32
    },
    "3h": {
-    "cov_mean": 0.9019,
-    "cov_min_cell": 0.8738,
-    "width": 2.497
+    "cov_mean": 0.8811,
+    "cov_min_cell": 0.8502,
+    "width": 2.276
    },
    "6h": {
-    "cov_mean": 0.904,
-    "cov_min_cell": 0.8762,
-    "width": 3.034
+    "cov_mean": 0.8933,
+    "cov_min_cell": 0.8644,
+    "width": 2.817
    }
   },
   "test_without_point": {
    "1h": {
-    "cov_mean": 0.9109,
-    "cov_min_cell": 0.8831,
-    "width": 1.483
+    "cov_mean": 0.8847,
+    "cov_min_cell": 0.8619,
+    "width": 1.32
    },
    "3h": {
-    "cov_mean": 0.9019,
-    "cov_min_cell": 0.8738,
-    "width": 2.496
+    "cov_mean": 0.881,
+    "cov_min_cell": 0.8502,
+    "width": 2.276
    },
    "6h": {
-    "cov_mean": 0.904,
-    "cov_min_cell": 0.8761,
-    "width": 3.034
+    "cov_mean": 0.8933,
+    "cov_min_cell": 0.8644,
+    "width": 2.816
    }
   },
   "test_previous_p10_p90": {
    "1h": {
-    "cov_mean": 0.7721,
-    "cov_min_cell": 0.7465,
-    "width": 0.934
+    "cov_mean": 0.7703,
+    "cov_min_cell": 0.7416,
+    "width": 0.942
    },
    "3h": {
-    "cov_mean": 0.7551,
-    "cov_min_cell": 0.7108,
-    "width": 1.632
+    "cov_mean": 0.7444,
+    "cov_min_cell": 0.7008,
+    "width": 1.647
    },
    "6h": {
-    "cov_mean": 0.7486,
-    "cov_min_cell": 0.7111,
-    "width": 1.974
+    "cov_mean": 0.75,
+    "cov_min_cell": 0.6997,
+    "width": 2.059
    }
   },
   "holdout": {
-   "grouping": "const",
-   "scale": "abs",
-   "calibration_level": 0.91,
-   "cells": 31,
-   "1h": {
-    "cov_mean": 0.8876,
-    "cov_min_cell": 0.7592,
-    "width": 1.405
-   },
-   "3h": {
-    "cov_mean": 0.8768,
-    "cov_min_cell": 0.6732,
-    "width": 2.403
-   },
-   "6h": {
-    "cov_mean": 0.8756,
-    "cov_min_cell": 0.596,
-    "width": 2.946
-   }
+   "status": "disabled",
+   "reason": "point_models_and_tuning_not_spatially_isolated",
+   "requires": "Separate point models, early stopping, backtest selection and calibration excluding holdout cells"
+  },
+  "achieved_coverage": {
+   "1h": 0.8848,
+   "3h": 0.8811,
+   "6h": 0.8933
   }
  },
  "rain_calibration": {
-  "method": "isotonic, fit on val <= 2024-09-30, checked on the rest of val; applied (refit on all val) if Brier improves >= 1%",
+  "method": "base model policy (serving_policy_v3.json): fitted on val_es, chosen on val_select; no extension calibrator",
   "per_horizon": {
    "1h": {
-    "val_check_brier_raw": 0.08087,
-    "val_check_brier_isotonic": 0.08162,
-    "val_check_ece_raw": 0.0033,
-    "applied": false
+    "applied": false,
+    "base_policy_method": "none",
+    "note": "calibrated by train_global_v3.py (serving_policy_v3.json)"
    },
    "3h": {
-    "val_check_brier_raw": 0.112,
-    "val_check_brier_isotonic": 0.11231,
-    "val_check_ece_raw": 0.0154,
-    "applied": false
+    "applied": false,
+    "base_policy_method": "none",
+    "note": "calibrated by train_global_v3.py (serving_policy_v3.json)"
    },
    "6h": {
-    "val_check_brier_raw": 0.1199,
-    "val_check_brier_isotonic": 0.11932,
-    "val_check_ece_raw": 0.0217,
-    "applied": false
+    "applied": false,
+    "base_policy_method": "none",
+    "note": "calibrated by train_global_v3.py (serving_policy_v3.json)"
    }
   },
   "test_reliability_bins": {
    "1h": {
     "raw": [
      [
-      0.0217,
-      0.0287,
-      677809
+      0.0234,
+      0.0256,
+      390526
      ],
      [
-      0.1444,
-      0.1741,
-      84943
+      0.1432,
+      0.1542,
+      55528
      ],
      [
-      0.2469,
-      0.2852,
-      54105
+      0.2476,
+      0.2653,
+      34519
      ],
      [
-      0.3486,
-      0.3863,
-      40737
+      0.3477,
+      0.3697,
+      26942
      ],
      [
       0.4493,
-      0.4871,
-      36837
+      0.4749,
+      22462
      ],
      [
-      0.5501,
-      0.5891,
-      34835
+      0.5495,
+      0.5716,
+      20950
      ],
      [
-      0.6502,
-      0.6796,
-      35659
+      0.6499,
+      0.6712,
+      19894
      ],
      [
-      0.7502,
-      0.7638,
-      36468
+      0.7499,
+      0.7594,
+      19264
      ],
      [
-      0.8489,
-      0.863,
-      35264
+      0.8493,
+      0.8445,
+      17967
      ],
      [
-      0.9285,
-      0.9424,
-      14905
+      0.9384,
+      0.9321,
+      12569
      ]
     ],
     "served": [
      [
-      0.0217,
-      0.0287,
-      677809
+      0.0234,
+      0.0256,
+      390526
      ],
      [
-      0.1444,
-      0.1741,
-      84943
+      0.1432,
+      0.1542,
+      55528
      ],
      [
-      0.2469,
-      0.2852,
-      54105
+      0.2476,
+      0.2653,
+      34519
      ],
      [
-      0.3486,
-      0.3863,
-      40737
+      0.3477,
+      0.3697,
+      26942
      ],
      [
       0.4493,
-      0.4871,
-      36837
+      0.4749,
+      22462
      ],
      [
-      0.5501,
-      0.5891,
-      34835
+      0.5495,
+      0.5716,
+      20950
      ],
      [
-      0.6502,
-      0.6796,
-      35659
+      0.6499,
+      0.6712,
+      19894
      ],
      [
-      0.7502,
-      0.7638,
-      36468
+      0.7499,
+      0.7594,
+      19264
      ],
      [
-      0.8489,
-      0.863,
-      35264
+      0.8493,
+      0.8445,
+      17967
      ],
      [
-      0.9285,
-      0.9424,
-      14905
+      0.9384,
+      0.9321,
+      12569
      ]
     ]
    },
    "3h": {
     "raw": [
      [
-      0.0264,
-      0.0471,
-      603240
+      0.0282,
+      0.0378,
+      328559
      ],
      [
-      0.1447,
-      0.1964,
-      133541
+      0.1453,
+      0.1792,
+      93937
      ],
      [
-      0.2474,
-      0.2907,
-      85572
+      0.2469,
+      0.279,
+      59828
      ],
      [
       0.3478,
-      0.3871,
-      63660
+      0.3744,
+      42532
      ],
      [
-      0.4482,
-      0.4748,
-      50229
+      0.4484,
+      0.4538,
+      32671
      ],
      [
-      0.5482,
-      0.5449,
-      40738
+      0.5477,
+      0.5348,
+      25595
      ],
      [
-      0.6487,
-      0.6216,
-      33188
+      0.6475,
+      0.6158,
+      19056
      ],
      [
-      0.7467,
-      0.6747,
-      24855
+      0.7461,
+      0.6944,
+      13243
      ],
      [
-      0.8431,
-      0.774,
-      14789
+      0.8353,
+      0.7624,
+      4840
      ],
      [
-      0.9148,
-      0.867,
-      1616
+      0.9137,
+      0.7965,
+      226
      ]
     ],
     "served": [
      [
-      0.0264,
-      0.0471,
-      603240
+      0.0282,
+      0.0378,
+      328559
      ],
      [
-      0.1447,
-      0.1964,
-      133541
+      0.1453,
+      0.1792,
+      93937
      ],
      [
-      0.2474,
-      0.2907,
-      85572
+      0.2469,
+      0.279,
+      59828
      ],
      [
       0.3478,
-      0.3871,
-      63660
+      0.3744,
+      42532
      ],
      [
-      0.4482,
-      0.4748,
-      50229
+      0.4484,
+      0.4538,
+      32671
      ],
      [
-      0.5482,
-      0.5449,
-      40738
+      0.5477,
+      0.5348,
+      25595
      ],
      [
-      0.6487,
-      0.6216,
-      33188
+      0.6475,
+      0.6158,
+      19056
      ],
      [
-      0.7467,
-      0.6747,
-      24855
+      0.7461,
+      0.6944,
+      13243
      ],
      [
-      0.8431,
-      0.774,
-      14789
+      0.8353,
+      0.7624,
+      4840
      ],
      [
-      0.9148,
-      0.867,
-      1616
+      0.9137,
+      0.7965,
+      226
      ]
     ]
    },
    "6h": {
     "raw": [
      [
-      0.0295,
-      0.0551,
-      583572
+      0.0316,
+      0.0456,
+      319824
      ],
      [
-      0.1446,
-      0.2002,
-      148439
+      0.1444,
+      0.1854,
+      105079
      ],
      [
-      0.2472,
-      0.295,
-      94441
+      0.2464,
+      0.281,
+      61924
      ],
      [
-      0.3473,
-      0.3713,
-      67661
+      0.3476,
+      0.3711,
+      42371
      ],
      [
-      0.4479,
-      0.4464,
-      50108
+      0.4485,
+      0.4516,
+      33786
      ],
      [
-      0.5483,
-      0.5233,
-      40333
+      0.5474,
+      0.5188,
+      27055
      ],
      [
-      0.6478,
-      0.5791,
-      32183
+      0.6455,
+      0.5983,
+      18243
      ],
      [
-      0.7466,
-      0.6449,
-      22896
+      0.7437,
+      0.6466,
+      9725
      ],
      [
-      0.8376,
-      0.7508,
-      11421
+      0.8297,
+      0.6581,
+      2264
      ],
      [
-      0.9063,
-      0.948,
-      173
+      0.9072,
+      0.8667,
+      15
      ]
     ],
     "served": [
      [
-      0.0295,
-      0.0551,
-      583572
+      0.0316,
+      0.0456,
+      319824
      ],
      [
-      0.1446,
-      0.2002,
-      148439
+      0.1444,
+      0.1854,
+      105079
      ],
      [
-      0.2472,
-      0.295,
-      94441
+      0.2464,
+      0.281,
+      61924
      ],
      [
-      0.3473,
-      0.3713,
-      67661
+      0.3476,
+      0.3711,
+      42371
      ],
      [
-      0.4479,
-      0.4464,
-      50108
+      0.4485,
+      0.4516,
+      33786
      ],
      [
-      0.5483,
-      0.5233,
-      40333
+      0.5474,
+      0.5188,
+      27055
      ],
      [
-      0.6478,
-      0.5791,
-      32183
+      0.6455,
+      0.5983,
+      18243
      ],
      [
-      0.7466,
-      0.6449,
-      22896
+      0.7437,
+      0.6466,
+      9725
      ],
      [
-      0.8376,
-      0.7508,
-      11421
+      0.8297,
+      0.6581,
+      2264
      ],
      [
-      0.9063,
-      0.948,
-      173
+      0.9072,
+      0.8667,
+      15
      ]
     ]
    }
@@ -701,127 +572,127 @@
  "precipitation_mm_method": "expected value (LightGBM Tweedie, variance power 1.5); primary metric RMSE",
  "test_mean_metrics": {
   "1h": {
-   "n": 15694.9552,
-   "cov": 0.7721,
-   "cov_raw": 0.7205,
-   "width": 0.9337,
-   "brier_raw": 0.0839,
-   "brier_served": 0.0839,
-   "brier_clim": 0.1306,
-   "ece_served": 0.0159,
-   "humidity_mae_m": 2.0767,
-   "humidity_rmse_m": 3.1844,
-   "humidity_mae_p": 3.318,
-   "humidity_rmse_p": 4.8584,
-   "humidity_mae_c": 6.1602,
-   "humidity_rmse_c": 8.2164,
-   "wind_speed_mae_m": 1.5957,
-   "wind_speed_rmse_m": 2.184,
-   "wind_speed_mae_p": 1.8457,
-   "wind_speed_rmse_p": 2.6383,
-   "wind_speed_mae_c": 3.3229,
-   "wind_speed_rmse_c": 4.2057,
-   "wind_gusts_mae_m": 1.9425,
-   "wind_gusts_rmse_m": 2.8145,
-   "wind_gusts_mae_p": 3.0623,
-   "wind_gusts_rmse_p": 4.4806,
-   "wind_gusts_mae_c": 5.5343,
-   "wind_gusts_rmse_c": 7.0291,
-   "precipitation_mm_mae_m": 0.2573,
-   "precipitation_mm_rmse_m": 0.8477,
-   "precipitation_mm_mae_p": 0.3041,
-   "precipitation_mm_rmse_p": 1.1262,
-   "precipitation_mm_mae_c": 0.3642,
-   "precipitation_mm_rmse_c": 0.9557
+   "n": 9263.0,
+   "cov": 0.7703,
+   "cov_raw": 0.707,
+   "width": 0.9417,
+   "brier_raw": 0.0827,
+   "brier_served": 0.0827,
+   "brier_clim": 0.1319,
+   "ece_served": 0.0106,
+   "humidity_mae_m": 2.159,
+   "humidity_rmse_m": 3.2799,
+   "humidity_mae_p": 3.3923,
+   "humidity_rmse_p": 4.9539,
+   "humidity_mae_c": 6.8174,
+   "humidity_rmse_c": 9.0127,
+   "wind_speed_mae_m": 1.5828,
+   "wind_speed_rmse_m": 2.1597,
+   "wind_speed_mae_p": 1.8259,
+   "wind_speed_rmse_p": 2.591,
+   "wind_speed_mae_c": 3.3837,
+   "wind_speed_rmse_c": 4.2585,
+   "wind_gusts_mae_m": 1.9087,
+   "wind_gusts_rmse_m": 2.7062,
+   "wind_gusts_mae_p": 3.0214,
+   "wind_gusts_rmse_p": 4.3886,
+   "wind_gusts_mae_c": 5.6972,
+   "wind_gusts_rmse_c": 7.1815,
+   "precipitation_mm_mae_m": 0.2175,
+   "precipitation_mm_rmse_m": 0.7113,
+   "precipitation_mm_mae_p": 0.2474,
+   "precipitation_mm_rmse_p": 0.9124,
+   "precipitation_mm_mae_c": 0.3604,
+   "precipitation_mm_rmse_c": 0.835
   },
   "3h": {
-   "n": 15692.9552,
-   "cov": 0.7551,
-   "cov_raw": 0.695,
-   "width": 1.6324,
-   "brier_raw": 0.1135,
-   "brier_served": 0.1135,
-   "brier_clim": 0.1306,
-   "ece_served": 0.0301,
-   "humidity_mae_m": 3.5308,
-   "humidity_rmse_m": 4.9909,
-   "humidity_mae_p": 8.2742,
-   "humidity_rmse_p": 11.0751,
-   "humidity_mae_c": 6.1599,
-   "humidity_rmse_c": 8.2162,
-   "wind_speed_mae_m": 2.3365,
-   "wind_speed_rmse_m": 3.0002,
-   "wind_speed_mae_p": 3.1116,
-   "wind_speed_rmse_p": 4.0646,
-   "wind_speed_mae_c": 3.3227,
-   "wind_speed_rmse_c": 4.2055,
-   "wind_gusts_mae_m": 3.8193,
-   "wind_gusts_rmse_m": 4.964,
-   "wind_gusts_mae_p": 6.2193,
-   "wind_gusts_rmse_p": 8.1315,
-   "wind_gusts_mae_c": 5.5339,
-   "wind_gusts_rmse_c": 7.0287,
-   "precipitation_mm_mae_m": 0.2978,
-   "precipitation_mm_rmse_m": 0.9086,
-   "precipitation_mm_mae_p": 0.3906,
-   "precipitation_mm_rmse_p": 1.2829,
-   "precipitation_mm_mae_c": 0.3642,
-   "precipitation_mm_rmse_c": 0.9558
+   "n": 9261.0,
+   "cov": 0.7444,
+   "cov_raw": 0.6657,
+   "width": 1.6472,
+   "brier_raw": 0.1129,
+   "brier_served": 0.1129,
+   "brier_clim": 0.1319,
+   "ece_served": 0.0204,
+   "humidity_mae_m": 3.7133,
+   "humidity_rmse_m": 5.1635,
+   "humidity_mae_p": 8.4364,
+   "humidity_rmse_p": 11.2595,
+   "humidity_mae_c": 6.8183,
+   "humidity_rmse_c": 9.0136,
+   "wind_speed_mae_m": 2.356,
+   "wind_speed_rmse_m": 3.0113,
+   "wind_speed_mae_p": 3.0906,
+   "wind_speed_rmse_p": 4.0268,
+   "wind_speed_mae_c": 3.3834,
+   "wind_speed_rmse_c": 4.2584,
+   "wind_gusts_mae_m": 3.8426,
+   "wind_gusts_rmse_m": 4.9548,
+   "wind_gusts_mae_p": 6.0724,
+   "wind_gusts_rmse_p": 7.9165,
+   "wind_gusts_mae_c": 5.6966,
+   "wind_gusts_rmse_c": 7.1812,
+   "precipitation_mm_mae_m": 0.2706,
+   "precipitation_mm_rmse_m": 0.7803,
+   "precipitation_mm_mae_p": 0.3318,
+   "precipitation_mm_rmse_p": 1.077,
+   "precipitation_mm_mae_c": 0.3604,
+   "precipitation_mm_rmse_c": 0.8351
   },
   "6h": {
-   "n": 15689.9552,
-   "cov": 0.7486,
-   "cov_raw": 0.6896,
-   "width": 1.9737,
-   "brier_raw": 0.1212,
-   "brier_served": 0.1212,
-   "brier_clim": 0.1306,
-   "ece_served": 0.0351,
-   "humidity_mae_m": 4.2896,
-   "humidity_rmse_m": 5.8953,
-   "humidity_mae_p": 14.0763,
-   "humidity_rmse_p": 17.7115,
-   "humidity_mae_c": 6.1594,
-   "humidity_rmse_c": 8.2159,
-   "wind_speed_mae_m": 2.6492,
-   "wind_speed_rmse_m": 3.3714,
-   "wind_speed_mae_p": 4.0363,
-   "wind_speed_rmse_p": 5.1249,
-   "wind_speed_mae_c": 3.3225,
-   "wind_speed_rmse_c": 4.2053,
-   "wind_gusts_mae_m": 4.4556,
-   "wind_gusts_rmse_m": 5.6905,
-   "wind_gusts_mae_p": 9.0051,
-   "wind_gusts_rmse_p": 11.2894,
-   "wind_gusts_mae_c": 5.5335,
-   "wind_gusts_rmse_c": 7.0284,
-   "precipitation_mm_mae_m": 0.3067,
-   "precipitation_mm_rmse_m": 0.9222,
-   "precipitation_mm_mae_p": 0.4324,
-   "precipitation_mm_rmse_p": 1.3483,
-   "precipitation_mm_mae_c": 0.3643,
-   "precipitation_mm_rmse_c": 0.9559
+   "n": 9258.0,
+   "cov": 0.75,
+   "cov_raw": 0.6558,
+   "width": 2.0591,
+   "brier_raw": 0.1197,
+   "brier_served": 0.1197,
+   "brier_clim": 0.1319,
+   "ece_served": 0.0262,
+   "humidity_mae_m": 4.5463,
+   "humidity_rmse_m": 6.155,
+   "humidity_mae_p": 14.3669,
+   "humidity_rmse_p": 17.9915,
+   "humidity_mae_c": 6.8198,
+   "humidity_rmse_c": 9.0149,
+   "wind_speed_mae_m": 2.6627,
+   "wind_speed_rmse_m": 3.3764,
+   "wind_speed_mae_p": 3.9439,
+   "wind_speed_rmse_p": 5.0171,
+   "wind_speed_mae_c": 3.384,
+   "wind_speed_rmse_c": 4.2589,
+   "wind_gusts_mae_m": 4.4967,
+   "wind_gusts_rmse_m": 5.7087,
+   "wind_gusts_mae_p": 8.5904,
+   "wind_gusts_rmse_p": 10.771,
+   "wind_gusts_mae_c": 5.6972,
+   "wind_gusts_rmse_c": 7.1819,
+   "precipitation_mm_mae_m": 0.2749,
+   "precipitation_mm_rmse_m": 0.798,
+   "precipitation_mm_mae_p": 0.3692,
+   "precipitation_mm_rmse_p": 1.1399,
+   "precipitation_mm_mae_c": 0.3605,
+   "precipitation_mm_rmse_c": 0.8352
   }
  },
  "best_iterations": {
-  "temp_p10_1h": 891,
-  "temp_p90_1h": 1605,
-  "temp_p10_3h": 523,
-  "temp_p90_3h": 527,
-  "temp_p10_6h": 306,
-  "temp_p90_6h": 335,
-  "humidity_1h": 838,
-  "wind_speed_1h": 597,
-  "wind_gusts_1h": 760,
-  "precipitation_mm_1h": 166,
-  "humidity_3h": 1395,
-  "wind_speed_3h": 560,
-  "wind_gusts_3h": 689,
-  "precipitation_mm_3h": 157,
-  "humidity_6h": 897,
-  "wind_speed_6h": 919,
-  "wind_gusts_6h": 449,
-  "precipitation_mm_6h": 205
+  "temp_p10_1h": 1809,
+  "temp_p90_1h": 697,
+  "temp_p10_3h": 1194,
+  "temp_p90_3h": 390,
+  "temp_p10_6h": 883,
+  "temp_p90_6h": 287,
+  "humidity_1h": 754,
+  "wind_speed_1h": 707,
+  "wind_gusts_1h": 666,
+  "precipitation_mm_1h": 438,
+  "humidity_3h": 1273,
+  "wind_speed_3h": 757,
+  "wind_gusts_3h": 620,
+  "precipitation_mm_3h": 172,
+  "humidity_6h": 583,
+  "wind_speed_6h": 555,
+  "wind_gusts_6h": 730,
+  "precipitation_mm_6h": 323
  },
  "params_quantile": {
   "p10": {
@@ -887,274 +758,274 @@
  "serving_samples": [
   {
    "cell_id": "om-10.7909-106.6313",
-   "issued_at": "2025-10-14 23:00:00",
+   "issued_at": "2026-03-19 09:00:00",
    "temp_p10": {
-    "1h": 25.300051738210897,
-    "3h": 24.506968137352064,
-    "6h": 23.912719997971628
+    "1h": 30.23308601025589,
+    "3h": 32.684589950252004,
+    "6h": 33.00118303037172
    },
    "temp_p90": {
-    "1h": 25.841601367511842,
-    "3h": 25.417813088267216,
-    "6h": 25.13808026732106
+    "1h": 30.712728802455366,
+    "3h": 33.65789326810276,
+    "6h": 34.62243248304563
    },
    "humidity": {
-    "1h": 96.0330285077057,
-    "3h": 96.97575258867788,
-    "6h": 97.52801264393992
+    "1h": 51.708454760102775,
+    "3h": 40.30083518604477,
+    "6h": 39.17651767800465
    },
    "wind_speed": {
-    "1h": 2.972889701147593,
-    "3h": 3.811917354962006,
-    "6h": 4.2791102695918015
+    "1h": 12.733011333705145,
+    "3h": 10.215835223742037,
+    "6h": 14.590635345969332
    },
    "wind_gusts": {
-    "1h": 5.046637359416122,
-    "3h": 6.6946076158316865,
-    "6h": 7.513060278019625
+    "1h": 31.883992710743208,
+    "3h": 30.29487366081068,
+    "6h": 32.26448773576308
    },
    "precipitation_mm": {
-    "1h": 0.019103045851128292,
-    "3h": 0.041534320114714064,
-    "6h": 0.048821960051181806
+    "1h": 0.00012047702496774106,
+    "3h": 0.0037821520538106053,
+    "6h": 0.0024412047182988833
    }
   },
   {
    "cell_id": "om-10.7909-106.6313",
-   "issued_at": "2025-02-28 08:00:00",
+   "issued_at": "2025-11-04 10:00:00",
    "temp_p10": {
-    "1h": 28.93536601612593,
-    "3h": 31.87211947452421,
-    "6h": 33.343988413023595
+    "1h": 29.78641986144503,
+    "3h": 28.57788186416471,
+    "6h": 25.85282307942275
    },
    "temp_p90": {
-    "1h": 29.373484876476063,
-    "3h": 33.13660980054779,
-    "6h": 35.76699188086304
+    "1h": 30.298337086586628,
+    "3h": 31.054504464890382,
+    "6h": 29.56384020242399
    },
    "humidity": {
-    "1h": 57.94257050194566,
-    "3h": 44.38868834329564,
-    "6h": 36.23637029535394
+    "1h": 73.02079829805686,
+    "3h": 71.46233759606045,
+    "6h": 83.66890450599728
    },
    "wind_speed": {
-    "1h": 6.652467762876548,
-    "3h": 8.101630866180699,
-    "6h": 9.384238909531446
+    "1h": 6.7644580466399775,
+    "3h": 6.428330711810139,
+    "6h": 6.390844498983839
    },
    "wind_gusts": {
-    "1h": 18.833113287622655,
-    "3h": 22.293794315472596,
-    "6h": 23.158101523052977
+    "1h": 21.742144094232557,
+    "3h": 21.4308552900414,
+    "6h": 18.340195633947296
    },
    "precipitation_mm": {
-    "1h": 0.00014970328621772633,
-    "3h": 0.004213405486609145,
-    "6h": 0.01102480364094325
+    "1h": 0.11383471992392798,
+    "3h": 0.9609186193294276,
+    "6h": 1.461231169336788
    }
   },
   {
    "cell_id": "om-10.7909-106.6313",
-   "issued_at": "2026-03-04 23:00:00",
+   "issued_at": "2026-06-10 15:00:00",
    "temp_p10": {
-    "1h": 25.12671018090683,
-    "3h": 24.516063530000697,
-    "6h": 23.844677161542176
+    "1h": 27.520736845446194,
+    "3h": 26.30075991756036,
+    "6h": 25.973389588111647
    },
    "temp_p90": {
-    "1h": 25.333234361430826,
-    "3h": 25.064143907284123,
-    "6h": 24.765064158589368
+    "1h": 30.400321732127082,
+    "3h": 28.580616623456805,
+    "6h": 27.519618991659385
    },
    "humidity": {
-    "1h": 91.36425678381609,
-    "3h": 93.2091405294723,
-    "6h": 96.09668409712795
+    "1h": 79.71402204820107,
+    "3h": 86.62618337796644,
+    "6h": 90.5001115472434
    },
    "wind_speed": {
-    "1h": 8.010830352202818,
-    "3h": 7.165393117320017,
-    "6h": 5.936996532865859
+    "1h": 10.813093352201728,
+    "3h": 5.278524354405622,
+    "6h": 5.591713923643675
    },
    "wind_gusts": {
-    "1h": 15.569087547674222,
-    "3h": 12.083082045174555,
-    "6h": 9.171431318875785
+    "1h": 27.733152378122483,
+    "3h": 14.875993020497278,
+    "6h": 9.976617601870158
    },
    "precipitation_mm": {
-    "1h": 5.681382610999584e-05,
-    "3h": 0.0008295480987335506,
-    "6h": 0.0027865682133038075
+    "1h": 2.3470398599063964,
+    "3h": 0.376394229950368,
+    "6h": 0.13290293696283795
    }
   },
   {
    "cell_id": "om-10.7909-106.6313",
-   "issued_at": "2026-05-22 00:00:00",
+   "issued_at": "2026-07-26 16:00:00",
    "temp_p10": {
-    "1h": 26.7741096272489,
-    "3h": 26.298041978970744,
-    "6h": 25.529634896686204
+    "1h": 26.232982073018114,
+    "3h": 25.69174577462137,
+    "6h": 25.417050257969862
    },
    "temp_p90": {
-    "1h": 27.224958532242063,
-    "3h": 26.90435011392881,
-    "6h": 26.679343247299617
+    "1h": 27.26287993973713,
+    "3h": 26.732209484876616,
+    "6h": 26.157075140901583
    },
    "humidity": {
-    "1h": 93.20081347305882,
-    "3h": 94.52243696863204,
-    "6h": 94.70032128804066
+    "1h": 89.34770279396149,
+    "3h": 92.09622053593368,
+    "6h": 94.38866268604558
    },
    "wind_speed": {
-    "1h": 3.9487545193097886,
-    "3h": 4.3609562867222635,
-    "6h": 4.318690727083661
+    "1h": 8.717144492742275,
+    "3h": 6.710319783278756,
+    "6h": 6.063938959795514
    },
    "wind_gusts": {
-    "1h": 6.368016321087528,
-    "3h": 7.111192198290867,
-    "6h": 7.846932718404467
+    "1h": 19.385847401243776,
+    "3h": 10.717157282531439,
+    "6h": 9.728401191700216
    },
    "precipitation_mm": {
-    "1h": 0.020042658948542593,
-    "3h": 0.05481741516662757,
-    "6h": 0.03843206263246889
+    "1h": 0.7217745336451573,
+    "3h": 0.3600837550099357,
+    "6h": 0.16019957552908543
    }
   },
   {
    "cell_id": "om-8.6819-106.5892",
-   "issued_at": "2026-04-01 23:00:00",
+   "issued_at": "2026-06-27 02:00:00",
    "temp_p10": {
-    "1h": 26.917547677856245,
-    "3h": 26.306358391698474,
-    "6h": 25.723279676651643
+    "1h": 28.407057618376783,
+    "3h": 27.894494728025673,
+    "6h": 28.040999980676013
    },
    "temp_p90": {
-    "1h": 27.51107441431337,
-    "3h": 27.4536262325601,
-    "6h": 27.41266637817263
+    "1h": 28.96655877725798,
+    "3h": 28.697466869669146,
+    "6h": 29.420195338751682
    },
    "humidity": {
-    "1h": 79.98987658353528,
-    "3h": 80.39799155097342,
-    "6h": 81.43520267827823
+    "1h": 76.70280837102767,
+    "3h": 78.34589649048847,
+    "6h": 76.77109675748409
    },
    "wind_speed": {
-    "1h": 16.477316855958485,
-    "3h": 16.014820353807348,
-    "6h": 15.354728838336738
+    "1h": 22.577049075613967,
+    "3h": 21.63752797419666,
+    "6h": 21.169382427110023
    },
    "wind_gusts": {
-    "1h": 21.616833426988716,
-    "3h": 22.03794216512262,
-    "6h": 21.936696090765654
+    "1h": 30.235473878997716,
+    "3h": 29.5314222138406,
+    "6h": 29.545481755139395
    },
    "precipitation_mm": {
-    "1h": 0.001997559875405523,
-    "3h": 0.004204933919921369,
-    "6h": 0.005772311295630862
+    "1h": 0.003685485447570312,
+    "3h": 0.015215066952250451,
+    "6h": 0.04801421948586765
    }
   },
   {
    "cell_id": "om-8.6819-106.5892",
-   "issued_at": "2025-05-12 17:00:00",
+   "issued_at": "2025-12-17 18:00:00",
    "temp_p10": {
-    "1h": 28.54717005376603,
-    "3h": 27.767006028189147,
-    "6h": 27.39329527817506
+    "1h": 25.752209428417917,
+    "3h": 25.753506952047644,
+    "6h": 25.63260454344563
    },
    "temp_p90": {
-    "1h": 29.235525048762906,
-    "3h": 29.560106844077442,
-    "6h": 29.340954075474777
+    "1h": 26.33925014133207,
+    "3h": 26.531013951548953,
+    "6h": 26.303106714284116
    },
    "humidity": {
-    "1h": 79.32354160885157,
-    "3h": 79.12175715103147,
-    "6h": 80.61261588690184
+    "1h": 88.38144891569512,
+    "3h": 87.45917660746548,
+    "6h": 88.5107469853257
    },
    "wind_speed": {
-    "1h": 17.22654026346553,
-    "3h": 16.717931386521247,
-    "6h": 15.307777837285716
+    "1h": 32.77971439294757,
+    "3h": 34.43900979908914,
+    "6h": 34.638754971969405
    },
    "wind_gusts": {
-    "1h": 25.021416962460464,
-    "3h": 22.73399926265907,
-    "6h": 21.787757037175957
+    "1h": 45.643921912000884,
+    "3h": 43.84988759414267,
+    "6h": 44.37111043060089
    },
    "precipitation_mm": {
-    "1h": 0.07604909227388328,
-    "3h": 0.1742613451917833,
-    "6h": 0.37024633957443925
+    "1h": 0.07977459671839905,
+    "3h": 0.039702518459680286,
+    "6h": 0.031355008153260984
    }
   },
   {
    "cell_id": "om-8.6819-106.5892",
-   "issued_at": "2025-03-03 14:00:00",
+   "issued_at": "2025-11-06 08:00:00",
    "temp_p10": {
-    "1h": 25.56662629244027,
-    "3h": 25.355296481244295,
-    "6h": 25.738145454957415
+    "1h": 27.43029729874479,
+    "3h": 26.812687484456777,
+    "6h": 25.61262840254171
    },
    "temp_p90": {
-    "1h": 26.252622045850806,
-    "3h": 26.160438754121717,
-    "6h": 25.87323646483968
+    "1h": 28.492489009049404,
+    "3h": 28.357556875704,
+    "6h": 28.858881363827408
    },
    "humidity": {
-    "1h": 87.87463128646631,
-    "3h": 88.25739161568397,
-    "6h": 89.38422865845664
+    "1h": 75.62162146401728,
+    "3h": 79.25987660789727,
+    "6h": 83.3612634725113
    },
    "wind_speed": {
-    "1h": 14.694251214614397,
-    "3h": 15.057054689568151,
-    "6h": 13.52774801776283
+    "1h": 16.79141107490949,
+    "3h": 17.771231097293096,
+    "6h": 18.79518947782803
    },
    "wind_gusts": {
-    "1h": 19.633970845792472,
-    "3h": 20.322604042324876,
-    "6h": 20.663106902475764
+    "1h": 25.044528038990993,
+    "3h": 25.372535610049685,
+    "6h": 25.76390527240931
    },
    "precipitation_mm": {
-    "1h": 0.002104063949965877,
-    "3h": 0.00345301474840909,
-    "6h": 0.002475666300186011
+    "1h": 0.2784306299972547,
+    "3h": 0.5151280657853289,
+    "6h": 0.8035689951894709
    }
   },
   {
    "cell_id": "om-8.6819-106.5892",
-   "issued_at": "2025-12-11 07:00:00",
+   "issued_at": "2026-04-22 05:00:00",
    "temp_p10": {
-    "1h": 24.23953321241384,
-    "3h": 24.899471564875196,
-    "6h": 25.35092061368825
+    "1h": 28.027549485168013,
+    "3h": 28.27493537025419,
+    "6h": 28.600227967287896
    },
    "temp_p90": {
-    "1h": 25.492308134323892,
-    "3h": 27.45297540919468,
-    "6h": 28.645169739289614
+    "1h": 28.54284532497891,
+    "3h": 29.32547277080845,
+    "6h": 30.463574785309067
    },
    "humidity": {
-    "1h": 87.13546966110374,
-    "3h": 83.77911216222638,
-    "6h": 80.6442080565602
+    "1h": 57.51898506307725,
+    "3h": 61.413946737553935,
+    "6h": 62.565282711816316
    },
    "wind_speed": {
-    "1h": 28.927588504804223,
-    "3h": 29.934989764673134,
-    "6h": 32.17747975270799
+    "1h": 12.574346436347941,
+    "3h": 11.911473882240893,
+    "6h": 12.073877885218717
    },
    "wind_gusts": {
-    "1h": 44.74858121574637,
-    "3h": 44.46534566516242,
-    "6h": 47.871262541256996
+    "1h": 18.643602766138535,
+    "3h": 20.174446287433607,
+    "6h": 18.22253135872394
    },
    "precipitation_mm": {
-    "1h": 0.1273378724199286,
-    "3h": 0.1609924702645161,
-    "6h": 0.1981858395631727
+    "1h": 5.4278421821633874e-05,
+    "3h": 0.0008759769049530485,
+    "6h": 0.0008869794141592739
    }
   }
  ],
@@ -1163,43 +1034,43 @@
   "method": "LightGBM quantile p10/p90, interval [min(p10, point) - offset, max(p90, point) + offset]; offset = split-conformal (CQR) on val, applied only if raw val coverage is outside 80% +/- 3%",
   "conformal": {
    "1h": {
-    "val_raw_coverage": 0.7496,
-    "offset": 0.04,
+    "val_raw_coverage": 0.7334,
+    "offset": 0.0499,
     "applied": true
    },
    "3h": {
-    "val_raw_coverage": 0.7418,
-    "offset": 0.0825,
+    "val_raw_coverage": 0.7201,
+    "offset": 0.1084,
     "applied": true
    },
    "6h": {
-    "val_raw_coverage": 0.743,
-    "offset": 0.0986,
+    "val_raw_coverage": 0.7076,
+    "offset": 0.1551,
     "applied": true
    }
   },
   "test_mean_coverage": {
-   "1h": 0.7721,
-   "3h": 0.7551,
-   "6h": 0.7486
+   "1h": 0.7703,
+   "3h": 0.7444,
+   "6h": 0.75
   },
   "test_mean_coverage_raw": {
-   "1h": 0.7205,
-   "3h": 0.695,
-   "6h": 0.6896
+   "1h": 0.707,
+   "3h": 0.6657,
+   "6h": 0.6558
   },
   "test_cell_coverage_min_max": {
    "1h": [
-    0.7465,
-    0.8301
+    0.7416,
+    0.8283
    ],
    "3h": [
-    0.7108,
-    0.8496
+    0.7008,
+    0.8543
    ],
    "6h": [
-    0.7111,
-    0.8459
+    0.6997,
+    0.8656
    ]
   }
  }

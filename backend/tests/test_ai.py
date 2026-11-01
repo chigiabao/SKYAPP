@@ -2,12 +2,17 @@
 import sqlite3
 from datetime import datetime
 
-import pytest
-
 import ai_model
-from conftest import LAST_TS, write_db
+import pytest
+from conftest import LAST_TS, freeze_now, write_db
+from database import LOCAL_TZ
 
 T = datetime(2023, 6, 20, 12, 0)
+
+
+@pytest.fixture(autouse=True)
+def fresh_ai_clock(client, monkeypatch):
+    freeze_now(monkeypatch, LAST_TS.replace(tzinfo=LOCAL_TZ))
 
 
 def _check_predictions(body):
@@ -31,7 +36,7 @@ def test_ai_forecast_gap_is_503(client, syn_db):
     con.close()
     r = client.get("/weather/ai-forecast")
     assert r.status_code == 503
-    assert "contiguous" in r.json()["detail"]
+    assert "không liên tục" in r.json()["detail"] and "contiguous" not in r.json()["detail"]
 
 
 def test_ai_forecast_too_little_history_is_503(client, syn_db):

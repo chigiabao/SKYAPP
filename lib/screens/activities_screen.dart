@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -5,15 +6,22 @@ import '../models/activities.dart';
 import '../models/habits.dart';
 import '../models/weather.dart';
 import '../providers/planner_provider.dart';
+import '../providers/preferences_provider.dart';
 import '../providers/weather_provider.dart';
 import '../ui/weather/design_tokens.dart';
 import '../ui/weather/glass_ink.dart';
 import '../ui/weather/widgets/glass_card.dart';
 import '../ui/weather/widgets/glass_page.dart';
-import '../utils/constants.dart';
+import '../ui/weather/widgets/ios_controls.dart';
+import '../ui/weather/widgets/ios_list.dart';
+import '../ui/weather/widgets/ios_page.dart';
+import '../ui/weather/widgets/ios_sheet.dart';
 import '../widgets/planner_cards.dart';
-
-const List<String> _weekdayShort = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
+import '../ui/weather/widgets/app_segmented_control.dart';
+import '../ui/weather/widgets/adaptive_dialog.dart';
+import '../ui/weather/widgets/ios_toast.dart';
+import '../utils/forecast_format.dart';
+import '../utils/haptics.dart';
 
 /// Man Hoat dong: chon hoat dong yeu thich, muc nhay cam, xem 3 khung gio
 /// tot nhat trong 48 gio toi cua dia diem dang xem, va lich hoat dong lap
@@ -29,17 +37,11 @@ class ActivitiesScreen extends StatelessWidget {
       GlassPage(child: Builder(builder: _buildPage));
 
   Widget _buildPage(BuildContext context) {
-    final theme = Theme.of(context);
     final ink = GlassInk.of(context);
     final planner = context.watch<PlannerProvider>();
     final wp = context.watch<WeatherProvider>();
     final now = wp.nowHcm;
     final hours = wp.hourlyForecast;
-    final mq = MediaQuery.of(context);
-    final gutter = Space.gutter(mq.size.width);
-    final hPad = mq.size.width > Space.contentMaxWidth + 2 * gutter
-        ? (mq.size.width - Space.contentMaxWidth) / 2
-        : gutter;
 
     final detail = <Widget>[];
     for (final a in planner.favorites) {
@@ -52,6 +54,8 @@ class ActivitiesScreen extends StatelessWidget {
         );
         continue;
       }
+      // Goi y tot nhat (theo diem) roi xep theo thoi gian: doc tu som -> muon,
+      // nhan ngay chi hien khi doi ngay.
       final ws = bestWindows(
         a,
         hours,
@@ -60,7 +64,8 @@ class ActivitiesScreen extends StatelessWidget {
         limit: 3,
         sensitivity: planner.sensitivity,
         hourBonus: planner.habits.hourBonus(a),
-      );
+        units: PreferencesProvider.unitsOf(context),
+      )..sort((x, y) => x.start.compareTo(y.start));
       detail.add(
         Padding(
           padding: const EdgeInsets.only(bottom: Space.cardGap),
@@ -68,23 +73,18 @@ class ActivitiesScreen extends StatelessWidget {
             title: a.label.toUpperCase(),
             icon: activityIcon(a),
             trailing: planner.habits.enabled
-                ? TextButton(
+                ? IosButton.plain(
                     onPressed: () {
                       planner.recordDone(a);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(
-                            'Đã ghi: ${a.label} lúc '
-                            '${planner.realNowHcm.hour} giờ (chỉ lưu trên máy).',
-                          ),
-                        ),
+                      AppHaptics.success();
+                      showIosToast(
+                        context,
+                        'Đã ghi: ${a.label} lúc '
+                        '${planner.realNowHcm.hour} giờ (chỉ lưu trên máy).',
+                        tone: IosToastTone.success,
                       );
                     },
-                    style: TextButton.styleFrom(
-                      foregroundColor: Palette.white,
-                      minimumSize: const Size(Touch.min, Touch.min),
-                    ),
-                    child: const Text('Đã làm'),
+                    label: 'Đã làm',
                   )
                 : null,
             child: ws.isEmpty
@@ -116,66 +116,54 @@ class ActivitiesScreen extends StatelessWidget {
       );
     }
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          'Hoạt động',
-          style: AppTextStyles.heading2.copyWith(
-            color: theme.textTheme.titleLarge?.color,
+    return IosPageScaffold(
+      title: 'Hoạt động',
+      children: [
+        GlassCard(
+          title: 'HOẠT ĐỘNG YÊU THÍCH',
+          icon: Icons.favorite_border_rounded,
+          footer: placeName == null
+              ? null
+              : 'Gợi ý cho $placeName, theo dự báo mô hình.',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Wrap(
+                spacing: Space.s,
+                runSpacing: Space.s,
+                children: [
+                  for (final a in Activity.values)
+                    IosPill(
+                      icon: activityIcon(a),
+                      label: a.label,
+                      selected: planner.isFavorite(a),
+                      onChanged: (_) => planner.toggleFavorite(a),
+                    ),
+                ],
+              ),
+              const SizedBox(height: Space.m),
+              Text(
+                'Mức nhạy cảm với thời tiết',
+                style: TypeScale.body.copyWith(color: Palette.white),
+              ),
+              const SizedBox(height: Space.s),
+              AppSegmentedControl<Sensitivity>(
+                segments: [
+                  for (final s in Sensitivity.values)
+                    AppSegment(value: s, label: s.label),
+                ],
+                selected: planner.sensitivity,
+                onChanged: planner.setSensitivity,
+              ),
+            ],
           ),
         ),
-      ),
-      body: ListView(
-        padding: EdgeInsets.fromLTRB(hPad, Space.s, hPad, Space.xxl),
-        children: [
-          GlassCard(
-            title: 'HOẠT ĐỘNG YÊU THÍCH',
-            icon: Icons.favorite_border_rounded,
-            footer: placeName == null
-                ? null
-                : 'Gợi ý cho $placeName, theo dự báo mô hình.',
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Wrap(
-                  spacing: Space.s,
-                  runSpacing: Space.s,
-                  children: [
-                    for (final a in Activity.values)
-                      FilterChip(
-                        avatar: Icon(activityIcon(a), size: IconSizes.sm),
-                        label: Text(a.label),
-                        selected: planner.isFavorite(a),
-                        materialTapTargetSize: MaterialTapTargetSize.padded,
-                        onSelected: (_) => planner.toggleFavorite(a),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: Space.m),
-                Text(
-                  'Mức nhạy cảm với thời tiết',
-                  style: TypeScale.body.copyWith(color: Palette.white),
-                ),
-                const SizedBox(height: Space.s),
-                SegmentedButton<Sensitivity>(
-                  segments: [
-                    for (final s in Sensitivity.values)
-                      ButtonSegment(value: s, label: Text(s.label)),
-                  ],
-                  selected: {planner.sensitivity},
-                  showSelectedIcon: false,
-                  onSelectionChanged: (v) => planner.setSensitivity(v.first),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: Space.cardGap),
-          ...detail,
-          _RoutinesCard(planner: planner, wp: wp),
-          const SizedBox(height: Space.cardGap),
-          _HabitsCard(planner: planner, wp: wp),
-        ],
-      ),
+        const SizedBox(height: Space.cardGap),
+        ...detail,
+        _RoutinesCard(planner: planner, wp: wp),
+        const SizedBox(height: Space.cardGap),
+        _HabitsCard(planner: planner, wp: wp),
+      ],
     );
   }
 }
@@ -194,12 +182,12 @@ class _CommuteCard extends StatelessWidget {
 
   Future<void> _pick(BuildContext context, bool leave) async {
     final c = planner.commute;
-    final t = await showTimePicker(
-      context: context,
-      initialTime: leave
+    final t = await showIosTimeSheet(
+      context,
+      initial: leave
           ? TimeOfDay(hour: c.leaveHour, minute: c.leaveMinute)
           : TimeOfDay(hour: c.returnHour, minute: c.returnMinute),
-      helpText: leave ? 'Giờ đi làm / đi học' : 'Giờ về',
+      title: leave ? 'Giờ đi làm / đi học' : 'Giờ về',
     );
     if (t == null) return;
     planner.setCommute(
@@ -212,10 +200,6 @@ class _CommuteCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = planner.commute;
-    final style = OutlinedButton.styleFrom(
-      foregroundColor: Palette.white,
-      minimumSize: const Size(Touch.min, Touch.min),
-    );
     return GlassCard(
       title: Activity.commute.label.toUpperCase(),
       icon: Icons.two_wheeler_rounded,
@@ -229,17 +213,15 @@ class _CommuteCard extends StatelessWidget {
             spacing: Space.s,
             runSpacing: Space.s,
             children: [
-              OutlinedButton.icon(
+              IosButton.tinted(
                 onPressed: () => _pick(context, true),
-                style: style,
-                icon: const Icon(Icons.schedule_rounded),
-                label: Text('Đi ${shortHm(c.leaveHour, c.leaveMinute)}'),
+                icon: CupertinoIcons.clock,
+                label: 'Đi ${clockHm(c.leaveHour, c.leaveMinute)}',
               ),
-              OutlinedButton.icon(
+              IosButton.tinted(
                 onPressed: () => _pick(context, false),
-                style: style,
-                icon: const Icon(Icons.home_outlined),
-                label: Text('Về ${shortHm(c.returnHour, c.returnMinute)}'),
+                icon: CupertinoIcons.house,
+                label: 'Về ${clockHm(c.returnHour, c.returnMinute)}',
               ),
             ],
           ),
@@ -266,13 +248,9 @@ class _RoutinesCard extends StatelessWidget {
       title: 'LỊCH HOẠT ĐỘNG',
       icon: Icons.event_repeat_rounded,
       footer: 'Đánh giá lần tới theo dự báo của địa điểm khi tạo lịch.',
-      trailing: TextButton(
+      trailing: IosButton.plain(
         onPressed: () => _add(context),
-        style: TextButton.styleFrom(
-          foregroundColor: Palette.white,
-          minimumSize: const Size(Touch.min, Touch.min),
-        ),
-        child: const Text('Thêm lịch'),
+        label: 'Thêm lịch',
       ),
       child: planner.routines.isEmpty
           ? Text(
@@ -302,7 +280,9 @@ class _RoutinesCard extends StatelessWidget {
         : scoreRoutineAt(r, hours, next);
     final days = r.weekdays.length == 7
         ? 'Hằng ngày'
-        : ([...r.weekdays]..sort()).map((d) => _weekdayShort[d - 1]).join(', ');
+        : ([
+            ...r.weekdays,
+          ]..sort()).map((d) => ForecastFormat.weekdayShortOf(d)).join(', ');
     final time =
         '${r.hour.toString().padLeft(2, '0')}:'
         '${r.minute.toString().padLeft(2, '0')}';
@@ -312,7 +292,7 @@ class _RoutinesCard extends StatelessWidget {
     } else if (score == null) {
       status = 'Chưa có dự báo cho lần tới';
     } else {
-      final rating = WindowRating.of(score.score);
+      final rating = score.rating;
       final worst = score.penalties.entries.isEmpty
           ? null
           : score.penalties.entries.reduce(
@@ -320,6 +300,7 @@ class _RoutinesCard extends StatelessWidget {
             );
       status =
           'Lần tới: ${rating.label}'
+          '${score.missing.isNotEmpty ? ' (${score.missing.join(', ')})' : ''}'
           '${worst != null && worst.value >= 10 ? ' · lưu ý ${worst.key}' : ''}';
     }
     final remind = planner.reminderPlan.reminders
@@ -352,16 +333,14 @@ class _RoutinesCard extends StatelessWidget {
             ],
           ),
         ),
-        IconButton(
+        IosBarButton(
           tooltip: 'Sửa lịch ${r.activity.label}',
-          icon: const Icon(Icons.edit_outlined),
-          color: Palette.white,
+          icon: CupertinoIcons.pencil,
           onPressed: () => _edit(context, r),
         ),
-        IconButton(
+        IosBarButton(
           tooltip: 'Xóa lịch ${r.activity.label}',
-          icon: const Icon(Icons.delete_outline_rounded),
-          color: Palette.white,
+          icon: CupertinoIcons.trash,
           onPressed: () => planner.removeRoutine(r.id),
         ),
       ],
@@ -369,39 +348,31 @@ class _RoutinesCard extends StatelessWidget {
   }
 
   Future<void> _add(BuildContext context) async {
-    final r = await showDialog<ActivityRoutine>(
-      context: context,
+    final r = await showIosSheet<ActivityRoutine>(
+      context,
+      form: true,
+      scrollable: false,
       builder: (_) => _RoutineDialog(
         placeId: wp.locationId,
         idSeed: wp.realNowHcm.microsecondsSinceEpoch,
       ),
     );
     if (r == null) return;
-    noteLive(planner, wp);
+    planner.noteLive(wp);
     planner.addRoutine(r);
   }
 
   Future<void> _edit(BuildContext context, ActivityRoutine old) async {
-    final r = await showDialog<ActivityRoutine>(
-      context: context,
-      builder: (_) => _RoutineDialog(
-        placeId: old.placeId,
-        idSeed: 0,
-        initial: old,
-      ),
+    final r = await showIosSheet<ActivityRoutine>(
+      context,
+      form: true,
+      scrollable: false,
+      builder: (_) =>
+          _RoutineDialog(placeId: old.placeId, idSeed: 0, initial: old),
     );
     if (r != null) planner.updateRoutine(r);
   }
 }
-
-/// Du lieu truc tiep cua dia diem dang xem -> nhac co diem thoi tiet.
-void noteLive(PlannerProvider planner, WeatherProvider wp) =>
-    planner.noteLiveHours(
-      wp.locationId,
-      wp.weatherData?.current.locationName ?? '',
-      wp.hourlyForecast,
-      replay: wp.isReplay,
-    );
 
 String _hourText(int h) => '${h.toString().padLeft(2, '0')}:00';
 
@@ -424,8 +395,10 @@ class _HabitsCard extends StatelessWidget {
     BuildContext context,
     RoutineSuggestion s,
   ) async {
-    final r = await showDialog<ActivityRoutine>(
-      context: context,
+    final r = await showIosSheet<ActivityRoutine>(
+      context,
+      form: true,
+      scrollable: false,
       builder: (_) => _RoutineDialog(
         placeId: wp.locationId,
         idSeed: wp.realNowHcm.microsecondsSinceEpoch,
@@ -433,30 +406,21 @@ class _HabitsCard extends StatelessWidget {
       ),
     );
     if (r == null) return;
-    noteLive(planner, wp);
+    planner.noteLive(wp);
     planner.addRoutine(r);
   }
 
   Future<void> _clear(BuildContext context) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (c) => AlertDialog(
-        title: const Text('Xóa dữ liệu thói quen?'),
-        content: const Text(
+    final ok = await showAppAlert<bool>(
+      context,
+      title: 'Xóa dữ liệu thói quen?',
+      message:
           'Xóa số lần mở ứng dụng và đánh dấu "Đã làm" đã ghi trên máy. '
           'Lịch hoạt động đã lưu không bị xóa.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(c, false),
-            child: const Text('Hủy'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(c, true),
-            child: const Text('Xóa'),
-          ),
-        ],
-      ),
+      actions: const [
+        AppDialogAction(label: 'Hủy', value: false, isDefault: true),
+        AppDialogAction(label: 'Xóa', value: true, isDestructive: true),
+      ],
     );
     if (ok == true) planner.clearHabits();
   }
@@ -487,7 +451,7 @@ class _HabitsCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            SwitchListTile(
+            SwitchListTile.adaptive(
               contentPadding: EdgeInsets.zero,
               title: Text('Cho phép học thói quen', style: body),
               subtitle: Text(
@@ -514,46 +478,34 @@ class _HabitsCard extends StatelessWidget {
               Wrap(
                 spacing: Space.s,
                 children: [
-                  TextButton(
+                  IosButton.plain(
                     onPressed: () {
-                      noteLive(planner, wp);
+                      planner.noteLive(wp);
                       planner.addRoutine(_fromSuggestion(sg));
                     },
-                    style: TextButton.styleFrom(
-                      foregroundColor: Palette.white,
-                      minimumSize: const Size(Touch.min, Touch.min),
-                    ),
-                    child: const Text('Xác nhận'),
+                    label: 'Xác nhận',
                   ),
-                  TextButton(
+                  IosButton.plain(
                     onPressed: () => _editSuggestion(context, sg),
-                    style: TextButton.styleFrom(
-                      foregroundColor: Palette.white,
-                      minimumSize: const Size(Touch.min, Touch.min),
-                    ),
-                    child: const Text('Sửa'),
+                    label: 'Sửa',
                   ),
-                  TextButton(
+                  IosButton.plain(
                     onPressed: () => planner.dismissSuggestion(sg),
-                    style: TextButton.styleFrom(
-                      foregroundColor: Palette.white,
-                      minimumSize: const Size(Touch.min, Touch.min),
-                    ),
-                    child: const Text('Bỏ qua'),
+                    label: 'Bỏ qua',
                   ),
                 ],
               ),
             ],
             if (!h.isEmpty) ...[
               const SizedBox(height: Space.s),
-              OutlinedButton.icon(
-                onPressed: () => _clear(context),
-                icon: const Icon(Icons.delete_sweep_outlined),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: Palette.white,
-                  minimumSize: const Size(Touch.min, Touch.min),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: IosButton.tinted(
+                  onPressed: () => _clear(context),
+                  icon: CupertinoIcons.trash,
+                  destructive: true,
+                  label: 'Xóa dữ liệu thói quen',
                 ),
-                label: const Text('Xóa dữ liệu thói quen'),
               ),
             ],
           ],
@@ -602,75 +554,18 @@ class _RoutineDialogState extends State<_RoutineDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: Text(
-        widget.initial == null ? 'Thêm lịch hoạt động' : 'Sửa lịch hoạt động',
-      ),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            DropdownButtonFormField<Activity>(
-              initialValue: _activity,
-              isExpanded: true,
-              decoration: const InputDecoration(labelText: 'Hoạt động'),
-              items: [
-                for (final a in Activity.values)
-                  DropdownMenuItem(value: a, child: Text(a.label)),
-              ],
-              onChanged: (a) => setState(() => _activity = a ?? _activity),
-            ),
-            const SizedBox(height: Space.m),
-            OutlinedButton.icon(
-              icon: const Icon(Icons.schedule_rounded),
-              style: OutlinedButton.styleFrom(
-                minimumSize: const Size(Touch.min, Touch.min),
-              ),
-              label: Text('Giờ: ${_time.format(context)}'),
-              onPressed: () async {
-                final t = await showTimePicker(
-                  context: context,
-                  initialTime: _time,
-                );
-                if (t != null) setState(() => _time = t);
-              },
-            ),
-            const SizedBox(height: Space.m),
-            Wrap(
-              spacing: Space.xs,
-              runSpacing: Space.xs,
-              children: [
-                for (var d = 1; d <= 7; d++)
-                  FilterChip(
-                    label: Text(_weekdayShort[d - 1]),
-                    selected: _days.contains(d),
-                    materialTapTargetSize: MaterialTapTargetSize.padded,
-                    onSelected: (on) =>
-                        setState(() => on ? _days.add(d) : _days.remove(d)),
-                  ),
-              ],
-            ),
-            const SizedBox(height: Space.m),
-            SegmentedButton<Sensitivity>(
-              segments: [
-                for (final s in Sensitivity.values)
-                  ButtonSegment(value: s, label: Text(s.label)),
-              ],
-              selected: {_sens},
-              showSelectedIcon: false,
-              onSelectionChanged: (v) => setState(() => _sens = v.first),
-            ),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Hủy'),
-        ),
-        FilledButton(
-          onPressed: _days.isEmpty
+    final ink = GlassInk.of(context);
+    final label = TypeScale.footnote.copyWith(color: ink.secondary);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        IosSheetNavBar(
+          title: widget.initial == null
+              ? 'Thêm lịch hoạt động'
+              : 'Sửa lịch hoạt động',
+          doneLabel: 'Lưu',
+          onDone: _days.isEmpty
               ? null
               : () => Navigator.pop(
                   context,
@@ -684,7 +579,89 @@ class _RoutineDialogState extends State<_RoutineDialog> {
                     sensitivity: _sens,
                   ),
                 ),
-          child: const Text('Lưu'),
+        ),
+        Flexible(
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text('HOẠT ĐỘNG', style: label),
+                const SizedBox(height: Space.xs),
+                Wrap(
+                  spacing: Space.s,
+                  children: [
+                    for (final a in Activity.values)
+                      IosPill(
+                        key: ValueKey('routine-activity-${a.name}'),
+                        icon: activityIcon(a),
+                        label: a.label,
+                        selected: _activity == a,
+                        onChanged: (_) => setState(() => _activity = a),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: Space.m),
+                IosListSection(
+                  margin: EdgeInsets.zero,
+                  children: [
+                    IosListRow(
+                      key: const ValueKey('routine-time'),
+                      leading: const Icon(
+                        CupertinoIcons.clock,
+                        color: Palette.white,
+                      ),
+                      title: 'Giờ',
+                      value:
+                          '${_time.hour.toString().padLeft(2, '0')}:'
+                          '${_time.minute.toString().padLeft(2, '0')}',
+                      onTap: () async {
+                        final t = await showIosTimeSheet(
+                          context,
+                          title: 'Giờ hoạt động',
+                          initial: _time,
+                        );
+                        if (t != null) setState(() => _time = t);
+                      },
+                    ),
+                  ],
+                ),
+                const SizedBox(height: Space.m),
+                Text('LẶP LẠI', style: label),
+                const SizedBox(height: Space.xs),
+                Wrap(
+                  spacing: Space.xs,
+                  children: [
+                    for (var d = 1; d <= 7; d++)
+                      IosPill(
+                        label: ForecastFormat.weekdayShortOf(d),
+                        selected: _days.contains(d),
+                        onChanged: (on) =>
+                            setState(() => on ? _days.add(d) : _days.remove(d)),
+                      ),
+                  ],
+                ),
+                if (_days.isEmpty)
+                  Text(
+                    'Chọn ít nhất một ngày.',
+                    style: TypeScale.footnote.copyWith(
+                      color: Palette.dangerOnGlass,
+                    ),
+                  ),
+                const SizedBox(height: Space.m),
+                Text('MỨC NHẠY CẢM', style: label),
+                const SizedBox(height: Space.xs),
+                AppSegmentedControl<Sensitivity>(
+                  segments: [
+                    for (final s in Sensitivity.values)
+                      AppSegment(value: s, label: s.label),
+                  ],
+                  selected: _sens,
+                  onChanged: (v) => setState(() => _sens = v),
+                ),
+              ],
+            ),
+          ),
         ),
       ],
     );

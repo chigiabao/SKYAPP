@@ -1,8 +1,18 @@
 /// Don vi hien thi (thuan Dart, khong phu thuoc Flutter).
 ///
-/// Du lieu goc luon la km/h, hPa, mm, km; nguong canh bao tinh tren don vi
+/// Du lieu goc luon la °C, km/h, hPa, mm, km; nguong canh bao tinh tren don vi
 /// goc. Lop nay CHI doi phan hien thi. Dau thap phan kieu Viet Nam (phay).
 library;
+
+import '../utils/formatters.dart';
+
+enum TempUnit {
+  celsius('°C'),
+  fahrenheit('°F');
+
+  const TempUnit(this.label);
+  final String label;
+}
 
 enum WindUnit {
   kmh('km/h'),
@@ -43,6 +53,11 @@ enum DistanceUnit {
 typedef UnitParts = ({String value, String? unit});
 
 abstract final class UnitConvert {
+  static double cToF(double c) => c * 9 / 5 + 32;
+
+  /// Chenh lech / bien do (khong cong 32).
+  static double cDeltaToF(double c) => c * 9 / 5;
+
   static double kmhToMs(double kmh) => kmh / 3.6;
   static double kmhToMph(double kmh) => kmh / 1.609344;
   static double hpaToMmHg(double hpa) => hpa * 0.750061683;
@@ -84,12 +99,14 @@ abstract final class UnitConvert {
 /// Lua chon don vi cua nguoi dung + ham dinh dang chung.
 class UnitPrefs {
   const UnitPrefs({
+    this.temp = TempUnit.celsius,
     this.wind = WindUnit.kmh,
     this.pressure = PressureUnit.hpa,
     this.precip = PrecipUnit.mm,
     this.distance = DistanceUnit.km,
   });
 
+  final TempUnit temp;
   final WindUnit wind;
   final PressureUnit pressure;
   final PrecipUnit precip;
@@ -98,16 +115,41 @@ class UnitPrefs {
   static const String noData = '--';
 
   UnitPrefs copyWith({
+    TempUnit? temp,
     WindUnit? wind,
     PressureUnit? pressure,
     PrecipUnit? precip,
     DistanceUnit? distance,
   }) => UnitPrefs(
+    temp: temp ?? this.temp,
     wind: wind ?? this.wind,
     pressure: pressure ?? this.pressure,
     precip: precip ?? this.precip,
     distance: distance ?? this.distance,
   );
+
+  // ---- Nhiet do ----
+
+  bool get isCelsius => temp == TempUnit.celsius;
+
+  /// "°C" | "°F".
+  String get tempUnit => temp.label;
+
+  /// Gia tri theo don vi nguoi dung (de ve bieu do).
+  double tempValue(double celsius) =>
+      isCelsius ? celsius : UnitConvert.cToF(celsius);
+
+  /// So da lam tron, khong don vi: "25" | "77".
+  String tempNumber(double celsius) => '${tempValue(celsius).round()}';
+
+  /// "25°C" | "77°F".
+  String tempText(double celsius) => '${tempNumber(celsius)}$tempUnit';
+
+  /// Chenh lech 1 so le: "1,2°C" | "2,2°F".
+  String tempDeltaText(double celsiusDelta) {
+    final v = isCelsius ? celsiusDelta : UnitConvert.cDeltaToF(celsiusDelta);
+    return '${_dec(v, 1)}$tempUnit';
+  }
 
   // ---- Gio ----
 
@@ -195,6 +237,7 @@ class UnitPrefs {
   // ---- Luu tru ----
 
   Map<String, dynamic> toJson() => {
+    'temp': temp.name,
     'wind': wind.name,
     'pressure': pressure.name,
     'precip': precip.name,
@@ -206,6 +249,7 @@ class UnitPrefs {
         values.firstWhere((v) => v.name == name, orElse: () => fallback);
     final j = json ?? const {};
     return UnitPrefs(
+      temp: pick(TempUnit.values, j['temp'], TempUnit.celsius),
       wind: pick(WindUnit.values, j['wind'], WindUnit.kmh),
       pressure: pick(PressureUnit.values, j['pressure'], PressureUnit.hpa),
       precip: pick(PrecipUnit.values, j['precip'], PrecipUnit.mm),
@@ -216,17 +260,17 @@ class UnitPrefs {
   @override
   bool operator ==(Object other) =>
       other is UnitPrefs &&
+      other.temp == temp &&
       other.wind == wind &&
       other.pressure == pressure &&
       other.precip == precip &&
       other.distance == distance;
 
   @override
-  int get hashCode => Object.hash(wind, pressure, precip, distance);
+  int get hashCode => Object.hash(temp, wind, pressure, precip, distance);
 
   static String _join(UnitParts p) =>
       p.unit == null ? p.value : '${p.value} ${p.unit}';
 
-  static String _dec(double v, int digits) =>
-      v.toStringAsFixed(digits).replaceAll('.', ',');
+  static String _dec(double v, int digits) => WeatherFormat.decimal(v, digits);
 }

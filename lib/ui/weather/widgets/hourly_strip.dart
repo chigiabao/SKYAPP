@@ -116,7 +116,13 @@ class HourlyStrip extends StatelessWidget {
 
     final anyTag = hours.any((h) => tagFor(h) != null);
     final anyMm = hours.any((h) => _forecastMm(h) != null);
-    final entries = buildHourlyTimeline(hours, nowHcm: now);
+    final place = provider.place;
+    final entries = buildHourlyTimeline(
+      hours,
+      nowHcm: now,
+      lat: place.lat,
+      lon: place.lon,
+    );
 
     final scaler = MediaQuery.textScalerOf(context);
     double sc(double v) => scaler.scale(v);
@@ -225,28 +231,26 @@ class _HourTile extends StatelessWidget {
   Widget build(BuildContext context) {
     // Dai cha da watch provider va dung lai o -> chi doc.
     final provider = context.read<WeatherProvider>();
+    final units = PreferencesProvider.unitsOf(context);
     final f = entry.forecast;
     final mm = f.precipitationMm;
     final rainText = f.isObserved
-        ? (mm != null && mm > 0
-              ? PreferencesProvider.unitsOf(context).rainText(mm)
-              : null)
+        ? (mm != null && mm > 0 ? units.rainText(mm) : null)
         : (f.rainPercent > 0 ? '${f.rainPercent}%' : null);
     final double? fmm = _forecastMm(f);
-    final String? mmText = fmm == null
-        ? null
-        : PreferencesProvider.unitsOf(context).rainText(fmm);
+    final String? mmText = fmm == null ? null : units.rainText(fmm);
     final label = entry.isNow
         ? 'Bây giờ'
         : '${f.time.hour.toString().padLeft(2, '0')}:00';
-    final isDay = isDayAt(f.time);
+    final place = provider.place;
+    final isDay = isDayAt(f.time, lat: place.lat, lon: place.lon);
     final code = f.weatherCode ?? wmoForCondition(f.condition);
     final icon = WeatherIcon.fromCode(code, isDay: isDay, size: 28);
     final ink = GlassInk.of(context);
 
     return Semantics(
       label:
-          '$label: ${provider.formatTemperature(f.temperature)}, '
+          '$label: ${units.tempText(f.temperature)}, '
           '${icon.scene.label}'
           '${rainText == null
               ? ''
@@ -283,9 +287,9 @@ class _HourTile extends StatelessWidget {
             const SizedBox(height: 6),
             _fit(
               Text(
-                '${provider.formatTempValue(f.temperature)}°',
-                style: TypeScale.label.copyWith(
-                  fontSize: 18,
+                '${units.tempNumber(f.temperature)}°',
+                style: TypeScale.temperatureSmall.copyWith(
+                  height: 1.25,
                   color: Palette.white,
                   fontFeatures: kTabular,
                 ),
@@ -307,7 +311,6 @@ class _HourTile extends StatelessWidget {
                 Text(
                   mmText,
                   style: TypeScale.small.copyWith(
-                    fontSize: 11,
                     color: ink.secondary,
                     fontFeatures: kTabular,
                   ),
@@ -359,8 +362,7 @@ class _SunTile extends StatelessWidget {
                 textAlign: TextAlign.center,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 12,
+                style: TypeScale.caption1.copyWith(
                   fontWeight: FontWeight.w600,
                   color: GlassColors.text,
                   height: 1.15,

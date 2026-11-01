@@ -22,8 +22,9 @@ import 'package:sky_weather_app/screens/account_screen.dart';
 import 'package:sky_weather_app/services/account_service.dart';
 import 'package:sky_weather_app/ui/weather/app_scene.dart';
 import 'package:sky_weather_app/utils/theme.dart';
+import 'package:sky_weather_app/ui/weather/widgets/ios_controls.dart';
 
-const _base = 'http://test';
+const _base = 'https://test';
 
 http.Response _json(Object? body, [int code = 200]) => http.Response.bytes(
   utf8.encode(jsonEncode(body)),
@@ -35,6 +36,7 @@ AuthSession _session({int? expiresAt}) => AuthSession(
   token: 'tok',
   email: 'a@b.vn',
   expiresAt: expiresAt ?? 4102444800, // 2100
+  serverUrl: _base,
 );
 
 /// Backend gia: mot tai lieu co version; ghi lai moi PUT.
@@ -304,7 +306,7 @@ void main() {
 
       rig.lp.addSaved('q1');
       rig.lp.addSaved('q3', label: PlaceLabel.home);
-      rig.wp.setTemperatureUnit(false);
+      rig.prefs.setTemperatureUnit(false);
       await _wait(15);
       expect(b.puts, hasLength(1), reason: 'Chua het thoi gian debounce');
       await _eventually(() => expect(b.puts.length, greaterThanOrEqualTo(2)));
@@ -374,7 +376,7 @@ void main() {
           {'id': 'q1', 'label': 'none', 'custom_name': null, 'order': 1},
         ],
         'settings': {
-          'theme': 'dark',
+          'units': {'temperature': 'f'},
           'updated_at': 1,
           'places_updated_at': 1,
           'activities_updated_at': 0,
@@ -398,8 +400,8 @@ void main() {
       expect((doc['saved_places'] as List)[1]['label'], 'home');
       expect([for (final s in rig.lp.saved) s.locationId], ['tsn', 'q1', 'q9']);
       // Cai dat: ban tren may chua sua (updated_at 0 < 1) -> lay may chu.
-      expect((doc['settings'] as Map)['theme'], 'dark');
-      expect(rig.wp.themeMode, ThemeMode.dark);
+      expect((doc['settings'] as Map)['units'], {'temperature': 'f'});
+      expect(rig.prefs.units.isCelsius, isFalse);
       expect(rig.account.state, SyncState.idle);
       expect(b.version, 3);
     });
@@ -522,26 +524,69 @@ void main() {
       expect(other.pp.settings.placeOverride('tsn').enabled, isFalse);
     });
 
+    test('tai lieu cu co "theme" / "themeMode" bi bo qua an toan', () async {
+      final b = _FakeBackend()
+        ..version = 1
+        ..data = {
+          'saved_places': [],
+          'settings': {
+            'theme': 'dark',
+            'units': {'temperature': 'f'},
+            'preferences': {
+              'version': 1,
+              'themeMode': 'dark',
+              'units': {'temp': 'fahrenheit', 'wind': 'ms'},
+              'textScale': 1.15,
+            },
+            'updated_at': 9999999999999,
+          },
+          'activities': [],
+          'habits_consent': false,
+        };
+      final rig = _Rig(b, session: _session());
+      await rig.start();
+      // Cac cai dat khac van duoc ap, khong mat du lieu.
+      expect(rig.prefs.units.isCelsius, isFalse);
+      expect(rig.prefs.units.wind, WindUnit.ms);
+      expect(rig.prefs.textScale, 1.15);
+      expect(rig.prefs.exportSettings().containsKey('themeMode'), isFalse);
+
+      // Lan gui tiep theo khong con truong giao dien.
+      rig.prefs.setHighContrast(true);
+      Map settings() => (b.puts.last['data'] as Map)['settings'] as Map;
+      await _eventually(() {
+        expect(b.puts, isNotEmpty);
+        expect((settings()['preferences'] as Map)['highContrast'], isTrue);
+      });
+      final s = settings();
+      expect(s.containsKey('theme'), isFalse);
+      expect((s['preferences'] as Map).containsKey('themeMode'), isFalse);
+      expect(s['units'], {'temperature': 'f'});
+    });
+
     test('mergeDocuments: cai dat theo updated_at moi hon', () {
-      Map<String, dynamic> doc(String theme, int at) => {
+      Map<String, dynamic> doc(String temp, int at) => {
         'saved_places': [],
-        'settings': {'theme': theme, 'updated_at': at},
+        'settings': {
+          'units': {'temperature': temp},
+          'updated_at': at,
+        },
         'activities': [],
         'habits_consent': false,
       };
       expect(
         AccountProvider.mergeDocuments(
-          doc('light', 5),
-          doc('dark', 3),
-        )['settings']['theme'],
-        'light',
+          doc('c', 5),
+          doc('f', 3),
+        )['settings']['units']['temperature'],
+        'c',
       );
       expect(
         AccountProvider.mergeDocuments(
-          doc('light', 2),
-          doc('dark', 3),
-        )['settings']['theme'],
-        'dark',
+          doc('c', 2),
+          doc('f', 3),
+        )['settings']['units']['temperature'],
+        'f',
       );
     });
 
@@ -555,6 +600,51 @@ void main() {
       expect(rig.store.session, isNull);
       expect(rig.account.notice, AccountProvider.expiredMessage);
       expect(rig.lp.isSaved('q2'), isTrue, reason: 'Du lieu tren may giu');
+    });
+
+    testWidgets('401: hop thoai het phien khong lap tieu de; Đăng nhập lại', (
+      tester,
+    ) async {
+      final b = _FakeBackend();
+      final rig = _Rig(b, session: _session());
+      await tester.runAsync(rig.start);
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider<WeatherProvider>.value(value: rig.wp),
+            ChangeNotifierProvider<AccountProvider>.value(value: rig.account),
+          ],
+          child: MaterialApp(
+            navigatorKey: AccountProvider.navigatorKey,
+            theme: AppTheme.lightTheme,
+            builder: (context, child) => MediaQuery(
+              data: MediaQuery.of(context).copyWith(disableAnimations: true),
+              child: AppSceneScope(child: child!),
+            ),
+            home: const Scaffold(body: SizedBox()),
+          ),
+        ),
+      );
+      b.unauthorized = true;
+      await tester.runAsync(() async {
+        rig.lp.addSaved('q2');
+        await _eventually(() => expect(rig.account.isLoggedIn, isFalse));
+      });
+      await tester.pumpAndSettle();
+      expect(find.text(AccountProvider.expiredAlertTitle), findsOneWidget);
+      expect(find.text(AccountProvider.expiredAlertMessage), findsOneWidget);
+      expect(
+        AccountProvider.expiredAlertMessage.toLowerCase(),
+        isNot(contains('hết hạn')),
+      );
+      expect(find.text('Để sau'), findsOneWidget);
+      await tester.tap(find.text('Đăng nhập lại'));
+      await tester.pumpAndSettle();
+      // Hop thoai mo trong vung async that (runAsync): cho callback chay.
+      await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+      await tester.pumpAndSettle();
+      expect(find.byType(AccountScreen), findsOneWidget);
+      await tester.pumpWidget(const SizedBox.shrink());
     });
 
     test('token het han luc mo app -> dang xuat, khong goi mang', () async {
@@ -666,7 +756,7 @@ void main() {
 
         // Cham >= 48 dp.
         final size = tester.getSize(
-          find.widgetWithText(OutlinedButton, 'Xuất dữ liệu trên máy'),
+          find.widgetWithText(IosButton, 'Xuất dữ liệu trên máy'),
         );
         expect(size.height, greaterThanOrEqualTo(48));
       },
@@ -682,30 +772,27 @@ void main() {
       for (final t in [
         'Đồng bộ ngay',
         'Xuất dữ liệu',
-        'Xoá dữ liệu đồng bộ',
+        'Xóa dữ liệu đồng bộ',
         'Đăng xuất',
-        'Xoá tài khoản',
+        'Xóa tài khoản',
       ]) {
         expect(find.text(t), findsOneWidget, reason: t);
       }
-      final danger = tester.widget<FilledButton>(
-        find.ancestor(
-          of: find.text('Xoá tài khoản'),
-          matching: find.byWidgetPredicate((w) => w is FilledButton),
-        ),
+      // Nut nguy hiem kieu iOS (nen mo, chu do) - hanh dong xac nhan nam
+      // trong sheet.
+      final danger = tester.widget<IosButton>(
+        find.widgetWithText(IosButton, 'Xóa tài khoản'),
       );
-      expect(
-        danger.style?.backgroundColor?.resolve({}),
-        const Color(0xFFB3261E),
-      );
+      expect(danger.destructive, isTrue);
 
-      await tester.tap(find.text('Xoá tài khoản'));
+      await tester.tap(find.text('Xóa tài khoản'));
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('delete-password')), findsOneWidget);
+      expect(find.byKey(const ValueKey('glass-sheet')), findsOneWidget);
       await tester.tap(find.byKey(const Key('confirm-delete-account')));
       await tester.pump();
       expect(find.text('Nhập mật khẩu để xác nhận.'), findsOneWidget);
-      await tester.tap(find.text('Huỷ'));
+      await tester.tap(find.text('Hủy'));
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('delete-password')), findsNothing);
     });

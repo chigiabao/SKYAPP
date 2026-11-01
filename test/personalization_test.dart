@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -13,59 +14,53 @@ import 'package:sky_weather_app/providers/preferences_provider.dart';
 import 'package:sky_weather_app/providers/weather_provider.dart';
 import 'package:sky_weather_app/screens/home_screen.dart';
 import 'package:sky_weather_app/screens/settings_screen.dart';
-import 'package:sky_weather_app/services/api_service.dart';
 import 'package:sky_weather_app/ui/weather/app_scene.dart';
 import 'package:sky_weather_app/utils/theme.dart';
 
-/// Du lieu gia CHI dung trong test (khong goi mang).
-class _FakeApi extends ApiService {
-  _FakeApi(this.now);
-  final DateTime now;
+import 'support/fake_weather_repository.dart';
 
-  @override
-  Future<WeatherData> fetchWeatherData({DateTime? at}) async {
-    final base = HcmTime.startOfHour(now);
-    return WeatherData(
-      current: CurrentWeather(
-        locationName: 'TP. Hồ Chí Minh',
-        temperature: 26.2,
-        feelsLike: 32.6,
-        condition: WeatherCondition.cloudy,
-        lastUpdated: base,
-        humidity: 93,
-        windSpeed: 11.8,
-        windGusts: 27.6,
-        windDirection: 135,
-        cloudCover: 91,
-        precipitationMm: 0.4,
-        pressure: 1011.3,
-        visibilityKm: 16.96,
-        uvIndex: 5,
-        usAqi: 60,
-        pm25: 15,
-      ),
-      hourlyForecast: [
-        for (var i = 0; i < 24; i++)
-          HourlyForecast(
-            time: base.add(Duration(hours: i)),
-            temperature: 27,
-            condition: WeatherCondition.cloudy,
-            rainProbability: 0.2,
-            windGusts: 20,
-          ),
-      ],
-      dailyForecast: [
-        for (var i = 0; i < 7; i++)
-          DailyForecast(
-            date: base.add(Duration(days: i)),
-            tempMin: 24,
-            tempMax: 31,
-            condition: WeatherCondition.cloudy,
-            precipitationMm: 3,
-          ),
-      ],
-    );
-  }
+/// Du lieu gia CHI dung trong test (khong goi mang).
+WeatherData _fakeWeather(DateTime now) {
+  final base = HcmTime.startOfHour(now);
+  return WeatherData(
+    current: CurrentWeather(
+      temperature: 26.2,
+      feelsLike: 32.6,
+      condition: WeatherCondition.cloudy,
+      lastUpdated: base,
+      humidity: 93,
+      windSpeed: 11.8,
+      windGusts: 27.6,
+      windDirection: 135,
+      cloudCover: 91,
+      precipitationMm: 0.4,
+      pressure: 1011.3,
+      visibilityKm: 16.96,
+      uvIndex: 5,
+      usAqi: 60,
+      pm25: 15,
+    ),
+    hourlyForecast: [
+      for (var i = 0; i < 24; i++)
+        HourlyForecast(
+          time: base.add(Duration(hours: i)),
+          temperature: 27,
+          condition: WeatherCondition.cloudy,
+          rainProbability: 0.2,
+          windGusts: 20,
+        ),
+    ],
+    dailyForecast: [
+      for (var i = 0; i < 7; i++)
+        DailyForecast(
+          date: base.add(Duration(days: i)),
+          tempMin: 24,
+          tempMax: 31,
+          condition: WeatherCondition.cloudy,
+          precipitationMm: 3,
+        ),
+    ],
+  );
 }
 
 Future<void> _pump(
@@ -81,7 +76,7 @@ Future<void> _pump(
   tester.view.devicePixelRatio = 1.0;
   addTearDown(tester.view.reset);
   final wp = WeatherProvider(
-    apiService: _FakeApi(HcmTime.now()),
+    apiService: FakeWeatherRepository.fixed((_) => _fakeWeather(HcmTime.now())),
     initialSettings: const AppSettings(),
   );
   await tester.pumpWidget(
@@ -163,9 +158,11 @@ Future<void> _openConditions(WidgetTester tester) async {
   await tester.pump();
   expect(
     tester
-        .widget<SegmentedButton<bool>>(find.byType(SegmentedButton<bool>))
-        .selected,
-    {true},
+        .widget<CupertinoSlidingSegmentedControl<bool>>(
+          find.byType(CupertinoSlidingSegmentedControl<bool>),
+        )
+        .groupValue,
+    true,
   );
 }
 
@@ -195,6 +192,37 @@ void main() {
       final r = PreferencesProvider();
       await r.load();
       expect(r.exportSettings(), q.exportSettings());
+    });
+
+    test('°C/°F: khu hoi; ban ghi cu thieu truong thi giu', () async {
+      final p = PreferencesProvider();
+      p.setTemperatureUnit(false);
+      final q = PreferencesProvider();
+      await q.importSettings(p.exportSettings());
+      expect(q.units.isCelsius, isFalse);
+      // Tai lieu dong bo tu ban app cu: khong co units.temp.
+      await q.importSettings({
+        'version': 1,
+        'units': {'wind': 'ms'},
+      });
+      expect(q.units.isCelsius, isFalse);
+      expect(q.units.wind, WindUnit.ms);
+    });
+
+    test('ban ghi cu con "themeMode" (da bo) bi bo qua', () async {
+      final q = PreferencesProvider();
+      await q.importSettings({
+        'version': 1,
+        'themeMode': 'dark',
+        'units': {'temp': 'fahrenheit', 'wind': 'ms'},
+        'textScale': 1.15,
+        'reduceMotion': true,
+      });
+      expect(q.units.isCelsius, isFalse);
+      expect(q.units.wind, WindUnit.ms);
+      expect(q.textScale, 1.15);
+      expect(q.reduceMotion, isTrue);
+      expect(q.exportSettings().containsKey('themeMode'), isFalse);
     });
 
     test('du lieu sai -> mac dinh; thu tu thieu duoc bo sung', () async {
@@ -332,7 +360,7 @@ void main() {
       ) async {
         final prefs = PreferencesProvider()..setHighContrast(true);
         await _pump(tester, const HomeScreen(), prefs: prefs, scale: scale);
-        expect(find.text('TP. Hồ Chí Minh'), findsOneWidget);
+        expect(find.text('Tân Sơn Nhất'), findsOneWidget);
         await _scrollAll(tester, find.byType(CustomScrollView));
         await _openConditions(tester);
         await _scrollAll(tester, find.byType(CustomScrollView));
@@ -365,29 +393,30 @@ void main() {
           planner: PlannerProvider(),
           locations: LocationProvider(),
         );
-        for (final t in [
-          'THÔNG BÁO VÀ CẢNH BÁO',
-          'ĐỊA ĐIỂM',
-          'HOẠT ĐỘNG',
-          'GIAO DIỆN',
-          'CHỈ SỐ TRÊN TRANG CHỦ',
-          'TRỢ NĂNG',
-          'ĐƠN VỊ',
+        for (final id in [
+          'display',
+          'notifications',
+          'places',
+          'accessibility',
+          'advanced',
+          'help',
         ]) {
+          final tile = find.byKey(ValueKey('settings-category-$id'));
           await tester.scrollUntilVisible(
-            find.text(t),
+            tile,
             200,
             scrollable: find.byType(Scrollable).first,
           );
+          await tester.ensureVisible(tile);
+          await tester.pump();
+          await tester.tap(tile);
+          await tester.pumpAndSettle();
+          await _scrollAll(tester, find.byType(Scrollable).first);
+          await tester.tap(find.byTooltip('Quay lại'));
+          await tester.pumpAndSettle();
           expect(tester.takeException(), isNull);
         }
-        // Muc cua agent tai khoan van con (nam tren Giao dien -> cuon len).
-        await tester.scrollUntilVisible(
-          find.text('Tài khoản và đồng bộ'),
-          -200,
-          scrollable: find.byType(Scrollable).first,
-        );
-        await _scrollAll(tester, find.byType(ListView).first);
+        await _scrollAll(tester, find.byType(Scrollable).first);
       });
     }
 
@@ -412,6 +441,13 @@ void main() {
         const SettingsScreen(),
         prefs: prefs,
         size: const Size(400, 3000),
+      );
+      await tester.tap(find.byKey(const ValueKey('settings-category-display')));
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
+        find.text('Cấp Beaufort'),
+        300,
+        scrollable: find.byType(Scrollable).first,
       );
       await tester.tap(find.text('Cấp Beaufort'));
       await tester.pump();

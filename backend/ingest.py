@@ -24,6 +24,7 @@ CLI:  python ingest.py [--location <location/cell/series id; default: all>] [--s
 import argparse
 import json
 import logging
+import math
 import os
 import sqlite3
 import sys
@@ -148,44 +149,86 @@ def parse_hourly(payload: dict, columns: Optional[dict] = None) -> list[dict]:
     """Open-Meteo hourly block -> rows keyed by DB column; timestamp 'YYYY-MM-DD HH:MM:SS' local.
     `columns` maps DB column -> API variable (default WEATHER_COLUMNS).
     Hours where every variable is null (not yet available) are dropped."""
+    if not isinstance(payload, dict):
+        raise ValueError('hourly payload must be an object')
     columns = columns or WEATHER_COLUMNS
-    h = payload.get("hourly") or {}
-    times = h.get("time") or []
+    h = payload.get('hourly') or {}
+    if not isinstance(h, dict):
+        raise ValueError('hourly must be an object')
+    times = h.get('time') or []
+    if not isinstance(times, list):
+        raise ValueError('hourly.time must be an array')
+    for var in columns.values():
+        values = h.get(var)
+        if values is not None and (not isinstance(values, list) or len(values) != len(times)):
+            raise ValueError(f'Invalid hourly array length: {var}')
     rows = []
+    seen = set()
     for i, t in enumerate(times):
-        row = {"timestamp": datetime.fromisoformat(t).strftime(TS_FMT)}
+        if not isinstance(t, str):
+            raise ValueError('hourly timestamps must be strings')
+        parsed = database.to_local(t)
+        if parsed.minute or parsed.second or parsed.microsecond:
+            raise ValueError('hourly timestamp must be aligned to an hour')
+        stamp = parsed.strftime(TS_FMT)
+        if stamp in seen:
+            raise ValueError('duplicate hourly timestamp')
+        seen.add(stamp)
+        row = {'timestamp': stamp}
         for col, var in columns.items():
-            v = (h.get(var) or [None] * len(times))[i]
-            row[col] = None if v is None else float(v)
+            values = h.get(var)
+            v = values[i] if values is not None else None
+            if v is None:
+                row[col] = None
+            else:
+                if isinstance(v, bool):
+                    raise ValueError(f'Invalid hourly number: {var}')
+                number = float(v)
+                if not math.isfinite(number):
+                    raise ValueError(f'Non-finite hourly number: {var}')
+                row[col] = number
         if any(row[c] is not None for c in columns):
             rows.append(row)
     return rows
 
 
+def _parse_payloads(payloads: list, columns: Optional[dict] = None) -> list[list[dict] | ValueError]:
+    results = []
+    for payload in payloads:
+        try:
+            results.append(parse_hourly(payload, columns))
+        except (ValueError, TypeError, OverflowError) as exc:
+            results.append(ValueError(str(exc)))
+    return results
+
+
 def fetch_historical_batch(locs: list[dict], start: date, end: date,
-                           stats: Optional[dict] = None) -> list[list[dict]]:
+                           stats: Optional[dict] = None) -> list[list[dict] | ValueError]:
     days = (end - start).days + 1
     payloads = _batch(HISTORICAL_URL, _params(locs, start_date=start.isoformat(), end_date=end.isoformat()),
                       len(locs), _weight(len(WEATHER_COLUMNS), days), stats)
-    return [parse_hourly(p) for p in payloads]
+    return _parse_payloads(payloads)
 
 
-def fetch_forecast_batch(locs: list[dict], stats: Optional[dict] = None) -> list[list[dict]]:
+def fetch_forecast_batch(locs: list[dict], stats: Optional[dict] = None) -> list[list[dict] | ValueError]:
     payloads = _batch(FORECAST_URL, _params(locs, forecast_days=8), len(locs),
                       _weight(len(WEATHER_COLUMNS), 8), stats)
-    return [parse_hourly(p) for p in payloads]
+    return _parse_payloads(payloads)
 
 
-def fetch_air_quality_batch(locs: list[dict], stats: Optional[dict] = None) -> list[list[dict]]:
+def fetch_air_quality_batch(locs: list[dict], stats: Optional[dict] = None) -> list[list[dict] | ValueError]:
     params = {**_coords(locs, elevation=False), "hourly": ",".join(AIR_QUALITY_COLUMNS),
               "timezone": TIMEZONE, "past_days": AQ_PAST_DAYS, "forecast_days": AQ_FORECAST_DAYS}
     payloads = _batch(AIR_QUALITY_URL, params, len(locs),
                       _weight(len(AIR_QUALITY_COLUMNS), AQ_PAST_DAYS + AQ_FORECAST_DAYS), stats)
-    return [parse_hourly(p, {c: c for c in AIR_QUALITY_COLUMNS}) for p in payloads]
+    return _parse_payloads(payloads, {c: c for c in AIR_QUALITY_COLUMNS})
 
 
 def fetch_historical(loc: dict, start: date, end: date) -> list[dict]:
-    return fetch_historical_batch([loc], start, end)[0]
+    rows = fetch_historical_batch([loc], start, end)[0]
+    if isinstance(rows, ValueError):
+        raise rows
+    return rows
 
 
 # --- DB helpers ---------------------------------------------------------------------------------
@@ -374,7 +417,14 @@ def _fetch_observed(conn, series, since, hour, stats, failed) -> dict:
                 failed.update({s["series_id"]: f"historical: {_err(e)}" for s in chunk})
                 continue
             for s, rows in zip(chunk, fetched):   # never store future hours
-                obs[s["series_id"]] = [r for r in rows if s["lo"] <= r["timestamp"] <= hi]
+                if isinstance(rows, ValueError):
+                    failed[s['series_id']] = f'historical: {_err(rows)}'
+                    continue
+                accepted = [r for r in rows if s['lo'] <= r['timestamp'] <= hi]
+                if not any(r.get('temperature') is not None for r in accepted):
+                    failed[s['series_id']] = 'historical: no usable temperature data in the requested window'
+                    continue
+                obs[s['series_id']] = accepted
             log.info("historical from %s chunk %d: ok %d series", day, i, len(chunk))
     return obs
 
@@ -424,6 +474,12 @@ def _run(location_id, since, forecast_only, now, db_path, on_success) -> dict:
                         notes.append(f"WARNING external forecast skipped for {len(chunk)} series: {_err(e)}")
                     continue
                 for s, rows in zip(chunk, fetched):
+                    if isinstance(rows, ValueError):
+                        if forecast_only:
+                            failed[s['series_id']] = f'forecast: {_err(rows)}'
+                        else:
+                            notes.append(f"WARNING external forecast skipped for {s['series_id']}: {_err(rows)}")
+                        continue
                     fc[s["series_id"]] = [r for r in rows if issued_at < r["timestamp"] <= horizon]
                 log.info("forecast chunk %d: ok %d series", i, len(chunk))
             ok = [s for s in series if s["series_id"] not in failed]
@@ -431,6 +487,9 @@ def _run(location_id, since, forecast_only, now, db_path, on_success) -> dict:
             for i, chunk in enumerate(_chunks(ok), 1):
                 try:   # optional: an air-quality outage must not block the weather data
                     for s, rows in zip(chunk, fetch_air_quality_batch(chunk, stats)):
+                        if isinstance(rows, ValueError):
+                            notes.append(f"WARNING air quality skipped for {s['series_id']}: {_err(rows)}")
+                            continue
                         aq[s["series_id"]] = rows
                     log.info("air quality chunk %d: ok %d series", i, len(chunk))
                 except Exception as e:  # noqa: BLE001

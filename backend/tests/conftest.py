@@ -2,6 +2,7 @@
 Shared fixtures: a small synthetic SQLite DB (3 years x 17 days, hourly), a frozen HCMC clock,
 and TestClients bound to either the synthetic DB or the real backend/data/weather.db.
 """
+import hashlib
 import math
 import os
 import shutil
@@ -14,13 +15,16 @@ from fastapi.testclient import TestClient
 
 # Never start the background ingest scheduler (and never hit the network) during tests.
 os.environ["INGEST_ENABLED"] = "0"
+os.environ["MAINTENANCE_ENABLED"] = "0"
+os.environ["RATE_LIMIT_PER_MINUTE"] = "0"
 
 import database
 import main
 from database import LOCAL_TZ
-from routers import weather as weather_router
+from routers import weather as weather_router, weather_core
 
 REAL_DB = Path(__file__).resolve().parent.parent / "data" / "weather.db"
+REAL_HISTORY_DB = REAL_DB.parent / "history" / "cells_history.db"
 
 COLUMNS = ["timestamp", "temperature", "humidity", "dew_point", "apparent_temperature",
            "precipitation_probability", "precipitation", "rain", "weather_code", "visibility",
@@ -37,6 +41,20 @@ LAST_TS = datetime(2023, 6, 24, 23, 0)
 
 WMO_CODES = {0, 1, 2, 3, 45, 48, 51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 71, 73, 75, 77,
              80, 81, 82, 85, 86, 95, 96, 99}
+
+
+def pytest_addoption(parser):
+    parser.addoption('--skip-model-training', action='store_true',
+                     help='Skip tests whose synthetic artifact fixture trains a model.')
+
+
+def pytest_collection_modifyitems(config, items):
+    if not config.getoption('--skip-model-training'):
+        return
+    no_training = pytest.mark.skip(reason='Synthetic model training disabled by --skip-model-training')
+    for item in items:
+        if item.path.name == 'test_long_range_model.py' and 'artifact' in item.fixturenames:
+            item.add_marker(no_training)
 
 SCHEMA = (
     'CREATE TABLE "hourly_weather" ("timestamp" TIMESTAMP, '
@@ -117,14 +135,14 @@ def insert_rows(con: sqlite3.Connection, rows: list[dict]) -> None:
 def point_app_at(mp: pytest.MonkeyPatch, db_path: Path) -> None:
     """DATABASE_PATH is imported by name in several modules; patch every copy."""
     mp.setattr(database, "DATABASE_PATH", db_path)
-    mp.setattr(weather_router, "DATABASE_PATH", db_path)
+    mp.setattr(weather_core, "DATABASE_PATH", db_path)
     mp.setattr(main, "DATABASE_PATH", db_path)
     # Per-cell history sits next to it (data/history/ for the real DB; absent unless a test writes one).
-    mp.setattr(weather_router, "HISTORY_DB_PATH", Path(db_path).parent / "history" / "cells_history.db")
+    mp.setattr(weather_core, "HISTORY_DB_PATH", Path(db_path).parent / "history" / "cells_history.db")
 
 
 def freeze_now(mp: pytest.MonkeyPatch, now: datetime = FROZEN_NOW) -> None:
-    mp.setattr(weather_router, "now_local", lambda: now)
+    mp.setattr(weather_core, "now_local", lambda: now)
     mp.setattr(main, "now_local", lambda: now)
 
 
@@ -157,17 +175,50 @@ def client(syn_db, monkeypatch):
     yield TestClient(main.app)
 
 
-@pytest.fixture(scope="module")
-def real_client(tmp_path_factory):
+def _file_stamp(path: Path, digest: bool) -> tuple | None:
+    if not path.exists():
+        return None
+    st = path.stat()
+    if not digest:
+        return st.st_size, st.st_mtime_ns
+    h = hashlib.sha256()
+    with path.open("rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return st.st_size, st.st_mtime_ns, h.hexdigest()
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _real_db_untouched():
+    """Fail the session if any test changed the developer's live DBs (cells_history is ~1 GB: no hash)."""
+    guarded = ((REAL_DB, True), (REAL_HISTORY_DB, False))
+    before = [_file_stamp(p, d) for p, d in guarded]
+    yield
+    changed = [str(p) for (p, d), b in zip(guarded, before) if _file_stamp(p, d) != b]
+    if changed:
+        pytest.fail(f"tests modified the live database(s) {changed}; use the real_db_snapshot fixture instead "
+                    "(or stop any server/ingest writing to them while the suite runs)", pytrace=False)
+
+
+@pytest.fixture(scope="session")
+def real_db_snapshot(tmp_path_factory) -> Path:
+    """Read-only-sourced copy of the real weather.db (sqlite backup from a mode=ro connection), shared by every
+    test that needs real data: request paths, lifespan migrations and seed loading only ever touch the copy."""
     if not REAL_DB.exists():
         pytest.skip("real weather.db not found")
     snapshot = tmp_path_factory.mktemp('real-db-snapshot') / 'weather.db'
-    # Lifespan migrations and seed loading must never write to the developer's live DB.
     with sqlite3.connect(REAL_DB.resolve().as_uri() + '?mode=ro', uri=True) as source:
         with sqlite3.connect(snapshot) as target:
             source.backup(target)
+    source.close()
+    target.close()
+    return snapshot
+
+
+@pytest.fixture(scope="module")
+def real_client(real_db_snapshot):
     with pytest.MonkeyPatch.context() as mp:
-        point_app_at(mp, snapshot)
+        point_app_at(mp, real_db_snapshot)
         weather_router.invalidate_climatology()
         with TestClient(main.app) as c:
             yield c

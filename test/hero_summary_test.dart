@@ -54,19 +54,19 @@ void main() {
       prob: {for (var x = 12; x < 20; x++) x: 0.9},
       thunder: {12},
     );
-    expect(sum(h, now), 'Dông 12–13h, mưa đến 20h · mang áo mưa khi về');
+    expect(sum(h, now), 'Dông 12:00–13:00, mưa đến 20:00 · mang áo mưa khi về');
   });
 
   test('mua chac chan buoi sang khong trung gio ve', () {
     final now = day.add(const Duration(hours: 9));
     final h = hours(now, 24, prob: {10: 0.8, 11: 0.75});
-    expect(sum(h, now), 'Mưa 10–12h · nhớ mang ô');
+    expect(sum(h, now), 'Mưa 10:00–12:00 · nhớ mang ô');
   });
 
   test('kha nang thap -> "Có thể mưa" kem %', () {
     final now = day.add(const Duration(hours: 9));
     final h = hours(now, 24, prob: {13: 0.55, 14: 0.6});
-    expect(sum(h, now), 'Có thể mưa 13–15h (60%) · nên mang ô');
+    expect(sum(h, now), 'Có thể mưa 13:00–15:00 (60%) · nên mang ô');
   });
 
   test('dang mua (gio thuc te) -> "Đang mưa"', () {
@@ -77,13 +77,13 @@ void main() {
       observedMm: {10: 2.0},
       prob: {11: 0.9},
     );
-    expect(sum(h, now), 'Đang mưa, đến khoảng 12h · nhớ mang ô');
+    expect(sum(h, now), 'Đang mưa, đến khoảng 12:00 · nhớ mang ô');
   });
 
   test('gop khoang ngat 1 gio; dong chi o giua', () {
     final now = day.add(const Duration(hours: 13));
     final h = hours(now, 24, prob: {14: 0.8, 16: 0.9, 17: 0.9}, thunder: {16});
-    expect(sum(h, now), 'Dông 16–17h, mưa đến 18h · mang áo mưa khi về');
+    expect(sum(h, now), 'Dông 16:00–17:00, mưa đến 18:00 · mang áo mưa khi về');
   });
 
   test('khong co gio nao -> null', () {
@@ -105,6 +105,20 @@ void main() {
     expect(t.first.mm, 1.2);
     expect(t[2].p, closeTo(0.4, 1e-9));
     expect(t[2].thunder, isTrue);
+    for (final source in [DataSource.observed, DataSource.forecast]) {
+      final missing = rainTimeline([
+        HourlyForecast(
+          time: now,
+          temperature: 28,
+          condition: WeatherCondition.cloudy,
+          rainProbability: null,
+          precipitationMm: null,
+          source: source,
+        ),
+      ], nowHcm: now);
+      expect(missing.single.p, isNull);
+      expect(missing.single.mm, isNull);
+    }
   });
 
   test('maxRainPercent 2 gio toi', () {

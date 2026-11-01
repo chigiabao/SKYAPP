@@ -227,9 +227,6 @@ class ShootingStarSchedule {
     }
     return null;
   }
-
-  /// Thoi diem bat dau su kien [i] trong chu ky dau.
-  double startOf(int i) => start[i];
 }
 
 /// Ve sao bang theo [ShootingStarSchedule].

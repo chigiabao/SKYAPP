@@ -206,16 +206,45 @@ void main() {
       expect(evaluateAlerts(nulls, nowHcm: _now, placeId: 'p'), isEmpty);
     });
 
-    test('sap xep muc cao truoc; danh dau dang xay ra', () {
+    test('dang xay ra truoc, roi sap toi theo gio; danh dau dang xay ra', () {
       final ev = evaluateAlerts(
         [_h(0, mm: 3, prob: 1, source: DataSource.observed), _h(1, code: 99)],
         nowHcm: _now,
         placeId: 'p',
       );
-      expect(ev.first.type, AlertType.thunderstorm);
+      // Mua dang xay ra (muc thap hon) van dung truoc dong sap toi.
+      expect(ev.first.type, AlertType.rain);
+      expect(ev.first.timingAt(_now), AlertTiming.ongoing);
+      expect(ev[1].type, AlertType.thunderstorm);
       final rain = ev.firstWhere((e) => e.type == AlertType.rain);
       expect(rain.observed, isTrue);
       expect(rain.detail, contains('Đang xảy ra'));
+    });
+
+    test('thu tu hien thi: dang xay ra > gio bat dau > muc do', () {
+      AlertEvent e(AlertType t, int startH, int endH, AlertLevel l) =>
+          AlertEvent(
+            type: t,
+            placeId: 'p',
+            start: _now.add(Duration(hours: startH)),
+            end: _now.add(Duration(hours: endH)),
+            level: l,
+            peak: 1,
+            observed: false,
+            asOf: _now,
+          );
+      final uvTomorrow = e(AlertType.uv, 15, 17, AlertLevel.warning);
+      final rainNow = e(AlertType.rain, 0, 3, AlertLevel.advisory);
+      final heatSoon = e(AlertType.heat, 4, 6, AlertLevel.advisory);
+      final windSoon = e(AlertType.wind, 4, 5, AlertLevel.danger);
+      final sorted = [uvTomorrow, heatSoon, windSoon, rainNow]
+        ..sort((a, b) => compareAlertsForDisplay(a, b, _now));
+      expect(sorted.map((x) => x.type), [
+        AlertType.rain, // dang xay ra
+        AlertType.wind, // cung gio 4h, muc cao hon
+        AlertType.heat,
+        AlertType.uv, // mai
+      ]);
     });
 
     test(

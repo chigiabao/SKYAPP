@@ -1,6 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:sky_weather_app/models/activities.dart';
 import 'package:sky_weather_app/models/units.dart';
+import 'package:sky_weather_app/models/weather.dart';
 import 'package:sky_weather_app/models/weather_alerts.dart';
 
 void main() {
@@ -135,6 +137,35 @@ void main() {
     expect(ev(AlertType.wind, 72).peakText, 'Giật tới 72 km/h');
     expect(ev(AlertType.heavyRain, 25.4).peakTextFor(ms), 'Tới 1,00 in/h');
     expect(ev(AlertType.rain, 2.54, observed: true).peakTextFor(ms), '0,10 in');
+    const f = UnitPrefs(temp: TempUnit.fahrenheit);
+    expect(ev(AlertType.heat, 38).peakTextFor(f), 'Cảm giác tới 100°F');
+    expect(ev(AlertType.heat, 38).peakText, 'Cảm giác tới 38°C');
+  });
+
+  test('ly do khung gio hoat dong theo don vi nhiet do', () {
+    final start = DateTime.utc(2026, 1, 1, 6);
+    final hours = [
+      for (var i = 0; i < 4; i++)
+        HourlyForecast(
+          time: start.add(Duration(hours: i)),
+          temperature: 27,
+          condition: WeatherCondition.cloudy,
+          rainProbability: 0.1,
+        ),
+    ];
+    String reason(UnitPrefs u) => bestWindows(
+      Activity.running,
+      hours,
+      nowHcm: start,
+      horizonHours: 4,
+      limit: 1,
+      units: u,
+    ).first.reason;
+    expect(reason(const UnitPrefs()), contains('Cảm giác 27°C'));
+    expect(
+      reason(const UnitPrefs(temp: TempUnit.fahrenheit)),
+      contains('Cảm giác 81°F'),
+    );
   });
 
   test('truc bieu do gio: Beaufort ve theo m/s', () {
@@ -142,5 +173,26 @@ void main() {
     expect(b.windAxisUnit, WindUnit.ms);
     expect(b.windAxisValue(36), closeTo(10, 1e-9));
     expect(const UnitPrefs().windAxisValue(36), 36);
+  });
+
+  test('Nhiet do: °C / °F dung mot cong thuc', () {
+    expect(UnitConvert.cToF(0), 32);
+    expect(UnitConvert.cToF(100), 212);
+    expect(UnitConvert.cDeltaToF(5), 9);
+    const c = UnitPrefs();
+    const f = UnitPrefs(temp: TempUnit.fahrenheit);
+    expect(c.isCelsius, isTrue);
+    expect(c.tempText(29.6), '30°C');
+    expect(c.tempNumber(29.6), '30');
+    expect(f.tempText(30), '86°F');
+    expect(f.tempNumber(30), '86');
+    expect(f.tempValue(25), 77);
+    expect(f.tempUnit, '°F');
+    expect(c.tempDeltaText(0.4), '0,4°C');
+    expect(f.tempDeltaText(0.4), '0,7°F');
+    // JSON: thieu / sai -> °C; khu hoi giu °F.
+    expect(UnitPrefs.fromJson(f.toJson()), f);
+    expect(UnitPrefs.fromJson({'temp': 'kelvin'}).temp, TempUnit.celsius);
+    expect(f == c, isFalse);
   });
 }

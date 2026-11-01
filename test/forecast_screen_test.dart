@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -6,7 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sky_weather_app/models/app_settings.dart';
 import 'package:sky_weather_app/models/weather.dart';
 import 'package:sky_weather_app/providers/weather_provider.dart';
-import 'package:sky_weather_app/screens/forecast/forecast_format.dart';
+import 'package:sky_weather_app/utils/forecast_format.dart';
 import 'package:sky_weather_app/screens/forecast_screen.dart';
 import 'package:sky_weather_app/utils/theme.dart';
 
@@ -104,15 +105,25 @@ Future<void> _pump(
 
 Future<void> _scrollAll(WidgetTester tester) async {
   for (var i = 0; i < 12; i++) {
-    await tester.drag(find.byType(ListView).first, const Offset(0, -400));
+    await tester.drag(find.byType(Scrollable).first, const Offset(0, -400));
     await tester.pump();
     expect(tester.takeException(), isNull);
   }
+  // Cuon iOS (BouncingScrollPhysics) co the vuot cuoi danh sach: doi nay lai.
+  await tester.pumpAndSettle();
 }
 
+/// Tieu de iOS (thanh tinh khi giam chuyen dong, tieu de lon khi khong).
 String _appBarTitle(WidgetTester tester) {
-  final appBar = tester.widget<AppBar>(find.byType(AppBar));
-  return (appBar.title as Text).data!;
+  final inline = find.byType(CupertinoNavigationBar);
+  if (inline.evaluate().isNotEmpty) {
+    return (tester.widget<CupertinoNavigationBar>(inline).middle! as Text)
+        .data!;
+  }
+  final large = tester.widget<CupertinoSliverNavigationBar>(
+    find.byType(CupertinoSliverNavigationBar),
+  );
+  return ((large.largeTitle! as FittedBox).child! as Text).data!;
 }
 
 void main() {
@@ -129,8 +140,13 @@ void main() {
     await _pump(tester, dayIndex: 0);
     expect(_appBarTitle(tester), 'Thứ 5, 15/10');
     expect(find.text('Nguồn: Trung bình nhiều năm'), findsOneWidget);
-    expect(find.text('Nhiệt độ theo giờ'), findsOneWidget);
     expect(find.text('0,4 mm'), findsOneWidget); // luong mua trung vi
+    await tester.scrollUntilVisible(
+      find.text('Nhiệt độ theo giờ'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.text('Nhiệt độ theo giờ'), findsOneWidget);
     await _scrollAll(tester);
     expect(find.text('Gió mạnh nhất (km/h)'), findsOneWidget);
     expect(tester.takeException(), isNull);
@@ -143,7 +159,7 @@ void main() {
     expect(_appBarTitle(tester), 'Thứ 2, 19/10');
     expect(find.text('Nhiệt độ theo giờ'), findsNothing);
     expect(find.text('13 mm'), findsOneWidget); // trung vi (nhieu nam)
-    await tester.drag(find.byType(ListView).first, const Offset(0, -300));
+    await tester.drag(find.byType(Scrollable).first, const Offset(0, -300));
     await tester.pump();
     expect(
       find.textContaining('Chưa có số liệu theo giờ cho Thứ 2, 19/10'),
@@ -155,7 +171,14 @@ void main() {
   testWidgets('Ngay mai: chi cac gio cua ngay mai', (tester) async {
     await _pump(tester, dayIndex: 1);
     expect(_appBarTitle(tester), 'Thứ 6, 16/10');
+    // The tom tat co them dong khung gio ("Trong 00:00–09:00") -> cuon toi.
+    await tester.scrollUntilVisible(
+      find.textContaining('Có số liệu 00:00–09:00'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
     expect(find.textContaining('Có số liệu 00:00–09:00'), findsOneWidget);
+    expect(find.text('Trong 00:00–09:00'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -275,7 +298,7 @@ void main() {
       expect(find.textContaining('Có số liệu 00:00–23:00'), findsOneWidget);
       expect(find.textContaining('Chưa có số liệu theo giờ'), findsNothing);
       expect(find.text('1/24 giờ'), findsOneWidget); // gio co mua
-      await tester.drag(find.byType(ListView).first, const Offset(0, -500));
+      await tester.drag(find.byType(Scrollable).first, const Offset(0, -500));
       await tester.pump();
       expect(find.textContaining('1 giờ có mưa · tổng 3 mm'), findsOneWidget);
       expect(tester.takeException(), isNull);

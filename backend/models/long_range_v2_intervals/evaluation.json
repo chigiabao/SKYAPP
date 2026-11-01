@@ -1,0 +1,504 @@
+{
+ "artifact_sha256": "5b621d4e28e5009bcfdc785bd193758a494b607ff13398bcd7a39376f3e46f5c",
+ "created_at": "2026-11-01T13:54:26.961321+00:00",
+ "untouched": {
+  "issues": 7973,
+  "issue_stride_hours": 1,
+  "issues_with_policy_fallback": 0,
+  "note": "never used for any choice; issues >= 2026-10-17, horizons whose label exists",
+  "coverage": {
+   "temperature": {
+    "B1": {
+     "n": 46833,
+     "issue_days": 5,
+     "served": true,
+     "nominal": 0.8,
+     "coverage": 0.7721,
+     "mean_width": 1.6172
+    },
+    "B2": {
+     "n": 126027,
+     "issue_days": 5,
+     "served": true,
+     "nominal": 0.8,
+     "coverage": 0.8008,
+     "mean_width": 2.1374
+    },
+    "B3": {
+     "n": 134268,
+     "issue_days": 4,
+     "served": true,
+     "nominal": 0.8,
+     "coverage": 0.8583,
+     "mean_width": 2.3933
+    },
+    "B4": {
+     "n": 95676,
+     "issue_days": 3,
+     "served": true,
+     "nominal": 0.8,
+     "coverage": 0.8702,
+     "mean_width": 2.4987
+    },
+    "B5": {
+     "n": 75576,
+     "issue_days": 2,
+     "served": true,
+     "nominal": 0.8,
+     "coverage": 0.875,
+     "mean_width": 2.5715
+    },
+    "B6": {
+     "n": 0,
+     "served": false
+    }
+   },
+   "humidity": {
+    "B1": {
+     "n": 46833,
+     "issue_days": 5,
+     "served": true,
+     "nominal": 0.8,
+     "coverage": 0.6947,
+     "mean_width": 8.2626
+    },
+    "B2": {
+     "n": 126027,
+     "issue_days": 5,
+     "served": true,
+     "nominal": 0.8,
+     "coverage": 0.7267,
+     "mean_width": 11.225
+    },
+    "B3": {
+     "n": 134268,
+     "issue_days": 4,
+     "served": true,
+     "nominal": 0.8,
+     "coverage": 0.7893,
+     "mean_width": 13.1958
+    },
+    "B4": {
+     "n": 95676,
+     "issue_days": 3,
+     "served": false,
+     "nominal": 0.8,
+     "coverage": 0.8041,
+     "mean_width": 13.9207
+    },
+    "B5": {
+     "n": 75576,
+     "issue_days": 2,
+     "served": false,
+     "nominal": 0.8,
+     "coverage": 0.7926,
+     "mean_width": 14.5984
+    },
+    "B6": {
+     "n": 0,
+     "served": false
+    }
+   },
+   "wind_speed": {
+    "B1": {
+     "n": 46833,
+     "issue_days": 5,
+     "served": true,
+     "nominal": 0.8,
+     "coverage": 0.8093,
+     "mean_width": 6.9473
+    },
+    "B2": {
+     "n": 126027,
+     "issue_days": 5,
+     "served": true,
+     "nominal": 0.8,
+     "coverage": 0.8367,
+     "mean_width": 8.5301
+    },
+    "B3": {
+     "n": 134268,
+     "issue_days": 4,
+     "served": true,
+     "nominal": 0.8,
+     "coverage": 0.8641,
+     "mean_width": 9.0077
+    },
+    "B4": {
+     "n": 95676,
+     "issue_days": 3,
+     "served": true,
+     "nominal": 0.8,
+     "coverage": 0.895,
+     "mean_width": 9.1961
+    },
+    "B5": {
+     "n": 75576,
+     "issue_days": 2,
+     "served": true,
+     "nominal": 0.8,
+     "coverage": 0.8984,
+     "mean_width": 9.4295
+    },
+    "B6": {
+     "n": 0,
+     "served": true
+    }
+   },
+   "cloud_cover": {
+    "B1": {
+     "n": 46833,
+     "issue_days": 5,
+     "served": false,
+     "nominal": 0.8,
+     "coverage": 0.7067,
+     "mean_width": 39.3497
+    },
+    "B2": {
+     "n": 126027,
+     "issue_days": 5,
+     "served": false,
+     "nominal": 0.8,
+     "coverage": 0.7033,
+     "mean_width": 53.2332
+    },
+    "B3": {
+     "n": 134268,
+     "issue_days": 4,
+     "served": false,
+     "nominal": 0.8,
+     "coverage": 0.7204,
+     "mean_width": 56.1215
+    },
+    "B4": {
+     "n": 95676,
+     "issue_days": 3,
+     "served": false,
+     "nominal": 0.8,
+     "coverage": 0.6266,
+     "mean_width": 56.442
+    },
+    "B5": {
+     "n": 75576,
+     "issue_days": 2,
+     "served": false,
+     "nominal": 0.8,
+     "coverage": 0.6271,
+     "mean_width": 55.9237
+    },
+    "B6": {
+     "n": 0,
+     "served": false
+    }
+   },
+   "precipitation_mm": {
+    "B1": {
+     "n": 46833,
+     "issue_days": 5,
+     "served": true,
+     "nominal": 0.9,
+     "coverage": 0.8985,
+     "mean_width": 0.2617
+    },
+    "B2": {
+     "n": 126027,
+     "issue_days": 5,
+     "served": true,
+     "nominal": 0.9,
+     "coverage": 0.9156,
+     "mean_width": 0.3266
+    },
+    "B3": {
+     "n": 134268,
+     "issue_days": 4,
+     "served": true,
+     "nominal": 0.9,
+     "coverage": 0.9441,
+     "mean_width": 0.4023
+    },
+    "B4": {
+     "n": 95676,
+     "issue_days": 3,
+     "served": true,
+     "nominal": 0.9,
+     "coverage": 0.9485,
+     "mean_width": 0.3599
+    },
+    "B5": {
+     "n": 75576,
+     "issue_days": 2,
+     "served": true,
+     "nominal": 0.9,
+     "coverage": 0.916,
+     "mean_width": 0.339
+    },
+    "B6": {
+     "n": 0,
+     "served": true
+    }
+   }
+  }
+ },
+ "test_post_hoc": {
+  "window": [
+   "2025-01-01 00:00:00",
+   "2026-10-16 23:00:00"
+  ],
+  "issue_stride_hours": 71,
+  "issues": 14673,
+  "issues_with_policy_fallback": 0,
+  "note": "POST-HOC: computed after the artifact was frozen; no choice was tuned on it; not a ledger entry; points not rescored",
+  "coverage": {
+   "temperature": {
+    "B1": {
+     "n": 88038,
+     "issue_days": 219,
+     "served": true,
+     "nominal": 0.8,
+     "coverage": 0.8132,
+     "mean_width": 1.9916
+    },
+    "B2": {
+     "n": 264114,
+     "issue_days": 219,
+     "served": true,
+     "nominal": 0.8,
+     "coverage": 0.8224,
+     "mean_width": 2.5783
+    },
+    "B3": {
+     "n": 352152,
+     "issue_days": 219,
+     "served": true,
+     "nominal": 0.8,
+     "coverage": 0.825,
+     "mean_width": 2.8916
+    },
+    "B4": {
+     "n": 352152,
+     "issue_days": 219,
+     "served": true,
+     "nominal": 0.8,
+     "coverage": 0.801,
+     "mean_width": 3.0038
+    },
+    "B5": {
+     "n": 704304,
+     "issue_days": 219,
+     "served": true,
+     "nominal": 0.8,
+     "coverage": 0.7984,
+     "mean_width": 3.0286
+    },
+    "B6": {
+     "n": 704304,
+     "issue_days": 219,
+     "served": false,
+     "nominal": 0.8,
+     "coverage": 0.8002,
+     "mean_width": 3.1318
+    }
+   },
+   "humidity": {
+    "B1": {
+     "n": 88038,
+     "issue_days": 219,
+     "served": true,
+     "nominal": 0.8,
+     "coverage": 0.7868,
+     "mean_width": 10.712
+    },
+    "B2": {
+     "n": 264114,
+     "issue_days": 219,
+     "served": true,
+     "nominal": 0.8,
+     "coverage": 0.7656,
+     "mean_width": 14.3902
+    },
+    "B3": {
+     "n": 352152,
+     "issue_days": 219,
+     "served": true,
+     "nominal": 0.8,
+     "coverage": 0.7713,
+     "mean_width": 16.8817
+    },
+    "B4": {
+     "n": 352152,
+     "issue_days": 219,
+     "served": false,
+     "nominal": 0.8,
+     "coverage": 0.786,
+     "mean_width": 17.643
+    },
+    "B5": {
+     "n": 704304,
+     "issue_days": 219,
+     "served": false,
+     "nominal": 0.8,
+     "coverage": 0.7682,
+     "mean_width": 17.8604
+    },
+    "B6": {
+     "n": 704304,
+     "issue_days": 219,
+     "served": false,
+     "nominal": 0.8,
+     "coverage": 0.7777,
+     "mean_width": 18.0341
+    }
+   },
+   "wind_speed": {
+    "B1": {
+     "n": 88038,
+     "issue_days": 219,
+     "served": true,
+     "nominal": 0.8,
+     "coverage": 0.7928,
+     "mean_width": 7.4523
+    },
+    "B2": {
+     "n": 264114,
+     "issue_days": 219,
+     "served": true,
+     "nominal": 0.8,
+     "coverage": 0.7961,
+     "mean_width": 9.0962
+    },
+    "B3": {
+     "n": 352152,
+     "issue_days": 219,
+     "served": true,
+     "nominal": 0.8,
+     "coverage": 0.7784,
+     "mean_width": 9.6034
+    },
+    "B4": {
+     "n": 352152,
+     "issue_days": 219,
+     "served": true,
+     "nominal": 0.8,
+     "coverage": 0.766,
+     "mean_width": 9.7773
+    },
+    "B5": {
+     "n": 704304,
+     "issue_days": 219,
+     "served": true,
+     "nominal": 0.8,
+     "coverage": 0.7657,
+     "mean_width": 9.9176
+    },
+    "B6": {
+     "n": 704304,
+     "issue_days": 219,
+     "served": true,
+     "nominal": 0.8,
+     "coverage": 0.763,
+     "mean_width": 9.9605
+    }
+   },
+   "cloud_cover": {
+    "B1": {
+     "n": 88038,
+     "issue_days": 219,
+     "served": false,
+     "nominal": 0.8,
+     "coverage": 0.7459,
+     "mean_width": 48.3155
+    },
+    "B2": {
+     "n": 264114,
+     "issue_days": 219,
+     "served": false,
+     "nominal": 0.8,
+     "coverage": 0.7356,
+     "mean_width": 64.8399
+    },
+    "B3": {
+     "n": 352152,
+     "issue_days": 219,
+     "served": false,
+     "nominal": 0.8,
+     "coverage": 0.707,
+     "mean_width": 68.3639
+    },
+    "B4": {
+     "n": 352152,
+     "issue_days": 219,
+     "served": false,
+     "nominal": 0.8,
+     "coverage": 0.6757,
+     "mean_width": 68.951
+    },
+    "B5": {
+     "n": 704304,
+     "issue_days": 219,
+     "served": false,
+     "nominal": 0.8,
+     "coverage": 0.723,
+     "mean_width": 69.2794
+    },
+    "B6": {
+     "n": 704304,
+     "issue_days": 219,
+     "served": false,
+     "nominal": 0.8,
+     "coverage": 0.7096,
+     "mean_width": 69.2531
+    }
+   },
+   "precipitation_mm": {
+    "B1": {
+     "n": 88038,
+     "issue_days": 219,
+     "served": true,
+     "nominal": 0.9,
+     "coverage": 0.9091,
+     "mean_width": 0.1731
+    },
+    "B2": {
+     "n": 264114,
+     "issue_days": 219,
+     "served": true,
+     "nominal": 0.9,
+     "coverage": 0.9062,
+     "mean_width": 0.213
+    },
+    "B3": {
+     "n": 352152,
+     "issue_days": 219,
+     "served": true,
+     "nominal": 0.9,
+     "coverage": 0.9049,
+     "mean_width": 0.264
+    },
+    "B4": {
+     "n": 352152,
+     "issue_days": 219,
+     "served": true,
+     "nominal": 0.9,
+     "coverage": 0.9028,
+     "mean_width": 0.2358
+    },
+    "B5": {
+     "n": 704304,
+     "issue_days": 219,
+     "served": true,
+     "nominal": 0.9,
+     "coverage": 0.8993,
+     "mean_width": 0.2139
+    },
+    "B6": {
+     "n": 704304,
+     "issue_days": 219,
+     "served": true,
+     "nominal": 0.9,
+     "coverage": 0.8967,
+     "mean_width": 0.1874
+    }
+   }
+  }
+ }
+}

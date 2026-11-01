@@ -54,14 +54,14 @@ void main() {
     expect(PlannerProvider().favorites, contains(Activity.commute));
   });
 
-  test('dong di / ve: "Về 17h30: mưa 70% – mang áo mưa"', () {
+  test('dong di / ve: "Về 17:30: mưa 70% – mang áo mưa"', () {
     final now = _day.add(const Duration(hours: 9));
     final back = commuteLine('Về', 17, 30, _hours(), now)!;
-    expect(back.text, 'Về 17h30: mưa 70% – mang áo mưa');
+    expect(back.text, 'Về 17:30: mưa 70% – mang áo mưa');
     expect(back.bad, isTrue);
-    // 7h30 da qua (9h) -> ngay mai, van co du lieu.
+    // 07:30 da qua (9 gio) -> ngay mai, van co du lieu.
     final go = commuteLine('Đi', 7, 30, _hours(), now)!;
-    expect(go.text, startsWith('Đi mai 7h30: ít mưa (10%)'));
+    expect(go.text, startsWith('Sáng mai đi 07:30: ít mưa (10%)'));
     expect(commuteLine('Đi', 7, 30, const [], now), isNull);
   });
 
@@ -69,7 +69,7 @@ void main() {
     const c = CommuteSettings();
     expect(
       morningBrief([(name: 'Bến Thành', hours: _hours())], _day, c),
-      'Hôm nay: mưa 15–18h ở Bến Thành, mang áo mưa khi về.',
+      'Hôm nay: mưa 15:00–18:00 ở Bến Thành, mang áo mưa khi về.',
     );
     expect(
       morningBrief([(name: 'Nhà', hours: _hours(rain: {}))], _day, c),
@@ -89,29 +89,34 @@ void main() {
     expect(CommuteSettings.fromJson({'leaveHour': 99}).leaveHour, 7);
   });
 
-  test('thong bao buoi sang: hen 6:30 gio HCM, noi dung tu du lieu moi', () async {
-    final n = _Notify();
-    final p = PlannerProvider(notifications: n, clock: () => _instant);
-    await p.load();
-    p.setCommute(const CommuteSettings(workId: 'q1'));
-    expect(await p.setMorningBrief(true), isTrue);
-    p.noteLiveHours('q1', 'Bến Thành', _hours());
-    await p.rescheduleReminders();
-    final brief = n.scheduled.where(
-      (s) => s.$1 == PlannerProvider.morningBriefId,
-    );
-    expect(brief, hasLength(1));
-    expect(brief.single.$2, _day.add(const Duration(hours: 6, minutes: 30)));
-    expect(brief.single.$4, contains('mưa 15–18h ở Bến Thành'));
+  test(
+    'thong bao buoi sang: hen 6:30 gio HCM, noi dung tu du lieu moi',
+    () async {
+      final n = _Notify();
+      final p = PlannerProvider(notifications: n, clock: () => _instant);
+      await p.load();
+      p.setCommute(const CommuteSettings(workId: 'q1'));
+      expect(await p.setMorningBrief(true), isTrue);
+      p.noteLiveHours('q1', 'Bến Thành', _hours());
+      await p.rescheduleReminders();
+      final brief = n.scheduled.where(
+        (s) => s.$1 == PlannerProvider.morningBriefId,
+      );
+      expect(brief, hasLength(1));
+      expect(brief.single.$2, _day.add(const Duration(hours: 6, minutes: 30)));
+      expect(brief.single.$4, contains('mưa 15:00–18:00 ở Bến Thành'));
 
-    // Gio yen lang 22h-7h, nguoi dung khong cho gui trong gio yen lang.
-    p.setSettings(p.settings.copyWith(quietEnd: 7));
-    p.setCommute(p.commute.copyWith(briefInQuiet: false));
-    await p.rescheduleReminders();
-    expect(p.morningBriefAt, isNull);
-    expect(n.scheduled.where((s) => s.$1 == PlannerProvider.morningBriefId),
-        isEmpty);
-  });
+      // Gio yen lang 22h-7h, nguoi dung khong cho gui trong gio yen lang.
+      p.setSettings(p.settings.copyWith(quietEnd: 7));
+      p.setCommute(p.commute.copyWith(briefInQuiet: false));
+      await p.rescheduleReminders();
+      expect(p.morningBriefAt, isNull);
+      expect(
+        n.scheduled.where((s) => s.$1 == PlannerProvider.morningBriefId),
+        isEmpty,
+      );
+    },
+  );
 
   group('Onboarding', () {
     Future<void> pump(WidgetTester tester, {double scale = 1}) async {
@@ -151,8 +156,8 @@ void main() {
         await tester.tap(find.text('Tiếp tục'));
         await tester.pump();
         expect(find.text('Mấy giờ bạn đi và về?'), findsOneWidget);
-        expect(find.text('7h30'), findsOneWidget);
-        expect(find.text('17h30'), findsOneWidget);
+        expect(find.text('07:30'), findsOneWidget);
+        expect(find.text('17:30'), findsOneWidget);
         await tester.tap(find.text('Tiếp tục'));
         await tester.pump();
         expect(find.text('Biết mưa trước khi ra đường'), findsOneWidget);

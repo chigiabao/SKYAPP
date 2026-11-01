@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -16,7 +17,7 @@ import 'package:sky_weather_app/providers/weather_provider.dart';
 import 'package:sky_weather_app/screens/settings_screen.dart';
 import 'package:sky_weather_app/services/account_service.dart';
 import 'package:sky_weather_app/services/api_service.dart';
-import 'package:sky_weather_app/services/background_check.dart';
+import 'package:sky_weather_app/background/background_check.dart';
 import 'package:sky_weather_app/services/notification_service.dart';
 import 'package:sky_weather_app/ui/weather/app_scene.dart';
 import 'package:sky_weather_app/utils/theme.dart';
@@ -162,7 +163,27 @@ void main() {
       expect(called.toString(), 'http://h:8000/health');
       expect(h.ok, isTrue);
       expect(h.message, contains('healthy'));
-      expect(h.message, contains('1.3 giờ'));
+      expect(h.message, contains('1,3 giờ'));
+    });
+
+    test('stale backend is reachable but not marked healthy', () async {
+      final health = await checkServerHealth(
+        'http://h',
+        client: MockClient(
+          (_) async => http.Response(
+            jsonEncode({
+              'status': 'degraded',
+              'database': 'ok',
+              'data_age_hours': 42,
+              'ready': false,
+            }),
+            200,
+          ),
+        ),
+      );
+      expect(health.ok, isFalse);
+      expect(health.message, contains('degraded'));
+      expect(health.message, contains('cách đây 42 giờ'));
     });
 
     test('loi HTTP / khong phai backend / mat ket noi', () async {
@@ -183,6 +204,36 @@ void main() {
       );
       expect(down.ok, isFalse);
       expect(down.message, contains('Không kết nối được'));
+    });
+
+    test('decodes UTF-8 bytes without a charset header', () async {
+      final h = await checkServerHealth(
+        'http://h',
+        client: MockClient(
+          (_) async => http.Response.bytes(
+            utf8.encode(jsonEncode({'status': 'healthy', 'database': 'ổn'})),
+            200,
+          ),
+        ),
+      );
+      expect(h.message, contains('CSDL: ổn'));
+    });
+
+    test('timeout and missing status have their own messages', () async {
+      final slow = await checkServerHealth(
+        'http://h',
+        timeout: const Duration(milliseconds: 10),
+        client: MockClient((_) async {
+          await Future<void>.delayed(const Duration(milliseconds: 200));
+          return http.Response('{}', 200);
+        }),
+      );
+      expect(slow.message, contains('Hết thời gian chờ'));
+      final noStatus = await checkServerHealth(
+        'http://h',
+        client: MockClient((_) async => http.Response('{"ok": 1}', 200)),
+      );
+      expect(noStatus.message, 'Không phải máy chủ Sky Weather.');
     });
   });
 
@@ -213,21 +264,26 @@ void main() {
     );
     await tester.pump();
     await tester.scrollUntilVisible(
-      find.text('NÂNG CAO'),
+      find.byKey(const ValueKey('settings-category-advanced')),
       300,
       scrollable: find.byType(Scrollable).first,
     );
-    expect(find.text('NÂNG CAO'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('settings-category-advanced')));
+    await tester.pumpAndSettle();
+    expect(find.text('Nâng cao'), findsOneWidget);
     expect(find.text(ApiConfig.defaultBaseUrl), findsOneWidget);
 
-    await tester.enterText(find.byType(TextField), '192.168.1.10');
+    await tester.enterText(find.byType(CupertinoTextField), '192.168.1.10');
     await tester.ensureVisible(find.text('Lưu và tải lại'));
     await tester.tap(find.text('Lưu và tải lại'));
     await tester.pump();
     expect(find.textContaining('không hợp lệ'), findsOneWidget);
     expect(ApiConfig.baseUrlOverride, isNull);
 
-    await tester.enterText(find.byType(TextField), 'http://192.168.1.10:8000');
+    await tester.enterText(
+      find.byType(CupertinoTextField),
+      'http://192.168.1.10:8000',
+    );
     await tester.tap(find.text('Lưu và tải lại'));
     await tester.pump();
     expect(ApiConfig.baseUrl, 'http://192.168.1.10:8000');

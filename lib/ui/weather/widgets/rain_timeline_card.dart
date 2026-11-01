@@ -3,6 +3,7 @@
 /// man Canh bao (cau mien tru nam o do).
 library;
 
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import '../design_tokens.dart';
@@ -15,6 +16,7 @@ class RainTimelineCard extends StatelessWidget {
     super.key,
     required this.slots,
     required this.title,
+    this.alertDetail,
     this.thunder = false,
     this.icon,
     this.accent,
@@ -26,6 +28,9 @@ class RainTimelineCard extends StatelessWidget {
 
   /// "Cảnh báo · Dông · 16:00–18:00" hoac "Mưa 24 giờ tới".
   final String title;
+
+  /// The alert's own metric and timing, separate from the rain timeline.
+  final String? alertDetail;
   final bool thunder;
 
   /// Icon tieu de (vd. loai canh bao); null = dong / o theo [thunder].
@@ -39,22 +44,50 @@ class RainTimelineCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ink = GlassInk.of(context);
+    final compact = MediaQuery.sizeOf(context).height <= 700;
     final Color color = accent ?? ink.rain;
-    var peak = 0.0;
-    double total = 0;
-    for (final s in slots) {
-      if (s.p > peak) peak = s.p;
-      total += s.mm ?? 0;
+    final ordered = [...slots]..sort((a, b) => a.time.compareTo(b.time));
+    final timeline = <RainSlot>[];
+    for (final slot in ordered) {
+      if (timeline.isNotEmpty) {
+        var missing = timeline.last.time.add(const Duration(hours: 1));
+        while (missing.isBefore(slot.time)) {
+          timeline.add((time: missing, p: null, mm: null, thunder: false));
+          missing = missing.add(const Duration(hours: 1));
+        }
+      }
+      timeline.add(slot);
     }
-    final String detail = [
-      'Tới ${(peak * 100).round()}%',
-      if (total >= 0.1)
-        'tổng ${total.toStringAsFixed(1).replaceAll('.', ',')} mm',
-      '${slots.length} giờ tới',
-    ].join(' · ');
+    final probabilities = timeline.map((s) => s.p).nonNulls.toList();
+    final amounts = timeline.map((s) => s.mm).nonNulls.toList();
+    final peak = probabilities.fold<double>(0, (a, b) => a > b ? a : b);
+    final total = amounts.fold<double>(0, (a, b) => a + b);
+    final String detail = timeline.isEmpty
+        ? 'Chưa có dữ liệu mưa theo giờ.'
+        : [
+            if (probabilities.isEmpty)
+              'Chưa có xác suất mưa'
+            else
+              'Xác suất mưa tới ${(peak * 100).round()}%'
+                  '${probabilities.length == timeline.length ? '' : ' (dữ liệu chưa đủ)'}',
+            if (amounts.isEmpty)
+              'Chưa có lượng mưa'
+            else if (amounts.length < timeline.length)
+              'đã có ${total.toStringAsFixed(1).replaceAll('.', ',')} mm'
+                  ' (${amounts.length}/${timeline.length} giờ)',
+            if (amounts.length == timeline.length)
+              'tổng ${total.toStringAsFixed(1).replaceAll('.', ',')} mm',
+            '${_time(timeline.first.time)}–'
+                '${_time(timeline.last.time.add(const Duration(hours: 1)))}',
+          ].join(' · ');
 
     final body = Padding(
-      padding: const EdgeInsets.fromLTRB(Space.l, Space.m, 0, Space.m),
+      padding: EdgeInsets.fromLTRB(
+        Space.l,
+        compact ? Space.s : Space.m,
+        0,
+        compact ? Space.s : Space.m,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -74,8 +107,6 @@ class RainTimelineCard extends StatelessWidget {
               Expanded(
                 child: Text(
                   title,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
                   style: TypeScale.label.copyWith(
                     fontWeight: FontWeight.w600,
                     color: Palette.white,
@@ -86,7 +117,7 @@ class RainTimelineCard extends StatelessWidget {
               if (onOpen != null)
                 const ExcludeSemantics(
                   child: Icon(
-                    Icons.chevron_right_rounded,
+                    CupertinoIcons.chevron_forward,
                     color: Palette.white,
                   ),
                 ),
@@ -94,17 +125,36 @@ class RainTimelineCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: Space.s),
-          Padding(
-            padding: EdgeInsets.only(right: onDismiss == null ? Space.l : 0),
-            child: _Bar(slots: slots, rain: ink.rain, storm: Palette.alert),
-          ),
-          const SizedBox(height: Space.xs),
+          if (alertDetail != null) ...[
+            Padding(
+              padding: EdgeInsets.only(right: onDismiss == null ? Space.l : 0),
+              child: Text(
+                alertDetail!,
+                style: TypeScale.body.copyWith(color: ink.secondary),
+              ),
+            ),
+            const SizedBox(height: Space.m),
+            Text(
+              'Dữ liệu mưa theo giờ',
+              style: TypeScale.label.copyWith(color: Palette.white),
+            ),
+            const SizedBox(height: Space.s),
+          ],
+          if (slots.isNotEmpty) ...[
+            Padding(
+              padding: EdgeInsets.only(right: onDismiss == null ? Space.l : 0),
+              child: _Bar(
+                slots: timeline,
+                rain: ink.rain,
+                storm: Palette.alert,
+              ),
+            ),
+            const SizedBox(height: Space.xs),
+          ],
           Padding(
             padding: EdgeInsets.only(right: onDismiss == null ? Space.l : 0),
             child: Text(
               detail,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
               style: TypeScale.small.copyWith(
                 color: ink.secondary,
                 fontFeatures: kTabular,
@@ -130,7 +180,8 @@ class RainTimelineCard extends StatelessWidget {
                     : Pressable(
                         onTap: onOpen,
                         semanticsLabel:
-                            '$title. $detail. ${_spoken(slots)}Mở màn Cảnh báo',
+                            '$title. ${alertDetail == null ? '' : '$alertDetail. '}'
+                            '$detail. ${_spoken(timeline)}Mở màn Cảnh báo',
                         child: body,
                       ),
               ),
@@ -146,7 +197,7 @@ class RainTimelineCard extends StatelessWidget {
                       child: const SizedBox.square(
                         dimension: Touch.min,
                         child: Icon(
-                          Icons.close_rounded,
+                          CupertinoIcons.xmark,
                           color: Palette.white,
                           size: IconSizes.md,
                         ),
@@ -161,19 +212,33 @@ class RainTimelineCard extends StatelessWidget {
     );
   }
 
-  /// "Mưa từ 16h đến 19h. " cho trinh doc man hinh.
+  static String _time(DateTime time) =>
+      '${time.hour.toString().padLeft(2, '0')}:00 ${time.day}/${time.month}';
+
+  /// Missing hours must break spoken rain intervals.
   static String _spoken(List<RainSlot> s) {
-    final i = s.indexWhere((x) => x.p >= 0.5);
-    if (i < 0) return '';
-    var j = i;
-    while (j + 1 < s.length && s[j + 1].p >= 0.5) {
-      j++;
+    final text = StringBuffer();
+    for (var i = 0; i < s.length; i++) {
+      if ((s[i].p ?? 0) < 0.5) continue;
+      final start = s[i].time;
+      while (i + 1 < s.length &&
+          (s[i + 1].p ?? 0) >= 0.5 &&
+          s[i + 1].time.difference(s[i].time) == const Duration(hours: 1)) {
+        i++;
+      }
+      text.write(
+        'Khả năng mưa cao từ ${_time(start)} đến '
+        '${_time(s[i].time.add(const Duration(hours: 1)))}. ',
+      );
     }
-    return 'Mưa từ ${s[i].time.hour} giờ đến ${(s[j].time.hour + 1) % 24} giờ. ';
+    return text.toString();
   }
 }
 
-/// Thanh 24 o + moc gio (moi 6 gio).
+/// Thanh 24 cot + moc gio (moi 6 gio, 12 gio khi chu lon).
+///
+/// Mau = xac suat mua theo bac ro rang (<20% gan nhu trong suot -> >=80%
+/// xanh dam nhat); chieu cao cot = luong mua (mm), toi thieu 40%.
 class _Bar extends StatelessWidget {
   const _Bar({required this.slots, required this.rain, required this.storm});
 
@@ -181,64 +246,72 @@ class _Bar extends StatelessWidget {
   final Color rain;
   final Color storm;
 
+  static const double _height = 28;
+  static const double _gap = 2;
+
+  /// Bac mau xanh mua theo xac suat (tren kinh toi: bac >=40% dat >= 3:1).
+  static Color colorFor(double? p) {
+    if (p == null) return Colors.transparent;
+    if (p >= 0.8) return const Color(0xFF7CC8FF);
+    if (p >= 0.6) return const Color(0xFF3D9BF0);
+    if (p >= 0.4) return const Color(0xFF2E78C7);
+    if (p >= 0.2) return const Color(0x995B8FC4);
+    return const Color(0x29FFFFFF);
+  }
+
+  static double _fraction(RainSlot s) {
+    final mm = s.mm;
+    if (mm == null) return (s.p ?? 0) >= 0.2 ? 1 : 0.4;
+    return 0.4 + 0.6 * (mm / 5).clamp(0.0, 1.0);
+  }
+
   @override
   Widget build(BuildContext context) {
     final ink = GlassInk.of(context);
     final labelStyle = TypeScale.small.copyWith(
-      fontSize: 12,
       color: ink.secondary,
       fontFeatures: kTabular,
     );
     final n = slots.length;
+    final stride = MediaQuery.textScalerOf(context).scale(12) > 18 ? 12 : 6;
     return ExcludeSemantics(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           SizedBox(
-            height: 20,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(6),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  for (var i = 0; i < n; i++)
-                    Expanded(
-                      child: Padding(
-                        padding: EdgeInsets.only(right: i == n - 1 ? 0 : 1.5),
-                        child: ColoredBox(
-                          color: Color.alphaBlend(
-                            (slots[i].thunder ? storm : rain).withValues(
-                              alpha: slots[i].thunder
-                                  ? 0.95
-                                  : 0.12 + 0.88 * slots[i].p,
-                            ),
-                            Palette.track,
-                          ),
+            height: MediaQuery.sizeOf(context).height <= 700 ? 20 : _height,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (var i = 0; i < n; i++) ...[
+                  if (i > 0) const SizedBox(width: _gap),
+                  Expanded(
+                    child: FractionallySizedBox(
+                      alignment: Alignment.bottomCenter,
+                      heightFactor: slots[i].thunder ? 1 : _fraction(slots[i]),
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: slots[i].thunder
+                              ? storm
+                              : colorFor(slots[i].p),
+                          borderRadius: BorderRadius.circular(2),
                         ),
                       ),
                     ),
+                  ),
                 ],
-              ),
+              ],
             ),
           ),
           const SizedBox(height: Space.xs),
-          // Moc gio moi 6 o (Bay gio, +6, +12, +18), canh trai theo o.
+          // Fewer ticks at large text; labels wrap instead of shrinking.
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              for (var i = 0; i < n; i += 6)
+              for (var i = 0; i < n; i += stride)
                 Expanded(
-                  flex: n - i < 6 ? n - i : 6,
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: Text(
-                        i == 0 ? 'Bây giờ' : '${slots[i].time.hour}h',
-                        maxLines: 1,
-                        style: labelStyle,
-                      ),
-                    ),
-                  ),
+                  flex: n - i < stride ? n - i : stride,
+                  child: Text('${slots[i].time.hour}h', style: labelStyle),
                 ),
             ],
           ),

@@ -255,9 +255,11 @@ def test_export(api):
 
 def test_delete_data_only(api):
     token = register(api).json()["token"]
-    put(api, token, 0, doc())
+    assert put(api, token, 0, doc()).json()["version"] == 1
     assert api.delete("/me/data", headers=bearer(token)).status_code == 204
-    assert api.get("/me/data", headers=bearer(token)).json()["version"] == 0
+    assert api.get("/me/data", headers=bearer(token)).json() == {
+        "version": 2, "data": None, "updated_at": auth._now(),
+    }
     assert api.get("/me", headers=bearer(token)).status_code == 200
 
 

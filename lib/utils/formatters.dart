@@ -23,9 +23,6 @@ class WeatherFormat {
   static String percent(num? value) =>
       value == null ? '--' : '${value.round()}%';
 
-  static String speedKmh(double? kmh) =>
-      kmh == null ? '--' : '${kmh.round()} km/h';
-
   /// Huong gio (do, kieu khi tuong: huong gio THOI TU) -> 8 huong tieng Viet.
   static String compass(double? degrees) {
     if (degrees == null) return '--';
@@ -46,6 +43,18 @@ class WeatherFormat {
 
   /// So mot chu so thap phan, dau phay ("36,6").
   static String decimal1(double value) => _decimal(value, 1);
+
+  /// So thap phan kieu Viet Nam ("0,4"). Moi so le hien cho nguoi dung PHAI
+  /// qua day (hoac [decimal1]/[compact]), khong dung toStringAsFixed tran.
+  static String decimal(num value, [int digits = 1]) =>
+      _decimal(value.toDouble(), digits);
+
+  /// Bo phan le khi la so nguyen: 8 -> "8", 8.44 -> "8,4".
+  static String compact(num value, [int digits = 1]) {
+    final f = value.toDouble().toStringAsFixed(digits);
+    final trimmed = f.contains('.') ? f.replaceFirst(RegExp(r'\.?0+$'), '') : f;
+    return trimmed.replaceAll('.', ',');
+  }
 
   static String _decimal(double value, int digits) =>
       value.toStringAsFixed(digits).replaceAll('.', ',');

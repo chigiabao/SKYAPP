@@ -1,8 +1,10 @@
 /// Nguon cua tung muc so lieu (truong `source` cua backend).
 ///
-///   - observed: so lieu "thuc te" = du lieu phan tich cua mo hinh
-///     (Open-Meteo reanalysis/analysis), KHONG phai tram do.
-///   - forecast: du bao cua mo hinh Open-Meteo.
+///   - ai: du bao cua AI do nhom tu huan luyen (moi gia tri tuong lai).
+///   - observed: so lieu "thuc te" = du lieu dau vao Open-Meteo cho gio da
+///     qua (phan tich mo hinh), KHONG phai tram do.
+///   - forecast: chi con o may chu cu (du bao nguon ngoai); ung dung khong
+///     ghi cong nguon ngoai cho du bao.
 ///   - climatology: trung binh nhieu nam cho cung ngay/gio.
 enum DataSource { observed, forecast, climatology, ai }
 
@@ -22,6 +24,32 @@ DataSource? parseDataSource(dynamic value) {
   return null;
 }
 
+/// Cach goi DE HIEU, dung chung toan app, cho cac nguon so lieu. "Thuc te"
+/// cua app la uoc tinh cua mo hinh thoi tiet (Open-Meteo) cho gio da qua,
+/// KHONG phai so do tai tram -> luon kem "(mô hình)".
+abstract final class DataCopy {
+  /// Nhan day du (chip nguon, tieu de).
+  static const String observed = 'Số liệu đã ghi nhận (mô hình)';
+
+  /// Trong cau (chu thuong dau cau).
+  static const String observedInline = 'số liệu đã ghi nhận (mô hình)';
+
+  /// Trong cau da nam trong ngoac (tranh ngoac long ngoac).
+  static const String observedInParens =
+      'số liệu đã ghi nhận – ước tính mô hình';
+
+  /// Trong ngoac ngan (chu thich nguon tron).
+  static const String observedShort = 'đã ghi nhận, mô hình';
+
+  /// Giai thich mot cau.
+  static const String observedExplain =
+      'số liệu Open-Meteo đã ghi nhận cho giờ đã qua — ước tính của mô hình '
+      'thời tiết, không phải số đo tại trạm khí tượng';
+
+  /// Du bao cua nhom.
+  static const String aiForecast = 'AI của nhóm';
+}
+
 extension DataSourceText on DataSource {
   /// Nhan day du (tieu de phu, chip nguon).
   String get label {
@@ -29,9 +57,9 @@ extension DataSourceText on DataSource {
       case DataSource.ai:
         return 'Dự báo AI Sky Weather';
       case DataSource.forecast:
-        return 'Dự báo mô hình (Open-Meteo)';
+        return 'Dự báo nguồn ngoài (máy chủ cũ)';
       case DataSource.observed:
-        return 'Thực tế (dữ liệu mô hình phân tích)';
+        return DataCopy.observed;
       case DataSource.climatology:
         return 'Trung bình nhiều năm';
     }
@@ -41,11 +69,11 @@ extension DataSourceText on DataSource {
   String get shortLabel {
     switch (this) {
       case DataSource.ai:
-        return 'AI riêng';
+        return 'AI của nhóm';
       case DataSource.forecast:
-        return 'Dự báo';
+        return 'Nguồn ngoài';
       case DataSource.observed:
-        return 'Thực tế';
+        return 'Đã ghi nhận';
       case DataSource.climatology:
         return 'Thống kê';
     }
@@ -55,14 +83,16 @@ extension DataSourceText on DataSource {
   String get note {
     switch (this) {
       case DataSource.ai:
-        return 'Model thử nghiệm do Sky Weather huấn luyện từ dữ liệu mô hình lịch sử, '
-            'không phải quan trắc trạm. Chưa vượt mốc thống kê khí hậu ở một số '
-            'chỉ số/ngày thứ 7; không phải cảnh báo khí tượng chính thức.';
+        return 'Mô hình AI thử nghiệm do nhóm Sky Weather tự huấn luyện trên '
+            'dữ liệu đầu vào các giờ đã qua, không phải quan trắc trạm. Chưa '
+            'vượt mốc thống kê khí hậu ở một số chỉ số/ngày thứ 7; không phải '
+            'cảnh báo khí tượng chính thức.';
       case DataSource.forecast:
-        return 'Dự báo của mô hình thời tiết Open-Meteo, có thể sai lệch.';
+        return 'Máy chủ cũ gửi dự báo không do AI của nhóm tạo. Hãy cập nhật '
+            'máy chủ; ứng dụng chỉ dùng dự báo AI của nhóm.';
       case DataSource.observed:
-        return 'Dữ liệu phân tích của mô hình (Open-Meteo), không phải số đo '
-            'từ trạm khí tượng.';
+        return 'Số liệu Open-Meteo đã ghi nhận cho giờ đã qua — ước tính của '
+            'mô hình thời tiết, không phải số đo từ trạm khí tượng.';
       case DataSource.climatology:
         return 'Số liệu thống kê nhiều năm cho cùng ngày, cùng giờ — '
             'không phải dự báo thời tiết thực.';

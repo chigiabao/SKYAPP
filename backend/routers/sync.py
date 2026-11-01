@@ -4,8 +4,10 @@ plus the full data export. Requires `Authorization: Bearer <token>` (routers/aut
 
 Concurrency: the document has a `version`; PUT must send the `base_version` it was edited from. If another
 device saved first, PUT returns 409 with the current document so the app can merge and retry.
+Deleting data retains a JSON-null tombstone and advances the version so old revisions are never reused.
 """
 import json
+import math
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -20,6 +22,7 @@ from routers.auth import CurrentUser, current_user
 router = APIRouter(prefix="/me", tags=["account"])
 
 MAX_BODY_BYTES = 256 * 1024
+MAX_JSON_DEPTH = 64
 MAX_PLACES = 50
 MAX_ACTIVITIES = 500
 # Raw coordinates must never be synced: places are referenced by location_id only.
@@ -73,7 +76,7 @@ class SyncDocument(BaseModel):
 
 class SyncPut(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    base_version: int = Field(..., ge=0)
+    base_version: int = Field(..., ge=0, le=2**63 - 1)
     data: SyncDocument
 
 
@@ -85,39 +88,88 @@ def _has_gps_key(obj) -> bool:
     return False
 
 
+def _reject_constant(value):
+    raise ValueError("Nonfinite JSON number")
+
+
+def _finite_float(value):
+    number = float(value)
+    if not math.isfinite(number):
+        raise ValueError("Nonfinite JSON number")
+    return number
+
+
+def _validate_json(value):
+    pending = [(value, 0)]
+    while pending:
+        item, depth = pending.pop()
+        if depth > MAX_JSON_DEPTH:
+            raise ValueError("JSON nesting is too deep")
+        if isinstance(item, float) and not math.isfinite(item):
+            raise ValueError("Nonfinite JSON number")
+        if isinstance(item, dict):
+            pending.extend((v, depth + 1) for v in item.values())
+        elif isinstance(item, list):
+            pending.extend((v, depth + 1) for v in item)
+
+
+def _load_json(body):
+    value = json.loads(body, parse_constant=_reject_constant, parse_float=_finite_float)
+    _validate_json(value)
+    return value
+
+
 def _current(conn, user_id: int) -> dict:
     row = conn.execute("SELECT version, data, updated_at FROM user_data WHERE user_id = ?", (user_id,)).fetchone()
     if row is None:
         return {"version": 0, "data": None, "updated_at": None}
-    return {"version": row["version"], "data": json.loads(row["data"]), "updated_at": row["updated_at"]}
+    try:
+        data = _load_json(row["data"])
+    except (ValueError, RecursionError):
+        # Keep the revision and stored bytes intact; clients can replace this revision or delete it.
+        raise HTTPException(status_code=409, detail={"message": "Dữ liệu đồng bộ đã lưu bị lỗi; hãy ghi đè hoặc xoá dữ liệu này.",
+                                                     "version": row["version"]})
+    return {"version": row["version"], "data": data, "updated_at": row["updated_at"]}
 
 
 @router.get("/data")
 def get_data(user: CurrentUser = Depends(current_user)):
-    """The synced document; version 0 / data null if nothing was saved yet."""
+    """The synced document; version 0 if untouched, data null if untouched or deleted."""
     with database.get_db() as conn:
+        conn.execute("BEGIN")
+        auth.require_session(conn, user)
         return _current(conn, user.id)
 
 
 @router.put("/data")
 async def put_data(request: Request, user: CurrentUser = Depends(current_user)):
     """Replace the document. Body: {"base_version": n, "data": {...}} (max 256 KB). 409 + current on conflict."""
-    body = await request.body()
-    if len(body) > MAX_BODY_BYTES:
-        raise HTTPException(status_code=413, detail="Dữ liệu quá lớn (tối đa 256 KB).")
+    body = bytearray()
+    async for chunk in request.stream():
+        if len(body) + len(chunk) > MAX_BODY_BYTES:
+            raise HTTPException(status_code=413, detail="Dữ liệu quá lớn (tối đa 256 KB).")
+        body.extend(chunk)
     try:
-        raw = json.loads(body)
+        raw = _load_json(body)
         req = SyncPut.model_validate(raw)
-    except json.JSONDecodeError:
-        raise HTTPException(status_code=422, detail="JSON không hợp lệ.")
     except ValidationError as e:
         raise RequestValidationError(e.errors(include_url=False, include_context=False))
+    except (ValueError, RecursionError):
+        raise HTTPException(status_code=422, detail="JSON không hợp lệ.")
     if _has_gps_key(raw.get("data")):
         raise HTTPException(status_code=422, detail="Không đồng bộ toạ độ GPS; hãy dùng location_id.")
-    doc = req.data.model_dump(mode="json")
+    doc = req.data.model_dump()
+    try:
+        _validate_json(doc)
+        text = json.dumps(doc, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
+        text.encode("utf-8")
+    except (ValueError, RecursionError):
+        raise HTTPException(status_code=422, detail="JSON không hợp lệ.")
     ids = [p["id"] for p in doc["saved_places"]]
     now = auth._now()
     with database.get_db() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        auth.require_session(conn, user)
         if ids:
             known = {r[0] for r in conn.execute(
                 f"SELECT id FROM locations WHERE id IN ({', '.join('?' * len(ids))})", ids)}
@@ -125,7 +177,6 @@ async def put_data(request: Request, user: CurrentUser = Depends(current_user)):
             if unknown:
                 raise HTTPException(status_code=422, detail={"message": "Địa điểm không tồn tại.",
                                                              "unknown_location_ids": unknown})
-        text = json.dumps(doc, ensure_ascii=False, separators=(",", ":"))
         if req.base_version == 0:
             cur = conn.execute("INSERT OR IGNORE INTO user_data (user_id, version, data, updated_at) "
                                "VALUES (?, 1, ?, ?)", (user.id, text, now))
@@ -137,15 +188,22 @@ async def put_data(request: Request, user: CurrentUser = Depends(current_user)):
             return JSONResponse(status_code=409, content={
                 "detail": "Dữ liệu đã được thay đổi trên thiết bị khác. Hãy gộp với bản hiện tại rồi gửi lại.",
                 "current": current})
+        current = _current(conn, user.id)
         conn.commit()
-        return _current(conn, user.id)
+        return current
 
 
 @router.delete("/data", status_code=204)
 def delete_data(user: CurrentUser = Depends(current_user)):
-    """Delete only the synced document (the account stays)."""
+    """Erase the synced document, retaining its revision (the account stays)."""
     with database.get_db() as conn:
-        conn.execute("DELETE FROM user_data WHERE user_id = ?", (user.id,))
+        conn.execute("BEGIN IMMEDIATE")
+        auth.require_session(conn, user)
+        # Keep a tombstone even when empty so a stale PUT cannot reuse a deleted revision.
+        conn.execute("INSERT INTO user_data (user_id, version, data, updated_at) "
+                     "VALUES (?, 1, 'null', ?) "
+                     "ON CONFLICT(user_id) DO UPDATE SET version = user_data.version + 1, "
+                     "data = excluded.data, updated_at = excluded.updated_at", (user.id, auth._now()))
         conn.commit()
     return Response(status_code=204)
 
@@ -154,8 +212,9 @@ def delete_data(user: CurrentUser = Depends(current_user)):
 def export(user: CurrentUser = Depends(current_user)):
     """Everything stored about the user, as a downloadable JSON file."""
     with database.get_db() as conn:
-        account = dict(conn.execute("SELECT email, created_at, last_active_at FROM users WHERE id = ?",
-                                    (user.id,)).fetchone())
+        conn.execute("BEGIN")
+        row = auth.require_session(conn, user)
+        account = {key: row[key] for key in ("email", "created_at", "last_active_at")}
         sessions = [dict(r) for r in conn.execute(
             "SELECT created_at, expires_at FROM sessions WHERE user_id = ? ORDER BY created_at", (user.id,))]
         payload = {"exported_at": auth._now(), "account": account, "sessions": sessions,

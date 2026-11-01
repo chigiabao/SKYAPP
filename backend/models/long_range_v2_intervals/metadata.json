@@ -1,0 +1,373 @@
+{
+ "schema_version": 1,
+ "v2_model_version": "lgbm-direct-168h-v2-20261031T071738Z",
+ "v2_artifact_sha256": {
+  "metadata.json": "583c46d3b5d398ba390e0cc8563147b975fdd61ad6465a8773dcf81b9266d5fa",
+  "serving_policy.json": "8c4779aed7e144d3db22c2e2cda88f071a95625a8f85ae1c499f668135175c53",
+  "climatology.json": "1be09e67bf2ac18678f16af89e4753fed5377a48b34f3a70b003375e18599dc9"
+ },
+ "intervals_sha256": "5b621d4e28e5009bcfdc785bd193758a494b607ff13398bcd7a39376f3e46f5c",
+ "created_at": "2026-11-01T13:54:16.858669+00:00",
+ "level": 0.8,
+ "nominal": {
+  "temperature": 0.8,
+  "humidity": 0.8,
+  "wind_speed": 0.8,
+  "cloud_cover": 0.8,
+  "precipitation_mm": 0.9
+ },
+ "method": "split-conformal quantiles of (y - v2 served value) / train anomaly std(month, hour) per target x band (v2.1 rule: normalized unless unnormalized / Mondrian-by-season lowers the cross-fitted |coverage error| by > 1pp); precipitation one-sided p90",
+ "gate": "purged 2-fold cross-fitted VAL_CAL coverage within +-0.03 of nominal (contiguous halves, 168h purge); failed bands are not served",
+ "val_cal": {
+  "window": [
+   "2024-10-14 00:00:00",
+   "2024-12-24 23:00:00"
+  ],
+  "issue_rule": "issue and issue+168h inside",
+  "issue_stride_hours": 7,
+  "rows": 2510088,
+  "issues": 14941,
+  "issues_with_policy_fallback": 0
+ },
+ "std_tables": {
+  "labels": [
+   "2021-01-01 00:00:00",
+   "2024-06-30 23:00:00"
+  ],
+  "climatology": "v2 climatology.json",
+  "floor": {
+   "temperature": 0.05,
+   "humidity": 0.5,
+   "wind_speed": 0.1,
+   "cloud_cover": 1.0,
+   "precipitation_mm": 0.01
+  }
+ },
+ "served_values": "long_range_model_v2.forecast_arrays on the 48-row prepared history (short blend + V3 policy), exactly as predict()",
+ "selection_overlap": "v2 used its validation window 2024-07-08..2024-12-24 (contains VAL_CAL) for early stopping, target mode and policy weights; VAL_CAL residuals may be slightly optimistic. Check untouched-window coverage before relying on it.",
+ "gate_results": {
+  "temperature": {
+   "B1": {
+    "cv_coverage": 0.7838,
+    "served": true
+   },
+   "B2": {
+    "cv_coverage": 0.7897,
+    "served": true
+   },
+   "B3": {
+    "cv_coverage": 0.7758,
+    "served": true
+   },
+   "B4": {
+    "cv_coverage": 0.7829,
+    "served": true
+   },
+   "B5": {
+    "cv_coverage": 0.7801,
+    "served": true
+   },
+   "B6": {
+    "cv_coverage": 0.7609,
+    "served": false
+   }
+  },
+  "humidity": {
+   "B1": {
+    "cv_coverage": 0.7931,
+    "served": true
+   },
+   "B2": {
+    "cv_coverage": 0.7842,
+    "served": true
+   },
+   "B3": {
+    "cv_coverage": 0.7707,
+    "served": true
+   },
+   "B4": {
+    "cv_coverage": 0.7695,
+    "served": false
+   },
+   "B5": {
+    "cv_coverage": 0.7568,
+    "served": false
+   },
+   "B6": {
+    "cv_coverage": 0.7297,
+    "served": false
+   }
+  },
+  "wind_speed": {
+   "B1": {
+    "cv_coverage": 0.8017,
+    "served": true
+   },
+   "B2": {
+    "cv_coverage": 0.8016,
+    "served": true
+   },
+   "B3": {
+    "cv_coverage": 0.8006,
+    "served": true
+   },
+   "B4": {
+    "cv_coverage": 0.7966,
+    "served": true
+   },
+   "B5": {
+    "cv_coverage": 0.7941,
+    "served": true
+   },
+   "B6": {
+    "cv_coverage": 0.7966,
+    "served": true
+   }
+  },
+  "cloud_cover": {
+   "B1": {
+    "cv_coverage": 0.7204,
+    "served": false
+   },
+   "B2": {
+    "cv_coverage": 0.7021,
+    "served": false
+   },
+   "B3": {
+    "cv_coverage": 0.5948,
+    "served": false
+   },
+   "B4": {
+    "cv_coverage": 0.5954,
+    "served": false
+   },
+   "B5": {
+    "cv_coverage": 0.5594,
+    "served": false
+   },
+   "B6": {
+    "cv_coverage": 0.5514,
+    "served": false
+   }
+  },
+  "precipitation_mm": {
+   "B1": {
+    "cv_coverage": 0.9106,
+    "served": true
+   },
+   "B2": {
+    "cv_coverage": 0.9102,
+    "served": true
+   },
+   "B3": {
+    "cv_coverage": 0.9166,
+    "served": true
+   },
+   "B4": {
+    "cv_coverage": 0.9168,
+    "served": true
+   },
+   "B5": {
+    "cv_coverage": 0.9175,
+    "served": true
+   },
+   "B6": {
+    "cv_coverage": 0.9172,
+    "served": true
+   }
+  }
+ },
+ "diagnostics": {
+  "temperature": {
+   "nominal": 0.8,
+   "chosen": "normalized",
+   "rule": "normalized unless an alternative lowers the mean cross-fitted |coverage error| by > 1pp",
+   "mean_abs_cv_coverage_error": {
+    "unnormalized": 0.023,
+    "normalized": 0.0211,
+    "mondrian_season": 0.012
+   },
+   "cv_coverage": {
+    "unnormalized": {
+     "B1": 0.7859,
+     "B2": 0.7883,
+     "B3": 0.7706,
+     "B4": 0.7838,
+     "B5": 0.7796,
+     "B6": 0.7539
+    },
+    "normalized": {
+     "B1": 0.7838,
+     "B2": 0.7897,
+     "B3": 0.7758,
+     "B4": 0.7829,
+     "B5": 0.7801,
+     "B6": 0.7609
+    },
+    "mondrian_season": {
+     "B1": 0.7883,
+     "B2": 0.8043,
+     "B3": 0.8023,
+     "B4": 0.8219,
+     "B5": 0.828,
+     "B6": 0.7959
+    }
+   }
+  },
+  "humidity": {
+   "nominal": 0.8,
+   "chosen": "normalized",
+   "rule": "normalized unless an alternative lowers the mean cross-fitted |coverage error| by > 1pp",
+   "mean_abs_cv_coverage_error": {
+    "unnormalized": 0.0674,
+    "normalized": 0.0327,
+    "mondrian_season": 0.1262
+   },
+   "cv_coverage": {
+    "unnormalized": {
+     "B1": 0.7791,
+     "B2": 0.7515,
+     "B3": 0.7324,
+     "B4": 0.7271,
+     "B5": 0.7149,
+     "B6": 0.6903
+    },
+    "normalized": {
+     "B1": 0.7931,
+     "B2": 0.7842,
+     "B3": 0.7707,
+     "B4": 0.7695,
+     "B5": 0.7568,
+     "B6": 0.7297
+    },
+    "mondrian_season": {
+     "B1": 0.7761,
+     "B2": 0.7491,
+     "B3": 0.6819,
+     "B4": 0.6531,
+     "B5": 0.5798,
+     "B6": 0.6026
+    }
+   }
+  },
+  "wind_speed": {
+   "nominal": 0.8,
+   "chosen": "normalized",
+   "rule": "normalized unless an alternative lowers the mean cross-fitted |coverage error| by > 1pp",
+   "mean_abs_cv_coverage_error": {
+    "unnormalized": 0.0073,
+    "normalized": 0.0028,
+    "mondrian_season": 0.0149
+   },
+   "cv_coverage": {
+    "unnormalized": {
+     "B1": 0.799,
+     "B2": 0.7938,
+     "B3": 0.7938,
+     "B4": 0.7897,
+     "B5": 0.7883,
+     "B6": 0.7917
+    },
+    "normalized": {
+     "B1": 0.8017,
+     "B2": 0.8016,
+     "B3": 0.8006,
+     "B4": 0.7966,
+     "B5": 0.7941,
+     "B6": 0.7966
+    },
+    "mondrian_season": {
+     "B1": 0.8084,
+     "B2": 0.805,
+     "B3": 0.8125,
+     "B4": 0.8123,
+     "B5": 0.8197,
+     "B6": 0.8319
+    }
+   }
+  },
+  "cloud_cover": {
+   "nominal": 0.8,
+   "chosen": "normalized",
+   "rule": "normalized unless an alternative lowers the mean cross-fitted |coverage error| by > 1pp",
+   "mean_abs_cv_coverage_error": {
+    "unnormalized": 0.1888,
+    "normalized": 0.1794,
+    "mondrian_season": 0.1937
+   },
+   "cv_coverage": {
+    "unnormalized": {
+     "B1": 0.7189,
+     "B2": 0.6958,
+     "B3": 0.583,
+     "B4": 0.5844,
+     "B5": 0.5481,
+     "B6": 0.5371
+    },
+    "normalized": {
+     "B1": 0.7204,
+     "B2": 0.7021,
+     "B3": 0.5948,
+     "B4": 0.5954,
+     "B5": 0.5594,
+     "B6": 0.5514
+    },
+    "mondrian_season": {
+     "B1": 0.7415,
+     "B2": 0.7129,
+     "B3": 0.5677,
+     "B4": 0.5703,
+     "B5": 0.5406,
+     "B6": 0.5047
+    }
+   }
+  },
+  "precipitation_mm": {
+   "nominal": 0.9,
+   "chosen": "normalized",
+   "rule": "normalized unless an alternative lowers the mean cross-fitted |coverage error| by > 1pp",
+   "mean_abs_cv_coverage_error": {
+    "unnormalized": 0.0152,
+    "normalized": 0.0148,
+    "mondrian_season": 0.0195
+   },
+   "cv_coverage": {
+    "unnormalized": {
+     "B1": 0.9123,
+     "B2": 0.9104,
+     "B3": 0.9163,
+     "B4": 0.9174,
+     "B5": 0.9176,
+     "B6": 0.9172
+    },
+    "normalized": {
+     "B1": 0.9106,
+     "B2": 0.9102,
+     "B3": 0.9166,
+     "B4": 0.9168,
+     "B5": 0.9175,
+     "B6": 0.9172
+    },
+    "mondrian_season": {
+     "B1": 0.8817,
+     "B2": 0.8788,
+     "B3": 0.8771,
+     "B4": 0.8792,
+     "B5": 0.8822,
+     "B6": 0.8844
+    }
+   }
+  }
+ },
+ "data": {
+  "kind": "sqlite",
+  "path": "D:\\wether_app\\sky_weather_app\\backend\\data\\history\\cells_history.db",
+  "canonical_sha256": "2f0fc860e72b15954680c43e9e639e6e10efa4f3e9034c8a8692b4bcf3f45a03"
+ },
+ "code_sha256": {
+  "scripts/fit_long_range_v2_intervals.py": "05c9fa54584810bbe5ffa058db5c067fa0cba677864fe80ca1919d6ae66f50e7",
+  "long_range_model_v2.py": "a90e5ed5f3d9e71a288c87bf218a9d27a8292d728cef9972ccf5d6ddf5722c22",
+  "long_range_model_v21.py": "05cce3647198b19ee4fe89c433d426b77946523ac92edddab159ec163704d996"
+ },
+ "note": "An 80 % interval covering ~80 % of outcomes is a calibration statement, not 80 % accuracy."
+}

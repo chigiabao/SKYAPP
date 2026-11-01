@@ -6,15 +6,16 @@ import pandas as pd
 import pytest
 
 import ai_model
-from conftest import REAL_DB, WMO_CODES
-from database import now_local
+from conftest import REAL_DB, WMO_CODES, freeze_now
+from database import LOCAL_TZ, now_local
 
 pytestmark = pytest.mark.realdb
 
 
 def test_health_real(real_client):
     body = real_client.get("/health").json()
-    assert body["status"] == "healthy"
+    assert body["status"] == ("healthy" if body["ready"] else "degraded")
+    assert body["ready"] == (not body["reasons"])
     assert body["latest_timestamp"].endswith("+07:00")
     assert isinstance(body["data_age_hours"], float)
 
@@ -61,20 +62,22 @@ def test_daily_real(real_client):
     for it in items:
         assert it['source'] in ('observed', 'ai')
         if it['source'] == 'ai':
-            assert it['rain_day_probability'] is None
             assert it['precipitation_median'] is None
-        else:
+            assert it['confidence'] in ('high', 'medium', 'low')
+        if it['rain_day_probability'] is not None or it['source'] != 'ai':
             assert 0 <= it['rain_day_probability'] <= 1
         assert it["weather_code"] in WMO_CODES
 
 
-def test_ai_forecast_real(real_client):
+def test_ai_forecast_real(real_client, monkeypatch):
+    with sqlite3.connect(REAL_DB) as con:
+        latest = con.execute("SELECT MAX(timestamp) FROM hourly_weather WHERE location_id = 'tsn'").fetchone()[0]
+    con.close()
+    # The stored snapshot is intentionally not kept fresh by ingestion during tests.
+    freeze_now(monkeypatch, datetime.fromisoformat(latest).replace(tzinfo=LOCAL_TZ))
     r = real_client.get("/weather/ai-forecast")
     assert r.status_code == 200
     body = r.json()
-    with sqlite3.connect(REAL_DB) as con:
-        latest = con.execute("SELECT MAX(timestamp) FROM hourly_weather").fetchone()[0]
-    con.close()
     assert body["issued_at"] == pd.Timestamp(latest).isoformat() + "+07:00"
     assert set(body["predictions"]) == {"1h", "3h", "6h"}
     for p in body["predictions"].values():

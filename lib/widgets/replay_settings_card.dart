@@ -1,14 +1,14 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../models/hcm_time.dart';
 import '../providers/weather_provider.dart';
-import '../screens/forecast/forecast_format.dart';
-import '../ui/weather/widgets/glass_page.dart';
-import '../utils/constants.dart';
+import '../utils/forecast_format.dart';
+import '../ui/weather/design_tokens.dart';
+import '../ui/weather/widgets/ios_sheet.dart';
 
 /// The "Chế độ xem lại" trong Cai dat: cong tac, chon thoi diem (theo gio,
-/// 03/01/2017 … hien tai) va nut mau "Đợt mưa lớn 07/10/2026".
+/// 03/01/2017 … hien tai) va nut moc mau co du bao AI da luu.
 class ReplaySettingsCard extends StatelessWidget {
   const ReplaySettingsCard({super.key});
 
@@ -19,57 +19,25 @@ class ReplaySettingsCard extends StatelessWidget {
   ) async {
     final realNow = provider.realNowHcm;
     final initial = provider.replayAt ?? WeatherProvider.replayPreset;
-    // showDatePicker dung DateTime "dia phuong": chi mang ngay/thang/nam.
-    final date = await showDatePicker(
-      context: context,
-      initialDate: DateTime(initial.year, initial.month, initial.day),
-      firstDate: DateTime(
-        WeatherProvider.replayMin.year,
-        WeatherProvider.replayMin.month,
-        WeatherProvider.replayMin.day,
-      ),
-      lastDate: DateTime(realNow.year, realNow.month, realNow.day),
-      helpText: 'Chọn ngày xem lại',
-      cancelText: 'Hủy',
-      confirmText: 'Tiếp',
-      // Hop thoai theo giao dien sang/toi cua app, khong theo theme kinh.
-      builder: (_, child) => AppThemeScope.wrapDialog(context, child!),
+    // CupertinoDatePicker dung DateTime "dia phuong": chi mang cac truong
+    // ngay/gio (gio TP.HCM), quy doi lai DateTime.utc nhu truoc.
+    DateTime wall(DateTime d) => DateTime(d.year, d.month, d.day, d.hour);
+    final min = wall(WeatherProvider.replayMin);
+    final max = wall(realNow);
+    var start = wall(initial);
+    if (start.isBefore(min)) start = min;
+    if (start.isAfter(max)) start = max;
+    final picked = await showIosDateTimeSheet(
+      context,
+      title: 'Thời điểm xem lại',
+      initial: start,
+      minimum: min,
+      maximum: max,
+      mode: CupertinoDatePickerMode.dateAndTime,
+      minuteInterval: 60,
     );
-    if (date == null || !context.mounted) return null;
-    final isToday =
-        date.year == realNow.year &&
-        date.month == realNow.month &&
-        date.day == realNow.day;
-    final maxHour = isToday ? realNow.hour : 23;
-    final hour = await showDialog<int>(
-      context: context,
-      builder: (dialogContext) => AppThemeScope.wrapDialog(
-        context,
-        SimpleDialog(
-          title: Text('Chọn giờ · ${date.day}/${date.month}/${date.year}'),
-          children: [
-            SizedBox(
-              width: 280,
-              height: 320,
-              child: GridView.count(
-                crossAxisCount: 4,
-                padding: const EdgeInsets.all(AppSizes.paddingS),
-                childAspectRatio: 1.6,
-                children: [
-                  for (var h = 0; h <= maxHour; h++)
-                    TextButton(
-                      onPressed: () => Navigator.pop(dialogContext, h),
-                      child: Text('${h.toString().padLeft(2, '0')}:00'),
-                    ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (hour == null) return null;
-    return DateTime.utc(date.year, date.month, date.day, hour);
+    if (picked == null) return null;
+    return DateTime.utc(picked.year, picked.month, picked.day, picked.hour);
   }
 
   @override
@@ -77,7 +45,7 @@ class ReplaySettingsCard extends StatelessWidget {
     final theme = Theme.of(context);
     final provider = context.watch<WeatherProvider>();
     final at = provider.replayAt;
-    final caption = AppTextStyles.bodySmall.copyWith(
+    final caption = TypeScale.bodySmall.copyWith(
       color: theme.textTheme.bodySmall?.color,
     );
 
@@ -85,7 +53,7 @@ class ReplaySettingsCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SwitchListTile(
+          SwitchListTile.adaptive(
             secondary: Icon(
               Icons.history_rounded,
               color: Theme.of(context).colorScheme.primary,
@@ -118,28 +86,21 @@ class ReplaySettingsCard extends StatelessWidget {
             },
           ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(
-              AppSizes.paddingM,
-              0,
-              AppSizes.paddingM,
-              AppSizes.paddingM,
-            ),
+            padding: const EdgeInsets.fromLTRB(Space.l, 0, Space.l, Space.l),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 OutlinedButton.icon(
                   onPressed: () =>
                       provider.startReplay(WeatherProvider.replayPreset),
-                  icon: const Icon(Icons.thunderstorm_rounded),
-                  label: Text(
-                    'Đợt mưa lớn ${_dayMonthYear(WeatherProvider.replayPreset)}',
-                  ),
+                  icon: const Icon(Icons.history_rounded),
+                  label: Text(WeatherProvider.replayPresetLabel),
                 ),
-                const SizedBox(height: AppSizes.paddingS),
+                const SizedBox(height: Space.s),
                 Text(
                   'Khi bật, mọi số liệu (hiện tại, theo giờ, 7 ngày, dự báo AI) '
                   'được lấy như thể đang ở thời điểm đã chọn; giờ đã qua được '
-                  'ghi "Thực tế". Dữ liệu xem lại không được lưu vào bộ nhớ đệm. '
+                  'ghi "Đã ghi nhận". Dữ liệu xem lại không được lưu vào bộ nhớ đệm. '
                   'Có dữ liệu từ 03/01/2017.',
                   style: caption,
                 ),
@@ -149,11 +110,5 @@ class ReplaySettingsCard extends StatelessWidget {
         ],
       ),
     );
-  }
-
-  static String _dayMonthYear(DateTime d) {
-    final t = HcmTime.startOfDay(d);
-    return '${t.day.toString().padLeft(2, '0')}/'
-        '${t.month.toString().padLeft(2, '0')}/${t.year}';
   }
 }

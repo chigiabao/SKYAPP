@@ -3,8 +3,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 /// Cau hinh ket noi backend FastAPI - chi sua o mot noi nay.
 ///
-/// Mac dinh: web -> http://localhost:8000 (trinh duyet tren chinh may chay
-/// backend); Android -> 10.0.2.2 (emulator -> may host), iOS/desktop -> localhost.
+/// Mac dinh: web -> cung origin voi trang web; Android -> 10.0.2.2
+/// (emulator -> may host), iOS/desktop -> localhost.
 /// Ghi de khi chay / build, vi du thiet bi that cung mang LAN:
 ///   flutter run --dart-define=API_BASE_URL=http://192.168.1.10:8000
 ///
@@ -15,6 +15,7 @@ class ApiConfig {
   static String get defaultBaseUrl {
     const configured = String.fromEnvironment('API_BASE_URL');
     if (configured.isNotEmpty) return configured;
+    if (kIsWeb) return Uri.base.origin;
     return !kIsWeb && defaultTargetPlatform == TargetPlatform.android
         ? 'http://10.0.2.2:8000'
         : 'http://localhost:8000';
@@ -22,8 +23,17 @@ class ApiConfig {
 
   /// Khoa shared_preferences cua URL ghi de.
   static const String baseUrlKey = 'api_base_url_override';
+  static const String webOriginMigrationKey = 'api_same_origin_v1';
 
   static String? _override;
+
+  static final ValueNotifier<int> serverChanges = ValueNotifier(0);
+
+  static void _setOverride(String? value) {
+    final before = baseUrl;
+    _override = value;
+    if (baseUrl != before) serverChanges.value++;
+  }
 
   /// URL dang dung: ghi de cua nguoi dung, neu khong thi [defaultBaseUrl].
   static String get baseUrl => _override ?? defaultBaseUrl;
@@ -42,19 +52,41 @@ class ApiConfig {
     if (uri == null ||
         !(uri.scheme == 'http' || uri.scheme == 'https') ||
         uri.host.isEmpty ||
+        uri.userInfo.isNotEmpty ||
+        RegExp(r'\s').hasMatch(t) ||
         uri.hasQuery ||
         uri.hasFragment) {
       return null;
     }
-    return t;
+    try {
+      if (uri.port < 1 || uri.port > 65535) return null;
+    } on FormatException {
+      return null;
+    }
+    return uri
+        .replace(scheme: uri.scheme.toLowerCase(), host: uri.host.toLowerCase())
+        .toString();
   }
 
   /// Doc URL ghi de da luu (goi truoc runApp). Gia tri hong -> bo qua.
   static Future<void> loadBaseUrl() async {
     try {
       final p = await SharedPreferences.getInstance();
+      // Old preview URLs must not keep an upgraded web install on a dead port.
+      if (kIsWeb && p.getBool(webOriginMigrationKey) != true) {
+        final saved = p.getString(baseUrlKey);
+        final normalized = saved == null ? null : normalizeBaseUrl(saved);
+        final uri = normalized == null ? null : Uri.parse(normalized);
+        if (uri != null &&
+            const {'localhost', '127.0.0.1'}.contains(uri.host) &&
+            const {8000, 8022, 8024, 8036}.contains(uri.port) &&
+            (uri.path.isEmpty || uri.path == '/')) {
+          await p.remove(baseUrlKey);
+        }
+        await p.setBool(webOriginMigrationKey, true);
+      }
       final v = p.getString(baseUrlKey);
-      _override = v == null ? null : normalizeBaseUrl(v);
+      _setOverride(v == null ? null : normalizeBaseUrl(v));
     } catch (e) {
       debugPrint('ApiConfig.loadBaseUrl: $e');
     }
@@ -69,7 +101,7 @@ class ApiConfig {
       next = normalizeBaseUrl(url);
       if (next == null) return false;
     }
-    _override = next == defaultBaseUrl ? null : next;
+    _setOverride(next == defaultBaseUrl ? null : next);
     try {
       final p = await SharedPreferences.getInstance();
       if (_override == null) {
@@ -96,7 +128,9 @@ class ApiConfig {
   /// Du lieu "hien tai" cu hon nguong nay se hien badge "Dữ liệu cũ".
   static const Duration staleThreshold = Duration(hours: 3);
 
-  static const String locationName = 'TP. Hồ Chí Minh';
+  /// Ten diem mac dinh ('tsn'), trung ten trong danh sach dia diem va dong
+  /// phu [locationDetail] (ke ca khi ngoai tuyen chua tai duoc danh sach).
+  static const String locationName = 'Tân Sơn Nhất';
 
   /// Dong phu cho UI: du lieu lay tai mot diem (10.79°N, 106.63°E), khong
   /// phai trung binh toan thanh pho.

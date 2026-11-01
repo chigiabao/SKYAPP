@@ -10,11 +10,15 @@ WEATHER_FIELDS = {"timestamp", "temperature", "humidity", "dew_point", "apparent
                   "precipitation_probability", "precipitation", "rain", "weather_code", "visibility",
                   "cloud_cover", "surface_pressure", "pressure_msl", "wind_speed", "wind_direction",
                   "wind_gusts", "rain_probability", "precipitation_median", "source",
-                  "uv_index", "us_aqi", "pm2_5", "pm10"}
+                  "uv_index", "us_aqi", "pm2_5", "pm10",
+                  # own long-range AI hours only (null elsewhere): calibrated 80 % range, not accuracy
+                  "temperature_p10", "temperature_p90", "humidity_p10", "humidity_p90", "wind_speed_p10",
+                  "wind_speed_p90", "cloud_cover_p10", "cloud_cover_p90", "precipitation_p90",
+                  "interval_level"}
 DAILY_FIELDS = {"date", "temperature_min", "temperature_max", "temperature_avg", "humidity_avg",
                 "precipitation_total", "weather_code", "wind_speed_max", "cloud_cover_avg",
                 "rain_day_probability", "precipitation_median", "wind_gusts_max", "source",
-                "uv_index_max", "us_aqi_max"}
+                "uv_index_max", "us_aqi_max", "confidence", "skill_note"}
 ZERO_FIELDS = ("precipitation", "rain", "weather_code", "cloud_cover", "wind_direction", "wind_speed",
                "temperature", "precipitation_probability", "wind_gusts")
 
@@ -37,7 +41,9 @@ def test_health(client):
     r = client.get("/health")
     assert r.status_code == 200
     body = r.json()
-    assert body["status"] == "healthy" and body["database"] == "ok"
+    assert body["status"] == "degraded" and body["database"] == "ok"
+    assert body["ready"] is False
+    assert "weather_stale_or_future" in body["reasons"]
     assert _ts(body["timestamp"]) == FROZEN_NOW
     assert _ts(body["latest_timestamp"]) == LAST_TS.replace(tzinfo=LOCAL_TZ)
     expected_age = round((FROZEN_NOW - LAST_TS.replace(tzinfo=LOCAL_TZ)).total_seconds() / 3600, 1)

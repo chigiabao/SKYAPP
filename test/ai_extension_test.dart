@@ -242,7 +242,11 @@ void main() {
                 backgroundColor: Colors.black,
                 body: SingleChildScrollView(
                   padding: const EdgeInsets.all(16),
-                  child: AIForecastCard(forecast: f, compact: compact),
+                  child: AIForecastCard(
+                    forecast: f,
+                    compact: compact,
+                    onVerify: () {},
+                  ),
                 ),
               ),
             ),
@@ -269,14 +273,16 @@ void main() {
       expect(find.text('Giật 9${nbsp}km/h'), findsOneWidget);
       expect(find.text('Mưa 0,7${nbsp}mm'), findsOneWidget);
       expect(find.text('54%'), findsOneWidget);
-      expect(find.byType(Tooltip), findsOneWidget);
-      // Nut (i) dat chuan cham 48dp.
-      final info = find.byIcon(Icons.info_outline_rounded);
-      final box = tester.getSize(
-        find.ancestor(of: info, matching: find.byType(SizedBox)).first,
-      );
+      // Nut (i) dat chuan cham 48dp, mo sheet iOS giai thich.
+      final info = find.byKey(const ValueKey('interval-note-info'));
+      expect(info, findsOneWidget);
+      final box = tester.getSize(info);
       expect(box.width, greaterThanOrEqualTo(48));
       expect(box.height, greaterThanOrEqualTo(48));
+      await tester.tap(info);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('glass-sheet')), findsOneWidget);
+      expect(find.text('Khoảng nhiệt độ'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
 
@@ -288,7 +294,7 @@ void main() {
       final p = AIForecastCard.compactPrediction(f)!;
       expect(find.textContaining('AI: ${p.timeLabel} tới'), findsOneWidget);
       expect(find.textContaining('mưa ${p.rainPercent}%'), findsOneWidget);
-      expect(find.text('Chi tiết'), findsOneWidget);
+      expect(find.text('Chi tiết'), findsOneWidget);
       expect(find.textContaining('LightGBM'), findsNothing);
       expect(find.textContaining('mô hình v'), findsNothing);
       final tap = tester.getSize(find.byType(Pressable).first);

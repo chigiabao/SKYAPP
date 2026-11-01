@@ -1,10 +1,38 @@
 # Sky Weather – Ứng dụng thời tiết TP. Hồ Chí Minh
 
-Đồ án sinh viên: ứng dụng Flutter (Android, web, iOS) hiển thị thời tiết cho **TP.HCM mới** (sau sáp nhập 2025 với Bình Dương và Bà Rịa – Vũng Tàu), lấy dữ liệu từ backend FastAPI của nhóm. Dự báo live dùng LightGBM riêng, direct 1–168 giờ với 6 mục tiêu; v3 1/3/6 giờ vẫn là luồng AI ngắn hạn riêng.
+Đồ án sinh viên: ứng dụng Flutter (Android, web, iOS) hiển thị thời tiết cho **TP.HCM mới** (sau sáp nhập 2025 với Bình Dương và Bà Rịa – Vũng Tàu), lấy dữ liệu từ backend FastAPI của nhóm. Dự báo live dùng LightGBM riêng, direct 1–168 giờ với 6 mục tiêu; model đang phục vụ là **long-range v2**, có thể phối hợp v3 ở đúng các mốc 1/3/6 giờ theo serving policy.
+
+## Trạng thái hiện tại (02/11/2026)
+
+- **Thời tiết:** nhiệt độ, độ ẩm, gió, mây, xác suất và lượng mưa; dự báo giờ/ngày từ mô hình của nhóm. Current và đầu vào lịch sử/AQ lấy qua backend, không gọi API thời tiết trực tiếp từ Flutter. Giữ `EXTERNAL_FORECAST_ENABLED=0`; không fallback dự báo tương lai sang dịch vụ ngoài.
+- **Bản đồ:** phạm vi dữ liệu gồm 168 phường/xã/đặc khu, quy về 67 ô lưới. Có lớp thời tiết và thanh thời gian; thời điểm dữ liệu tách biệt với thời điểm tải lại. Phạm vi địa lý đầy đủ không đồng nghĩa mọi ô đều có dữ liệu mới hoặc dự báo sẵn sàng.
+- **Ra ngoài:** phân biệt điểm đi **A** và điểm đến **B**, tên địa điểm, giờ đi/đến và thời tiết hai đầu tuyến; tổng hợp nhiệt độ, độ ẩm, gió cùng mưa dọc tuyến khi có dữ liệu. Chỉ số thiếu không được biến thành 0 hoặc kết luận tuyến an toàn.
+- **Trải nghiệm:** web và API chạy cùng origin; cache offline, tìm địa điểm/GPS, cài đặt đơn vị và giảm chuyển động; tài khoản, đồng bộ và khôi phục mật khẩu là tùy chọn.
+- **Model phục vụ:** `backend/models/long_range_v2/`, phiên bản `lgbm-direct-168h-v2-20261031T071738Z`. Lớp khoảng dự báo tùy chọn ở `backend/models/long_range_v2_intervals/`; chỉ trả các chỉ số/dải thời gian đã qua cổng coverage.
+
+### Kiểm chứng gần nhất
+
+| Phạm vi | Kết quả đã xác minh | Môi trường |
+|---|---|---|
+| Backend regression trên GitHub Actions | **895 passed, 25 skipped**, coverage **89,93%** | Ubuntu, Python 3.12; commit `3858479`, workflow build lần **#13** |
+| Backend trong môi trường mới, chỉ cài requirements | **895 passed, 25 skipped**, coverage **89,87%**; Ruff và `pip check` đạt | Windows, Python 3.14; không training |
+| Flutter không gồm golden | **904 passed, 7 skipped**; analyzer đạt | Lượt kiểm tra local ngày 02/11/2026 |
+| Backend Health Tests và golden | Job CI đã đạt | Commit `3858479`; không suy ra đã ký/cài được bản mobile |
+
+CI backend đã bổ sung `psutil` trong `backend/requirements-dev.txt` để test hiệu chỉnh khoảng dự báo chạy được trên máy sạch. Các test dùng fixture huấn luyện được bỏ qua bằng `--skip-model-training`; không diễn giải số test đạt thành độ chính xác dự báo.
+
+**Giới hạn:** dự báo vẫn là thử nghiệm, không phải cảnh báo khí tượng chính thức. UV/AQI/gió giật tương lai có thể không được model hỗ trợ; giao diện phải giữ trạng thái thiếu dữ liệu. Khoảng p10–p90 nhắm độ phủ 80%, còn lượng mưa có cận trên p90 một phía; coverage không phải phần trăm chính xác. Cửa sổ hiệu chỉnh có giao với cửa sổ từng dùng chọn model, nên cần đánh giá độc lập trước khi tin cậy vận hành. SMTP thật, backend public HTTPS, iOS signing/App Groups và thiết bị thật vẫn cần kiểm chứng riêng.
+
+Xem [cách chạy](#cách-chạy), [triển khai](docs/deploy.md), [build Android/iOS](#4-build-android) và [hướng dẫn huấn luyện v2.1 thử nghiệm](notebooks/colab_train_v21/README.md). V2.1 chưa được đưa vào phục vụ.
+
+<details>
+<summary>Lịch sử kiểm chứng và cập nhật (19–26/10/2026)</summary>
+
+Các số liệu/model bên dưới ghi lại từng thời điểm, không thay thế trạng thái hiện tại phía trên.
 
 ## Tiến độ hoàn thiện (26/10/2026)
 
-- PDF theo dõi: [Sky Weather - Tiến độ hoàn thiện](../deliverables/Sky_Weather_Tien_Do_Hoan_Thien.pdf). Nguồn trạng thái: [docs/progress_20261026.json](docs/progress_20261026.json); tạo lại bằng `python tool/build_progress_pdf.py`.
+- Nguồn trạng thái lịch sử: [docs/progress_20261026.json](docs/progress_20261026.json); tạo PDF local bằng `python tool/build_progress_pdf.py` (PDF nằm ngoài repository, không được phát hành kèm mã nguồn).
 - Đã sửa freshness/expiry AI live, giới hạn fallback v2 ở TSN, kiểm tra serving policy và nạp fallback nguyên khối; ngày thiếu dữ liệu mưa không còn bị tính là ngày khô.
 - Đã thêm khôi phục mật khẩu qua email (token một lần, hạn 15 phút, lưu hash, giới hạn yêu cầu/thử sai, thu hồi mọi phiên). Cần SMTP TLS theo `.env.example` và thử gửi email thật trước production.
 - Trang chủ dùng thẻ AI thu gọn; cài đặt được phân nhóm với trang chi tiết, giữ đầy đủ tùy chọn cũ.
@@ -26,7 +54,7 @@
 - Chưa thay model phục vụ toàn app: model trạm chỉ có phạm vi ba điểm; 1h còn thua persistence, thử interval chưa đạt 90%, chưa có nhãn mưa giờ đủ điều kiện.
 - Kiểm chứng lúc đó: 650 backend tests đạt, 15 skipped, 2 subtests; coverage runtime 89,39%; 4 live Flutter tests đạt. [Báo cáo nguồn dữ liệu, metrics và giới hạn](docs/archive/data_upgrade_20261022.md).
 
-### Phần tiếp nối Claude (22/10/2026)
+### Kiểm chứng tích hợp (22/10/2026)
 
 - Backend 569 passed, 15 skipped, coverage runtime 88,73%; Flutter 733 passed, 7 skipped, coverage 83,90%; 16 golden và 3 test HTTP contract đạt. Analyzer và Ruff không issue. CI yêu cầu coverage tối thiểu 80%.
 - Hoàn tất tách bốn màn hình chính, sửa trợ năng, bảo vệ log webhook/rate limit và cách đánh giá AI. Model ứng viên chưa được đưa vào phục vụ vì interval còn dưới mục tiêu và cần kiểm chứng lại.
@@ -53,7 +81,9 @@
 - Bằng chứng leader bàn giao: `ingest.py --location tsn` đã chạy khoảng **18:06 ngày 19/10/2026 (+07)** trên DB thật; đầu vào đến 18h, bundle **48 giờ + 7 ngày**, nguồn `observed` + `ai`, `forecast_error=None`. Các ô khác vẫn có thể cũ cho đến khi ingest; không tuyên bố toàn vùng đã cập nhật.
 - Home có overview/focus responsive, mobile navigation có nhãn, desktop rail, tab **Dự báo / Điều kiện**, trạng thái nguồn/lỗi và giảm chuyển động. Route thiếu coverage không kết luận an toàn; backend đã chạy lại **290 test đạt**. Chưa xác minh đầy đủ trên thiết bị thật.
 
-Chi tiết: [docs/self_forecast_upgrade.md](docs/self_forecast_upgrade.md). Kết quả v3 và test cũ bên dưới là lịch sử, không phải xác minh hoàn tất đợt nâng cấp này.
+Chi tiết: [docs/self_forecast_upgrade.md](docs/self_forecast_upgrade.md). Đây là bằng chứng lịch sử, không phải kết quả mới của model v2 đang phục vụ.
+
+</details>
 
 - Phạm vi: **168 phường/xã/đặc khu**, gộp thành **67 ô lưới** của Open-Meteo (các phường cùng rơi vào một ô lưới dùng chung một chuỗi dữ liệu). Ngoài ra có điểm `tsn` (gần Tân Sơn Nhất, điểm huấn luyện ban đầu), là alias của ô `om-10.7909-106.6313`.
 - Danh sách và ranh giới phường/xã: OpenStreetMap (© OpenStreetMap contributors, ODbL), xem [backend/data/locations/SOURCES.md](backend/data/locations/SOURCES.md).
@@ -81,12 +111,12 @@ Chi tiết: [docs/self_forecast_upgrade.md](docs/self_forecast_upgrade.md). Kế
                                      |                                              |
                           +----------v----------+                     +-------------v------------+
                           | SQLite weather.db   |                     | LightGBM direct 168h     |
-                          | 68 chuỗi đầu vào,   |                     | models/long_range/       |
-                          | AQI, phường/xã,     |                     | v3/v2: AI ngắn hạn riêng |
-                          | ô lưới              |                     | không fallback live     |
+                          | 68 chuỗi đầu vào,   |                     | models/long_range_v2/    |
+                          | AQI, phường/xã,     |                     | policy v2 + v3 1/3/6h   |
+                          | ô lưới              |                     | không fallback NWP      |
                           +----------^----------+                     +-------------^------------+
                                      |                                              |
-                    ingest.py (đầu vào ngoài, mỗi giờ)        scripts/train_long_range.py
+                    ingest.py (đầu vào ngoài, mỗi giờ)        scripts/train_long_range_v2.py
                                                               (v3: train_global_v3.py)
                           scripts/backfill_history.py  -->  data/history/cells_history.db
                           (lịch sử theo ô, nhãn mô hình ngoài cho ML)
@@ -112,13 +142,15 @@ sky_weather_app/
 │   ├── routers/feedback.py       # /feedback (verified = false)
 │   ├── routers/monitor.py        # /admin/monitor, /admin/retrain, /admin/rollback
 │   ├── ingest.py                 # cập nhật đầu vào/AQ; dự báo ngoài chỉ opt-in tham chiếu
-│   ├── long_range_model.py       # direct 1–168h, không fallback
+│   ├── long_range_model_v2.py    # serving direct 1–168h, policy v3 và khoảng dự báo tùy chọn
+│   ├── long_range_model.py       # v1 lịch sử và helper huấn luyện
 │   ├── ai_model.py               # tạo đặc trưng + suy luận v2/v3 (dùng chung với huấn luyện)
 │   ├── convert_excel_to_sqlite.py
 │   ├── scripts/
 │   │   ├── build_locations.py    # tạo danh sách phường/xã, ranh giới, ô lưới từ OSM
 │   │   ├── backfill_history.py   # tải lịch sử theo ô (ngân sách API, chạy tiếp được)
-│   │   ├── train_long_range.py   # huấn luyện/đánh giá 6 mục tiêu direct 1–168h
+│   │   ├── train_long_range_v2.py # huấn luyện/đánh giá long-range v2
+│   │   ├── fit_long_range_v2_intervals.py # hiệu chỉnh khoảng dự báo v2
 │   │   ├── train_global_v3.py    # huấn luyện + đánh giá mô hình v3
 │   │   ├── train_global_v3_ext.py # hiệu chuẩn mưa, mục tiêu mới + cổng phục vụ (khoảng p10–p90 cũ)
 │   │   └── train_global_v3_interval.py # khoảng nhiệt độ 90% (q05/q95 + CQR), thay khoảng p10–p90
@@ -129,7 +161,9 @@ sky_weather_app/
 │   │   └── history/              # cells_history.db (dữ liệu huấn luyện v3)
 │   └── models/
 │       ├── *.pkl, *.json         # mô hình v2 (1 điểm tsn)
-│       ├── long_range/           # metadata.json, evaluation.json và 6 model .txt
+│       ├── long_range/           # v1 lịch sử, không phải serving hiện tại
+│       ├── long_range_v2/        # model serving, climatology, policy và evaluation
+│       ├── long_range_v2_intervals/ # khoảng dự báo v2, chỉ phục vụ dải đạt gate
 │       └── v3/                   # mô hình v3 toàn cục, metadata_v3.json, evaluation_v3.json, extension_v3.json, per_cell_metrics*.csv
 ├── notebooks/
 │   ├── weather_forecasting.ipynb # v2: EDA, huấn luyện, đánh giá tại tsn
@@ -147,7 +181,7 @@ sky_weather_app/
 
 ```bash
 cd backend
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
 python -m uvicorn main:app --host 0.0.0.0 --port 8000 --workers 1 --lifespan on
 ```
 
@@ -156,7 +190,7 @@ python -m uvicorn main:app --host 0.0.0.0 --port 8000 --workers 1 --lifespan on
 - Dùng một worker khi bật ingestion: khóa ingest và telemetry scheduler nằm trong từng process. Không mở nhiều server cùng bật ingestion cho cùng DB. `INGEST_ENABLED=0` dành cho test hoặc tiến trình chỉ phục vụ API; không dùng `--lifespan off` nếu cần scheduler.
 - Kiểm tra `/live` cho liveness, `/ready` cho khả năng phục vụ (503 khi degraded), và `/health.scheduler.next_run_at` cho lịch cập nhật. Một request upstream rỗng không còn được ghi là ingestion thành công.
 - `--host 0.0.0.0` chỉ cần khi chạy app trên điện thoại thật.
-- Test: `cd backend && python -m pytest tests -q` (chạy 2026-10-18 00:15: **196 passed**, 56 giây).
+- Cần Python và các thư viện đúng phiên bản trong requirements; CI dùng Python 3.12. Nếu chạy test, cài `requirements-dev.txt` thay vì chỉ cài `requirements.txt` (xem phần Git/CI bên dưới).
 
 ### 2. Backfill lịch sử theo ô (tùy chọn, dùng cho huấn luyện v3)
 
@@ -172,9 +206,9 @@ Script ghi vào file riêng `backend/data/history/cells_history.db`, giữ dư�
 
 ```bash
 # chạy tại thư mục gốc (sky_weather_app)
-D:\flutter\bin\flutter pub get
-D:\flutter\bin\flutter run
-D:\flutter\bin\flutter test --exclude-tags golden   # chạy 2026-10-18 00:17: 457 passed, 4 skipped
+flutter pub get
+flutter run
+flutter test --no-pub --exclude-tags golden
 ```
 
 - **Android emulator**: mặc định gọi `http://10.0.2.2:8000` (địa chỉ của máy host nhìn từ emulator), không cần cấu hình.
@@ -186,7 +220,7 @@ D:\flutter\bin\flutter test --exclude-tags golden   # chạy 2026-10-18 00:17: 4
 - Mở cổng 8000 trên Windows Firewall cho mạng Private và chạy backend với `--host 0.0.0.0`.
 - Trước demo kiểm tra `/health`, `/weather/forecast-status` và bundle tại từng địa điểm; cần 48 giờ đầu vào liên tục, giờ mới nhất trong 3 giờ gần đây. Thiếu/cũ có thể làm dự báo không sẵn sàng; không có khí hậu dự phòng live.
 - **Đổi máy chủ lúc chạy:** vào **Cài đặt → Máy chủ dữ liệu**, nhập địa chỉ (ví dụ `http://192.168.1.10:8000`) và kiểm tra kết nối. Địa chỉ được lưu trên máy và ưu tiên hơn giá trị `API_BASE_URL` lúc build, nên không cần build lại.
-- Cấu hình nằm tại `lib/config/api_config.dart`.
+- Cấu hình nằm tại `lib/config/api_config.dart`. Trên Windows, nếu Flutter chưa có trong `PATH`, dùng `D:\flutter\bin\flutter.bat` thay cho `flutter` trong các lệnh trên.
 - Golden test (so ảnh chụp, gắn tag `golden`) phụ thuộc font và hệ điều hành nên được tách khỏi lệnh test chính.
 
 ### 4. Build Android
@@ -202,7 +236,7 @@ D:\flutter\bin\flutter build apk --release --target-platform android-arm64 --obf
 Release cần `android/key.properties` và keystore thật, xem `android/key.properties.example`.
 Thiếu khóa thì build release dừng rõ lỗi, không dùng khóa debug thay thế. Không commit
 keystore hoặc mật khẩu. APK debug không cần cấu hình ký release. Xem thêm
-[kiểm chứng và checklist mobile](docs/mobile_release.md).
+[hướng dẫn triển khai](docs/deploy.md) và phần ký iOS bên dưới.
 
 Giữ thư mục `build/debug-info` của mỗi bản phát hành để giải mã stack trace (`flutter symbolize`). Font Inter trong `assets/fonts` đã được subset (Latin + tiếng Việt + ký hiệu, giữ `tnum`) để giảm kích thước.
 
@@ -264,28 +298,48 @@ Trên iPhone: chế độ chuyến đi chạy nền nhờ `UIBackgroundModes: lo
 
 ### 4d. Git
 
-- `.gitignore` đã loại bỏ `build/`, `.dart_tool/`, `__pycache__`, `.pytest_cache`, `backend/data/*.db`, `backend/data/history/` và `*.backup-*.db`. GitHub chặn file lớn hơn 100 MB.
-- `backend/data/locations/` và `backend/models/` vẫn được commit. Hiện file lớn nhất khoảng 7 MB.
+- `.gitignore` loại bỏ build/cache, DB local, file môi trường và các launcher riêng `Start-SkyWeather.cmd`, `Train-v21-Local.cmd`. Hai launcher không đi kèm repository; dùng lệnh Python trong README thay thế. Không dùng `git add .` để đẩy kèm dữ liệu thô, log, artifact thử nghiệm hoặc thay đổi không thuộc bài.
+- `backend/data/locations/` và các artifact đang phục vụ vẫn được commit. `.gitattributes` đặt `backend/models/**/*.txt -text`: không đổi LF/CRLF của LightGBM text model vì file có byte offset; normalize có thể làm model không nạp được.
 - Các job build cần cả `test`, `golden` và `backend-test` đạt; pull request chạy kiểm tra nhưng không phát hành build. Golden được so trên Windows và lỗi sẽ chặn build.
 - Backend chạy Ruff và pytest với coverage runtime tối thiểu 80% (không tính script train/offline). Flutter đo LCOV tuần tự và chặn nếu coverage thấp hơn 80%.
 - Test hợp đồng gọi FastAPI qua HTTP thật với SQLite tổng hợp riêng; không ingest hoặc sửa DB live. Chạy từ thư mục dự án sau khi cài `backend/requirements-dev.txt`:
 
 ```bash
+python -m pip install -r backend/requirements-dev.txt
 python -m ruff check --config backend/ruff.toml backend tool
 python -m unittest discover -s tool -p test_check_coverage.py
-python tool/check_coverage.py coverage/lcov.info --minimum 80
 python tool/run_backend_contract.py --flutter D:/flutter/bin/flutter.bat
 ```
 
+Chạy backend regression và coverage từ `backend/`, không huấn luyện model:
+
+```bash
+cd backend
+python -m pytest tests -q -p no:cacheprovider -p pytest_cov --skip-model-training --cov=. --cov-config=.coveragerc --cov-report=term-missing:skip-covered --cov-report=xml:../build/backend-coverage.xml --junitxml=../build/backend-tests.xml
+```
+
+Test tắt ingestion/maintenance; dùng DB tổng hợp hoặc bản sao chỉ đọc làm nguồn. Khi có server đang ingest, nên chạy từ bản checkout riêng không có DB live để tránh đụng dữ liệu gốc. Có test cần DB local nên sẽ skip trên checkout sạch. CI đặt `INGEST_ENABLED=0`, `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1` và nạp plugin coverage tường minh.
+
+Kiểm tra Flutter và coverage từ thư mục dự án:
+
+```bash
+flutter analyze --no-pub
+flutter test --no-pub --exclude-tags golden --coverage --concurrency=1
+python tool/check_coverage.py coverage/lcov.info --minimum 80
+flutter test --no-pub --tags golden
+```
+
+Mỗi lần push có kết quả workflow riêng. Một lần chạy cũ bị đỏ không tự đổi thành xanh sau khi sửa; xem commit mới nhất trong Actions. Job backend đạt không đồng nghĩa bản iOS/Android đã ký hoặc đã thử trên thiết bị thật.
+
 ### 5. Huấn luyện lại mô hình
 
-Mô hình tương lai live dùng lệnh riêng, chạy từ `backend/`:
+Model hiện phục vụ là v2; xem cấu hình chia thời gian và các bước huấn luyện trong [trainer v2](backend/scripts/train_long_range_v2.py). Không chạy lại hoặc promote model chỉ để thử khởi động app. Pipeline v1 bên dưới được giữ để tái lập lịch sử, **không cập nhật artifact v2 đang phục vụ**:
 
 ```bash
 python scripts/train_long_range.py --train --max-seconds 180
 ```
 
-Đây là lệnh tái lập, không cam kết thời gian trên máy khác. Xem [tài liệu nâng cấp](docs/self_forecast_upgrade.md). `/admin/retrain` vẫn là pipeline **v3 riêng**, không cập nhật long-range. Pipeline v3 được giữ lại:
+Đây là lệnh tái lập v1, không cam kết thời gian trên máy khác. Xem [tài liệu nâng cấp lịch sử](docs/self_forecast_upgrade.md). `/admin/retrain` là pipeline **v3 riêng**, không cập nhật long-range v2. Pipeline v3 được giữ lại:
 
 ```bash
 pip install numpy pandas lightgbm joblib scikit-learn matplotlib jupyter
@@ -304,6 +358,8 @@ Các endpoint theo địa điểm nhận `location_id`: id phường/xã (từ `
 | Phương thức | Đường dẫn | Mô tả |
 |---|---|---|
 | GET | `/health` | Trạng thái API, DB, lần ingest gần nhất; `cells`: tổng số ô, số ô có dữ liệu trong 3 giờ qua, danh sách ô cũ |
+| GET | `/live` | Liveness của tiến trình API |
+| GET | `/ready` | Readiness; trả 503 nếu backend chưa đủ điều kiện phục vụ |
 | GET | `/locations` | 168 phường/xã/đặc khu + `tsn` (id, tên, loại, tỉnh cũ, tọa độ, `cell_id`) |
 | GET | `/locations/search?q=` | Tìm theo tên, có dấu hoặc không dấu, tối đa 20 kết quả |
 | GET | `/locations/nearest?lat=&lon=` | Phường/xã chứa điểm GPS (hoặc gần nhất); ngoài ranh giới trả 404 "Ngoài vùng hỗ trợ (TP.HCM)" |
@@ -312,7 +368,7 @@ Các endpoint theo địa điểm nhận `location_id`: id phường/xã (từ `
 | GET | `/locations/current` | Cũ: điểm cố định gần Tân Sơn Nhất |
 | GET | `/weather/current` | Giờ mới nhất của chuỗi dữ liệu, kèm chất lượng không khí nếu có |
 | GET | `/weather/hourly?hours=24` | Live: giờ đã có dữ liệu `observed`, tương lai `ai` direct tối đa 168h từ issue; thiếu phủ trả 503, không fallback NWP/khí hậu |
-| GET | `/weather/daily?days=7` | Tổng hợp giờ; tổng mưa cộng lượng mưa giờ, xác suất ngày AI `null`. Query nhận 1–14 ngày nhưng model chỉ 168h từ issue; vượt phủ trả 503 |
+| GET | `/weather/daily?days=7` | Tổng hợp giờ; ngày AI cần đủ 24 giờ cho từng chỉ số. `rain_day_probability` là max xác suất giờ khi đủ dữ liệu, không phải xác suất mưa ngày đã hiệu chuẩn. Query nhận 1–14 ngày nhưng model chỉ 168h từ issue; vượt phủ trả 503 |
 | GET | `/weather/bundle?hours=48&days=7` | Giữ current nếu có; phần dự báo không sẵn sàng trả `[]` và `forecast_error`; provider live `sky_weather_ai`, replay `historical_reference` |
 | GET | `/weather/forecast-status` | Khả năng artifact, `experimental=true`, evaluation held-out overall/theo ngày; không bảo đảm đầu vào mọi ô đang mới |
 | GET | `/weather/history?start_date=&end_date=` | Dữ liệu theo giờ trong khoảng, tối đa 365 ngày |
@@ -327,6 +383,8 @@ Các endpoint theo địa điểm nhận `location_id`: id phường/xã (từ `
 | POST | `/auth/register` | Tạo tài khoản tuỳ chọn (email, mật khẩu 8–128 ký tự) |
 | POST | `/auth/login` | Đăng nhập, trả token Bearer (hạn 30 ngày); tối đa 5 lần sai mỗi 15 phút |
 | POST | `/auth/logout` | Huỷ token hiện tại |
+| POST | `/auth/password-reset/request` | Yêu cầu email khôi phục mật khẩu; cần SMTP được cấu hình |
+| POST | `/auth/password-reset/confirm` | Đổi mật khẩu bằng token một lần, có hạn sử dụng |
 | GET | `/me` | Thông tin tài khoản (cần `Authorization: Bearer <token>`) |
 | DELETE | `/me` | Xoá tài khoản cùng mọi dữ liệu (cần mật khẩu) |
 | GET / PUT / DELETE | `/me/data` | Tài liệu đồng bộ có `version`; `PUT` gửi `base_version`, trả 409 kèm bản hiện tại khi xung đột |
@@ -343,14 +401,15 @@ Mọi `/admin/*` (và `/feedback/summary`) chỉ nhận yêu cầu từ localhos
 
 **Phạm vi v3 lịch sử:** mô tả khoảng 90%, gió giật và thẻ Home trong đoạn kế
 tiếp chỉ thuộc luồng v3 ngắn hạn. Không áp dụng các kết quả đó cho long-range
-168h hoặc coi là xác minh Home mới; long-range chưa có prediction interval
-hay dự báo gió giật.
+168h hoặc coi là xác minh Home mới. Long-range v2 có lớp khoảng p10–p90
+tùy chọn như mô tả ở đầu README, không dùng kết quả coverage v3 để khẳng
+định chất lượng của v2; gió giật tương lai không phải mục tiêu long-range.
 
-`/weather/ai-forecast` trả thêm khoảng nhiệt độ `temperature_low`, `temperature_high` với `interval_level` (độ phủ thực tế đạt được: ~0,88 ở tầm 1h/3h và ~0,89 ở 6h), câu `uncertainty_note` và các mục tiêu đã qua cổng kiểm chứng (`humidity`, `wind_speed`, `wind_gusts`, `precipitation_mm`; danh sách ở `enabled_targets`) khi có `backend/models/v3/extension_v3.json`. `temperature_p10`, `temperature_p90` chỉ giữ cho client cũ và bằng đúng `temperature_low`, `temperature_high`. Trên test từ 2025, độ phủ thực tế đạt 88,48 / 88,11 / 89,33% ở tầm 1 / 3 / 6 giờ (copy trực tiếp từ `backend/models/v3/extension_v3.json` mục `interval.test`). Thẻ AI trên trang chủ hiển thị khoảng (ghi "khoảng ~88%" theo giá trị API trả về, không làm tròn quá mức) và các mục tiêu đã bật.
+`/weather/ai-forecast` trả khoảng nhiệt độ `temperature_low`, `temperature_high`, `interval_level`, `uncertainty_note` và các mục tiêu đã bật trong `enabled_targets` khi artifact v3 hợp lệ. `temperature_p10`, `temperature_p90` giữ để tương thích client cũ. Đọc coverage đo được, cửa sổ đánh giá và giới hạn từ `backend/models/v3/extension_v3.json` cùng kết quả API; không dùng tỷ lệ lịch sử hoặc mức coverage mục tiêu làm cam kết chính xác cho dự báo mới.
 
 `/admin/retrain` đã chạy bước hiệu chỉnh khoảng nhiệt độ 90% bằng `train_global_v3_interval.py` sau hai bước huấn luyện trước đó; nếu bước này lỗi, ứng viên không được thay mô hình hiện tại. Nguồn: `backend/routers/monitor.py` và các ca kiểm thử trong `backend/tests/test_monitor.py`.
 
-Trung bình nhiều năm chỉ còn dùng cho tham chiếu replay và baseline đánh giá, **không fallback tương lai live**. Cơ chế lịch sử: ô đủ dữ liệu dùng khí hậu riêng; ô thiếu dùng của `tsn`. Replay map gọi `long_range_model.predict` có guard; issue không sau `trained_through` không có AI outlook, không dùng dự đoán legacy bị rò rỉ.
+Không dùng khí hậu trung bình như **fallback độc lập cho tương lai live**. Model v2 có sử dụng bảng khí hậu và hệ số damping học từ giai đoạn train làm nền cho dự báo residual; điều này không phải lấy dữ liệu dự báo tương lai từ bên ngoài. Cơ chế replay/baseline lịch sử được giữ riêng; map gọi `long_range_model_v2.predict` có guard, issue không sau `trained_through` không có AI outlook.
 
 ## Ảnh chụp màn hình
 
@@ -364,4 +423,4 @@ Trung bình nhiều năm chỉ còn dùng cho tham chiếu replay và baseline �
 |---|---|---|---|
 | ![](screenshots/phaseC/map_temp.png) | ![](screenshots/phaseC/map_zoomed.png) | ![](screenshots/phaseC/map_slider.png) | ![](screenshots/glass/09_settings_390.png) |
 
-Ảnh bản đồ chụp bằng trình duyệt không có mạng nên nền OpenStreetMap hiện màu tối; trên máy có mạng, nền bản đồ hiển thị bình thường.
+Ảnh bản đồ phía trên là ảnh lịch sử lúc trình duyệt không tải được tile, không đại diện cho UI mới. Bản hiện tại có fallback tile và trạng thái lỗi/thử lại; việc tải nền vẫn phụ thuộc mạng và nhà cung cấp tile, không suy ra dữ liệu thời tiết đang mới.

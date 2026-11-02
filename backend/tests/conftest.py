@@ -23,7 +23,9 @@ import main
 from database import LOCAL_TZ
 from routers import weather as weather_router, weather_core
 
-REAL_DB = Path(__file__).resolve().parent.parent / "data" / "weather.db"
+# An isolated data root lets admin regressions run without reading live DBs.
+REAL_DB = Path(os.environ.get("WEATHER_TEST_DATA_ROOT",
+                            Path(__file__).resolve().parent.parent / "data")) / "weather.db"
 REAL_HISTORY_DB = REAL_DB.parent / "history" / "cells_history.db"
 
 COLUMNS = ["timestamp", "temperature", "humidity", "dew_point", "apparent_temperature",

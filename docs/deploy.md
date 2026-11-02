@@ -1,5 +1,8 @@
 # Trien khai backend bang Docker (21/10/2026)
 
+Render Free demo (khong luu ben SQLite): xem [render_demo.md](render_demo.md).
+Su dung Dockerfile.render rieng; Dockerfile duoi day van can volume data/model.
+
 Bo sung cho `docs/operations_20261021.md`. Backend FastAPI chay trong 1 container,
 1 process uvicorn (scheduler ingest hang gio chay trong process, khong duoc chay
 trung). SQLite (WAL) va model nam tren volume.

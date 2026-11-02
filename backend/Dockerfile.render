@@ -1,0 +1,67 @@
+# Render demo: docker build -f backend/Dockerfile.render backend
+# Ephemeral SQLite is not suitable for durable accounts or production.
+
+# --- build stage: resolve wheels into an isolated venv ----------------------------------------------
+# Same Python minor and pinned requirements as the tested setup (backend suite: Python 3.14).
+FROM python:3.14-slim AS builder
+ENV PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1
+RUN python -m venv /opt/venv
+COPY requirements.txt /tmp/requirements.txt
+RUN /opt/venv/bin/pip install -r /tmp/requirements.txt
+
+# --- runtime stage ----------------------------------------------------------------------------------
+FROM python:3.14-slim
+# libgomp1: OpenMP runtime needed by lightgbm wheels.
+RUN apt-get update && apt-get install -y --no-install-recommends libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+ARG APP_UID=10001
+RUN useradd --uid ${APP_UID} --create-home --shell /usr/sbin/nologin app
+
+COPY --from=builder /opt/venv /opt/venv
+ENV PATH=/opt/venv/bin:$PATH \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    HOST=0.0.0.0 \
+    PORT=8000 \
+    ENABLE_DOCS=0 \
+    LOG_LEVEL=INFO \
+    INGEST_ENABLED=1 \
+    INGEST_BACKFILL_DAYS=3 \
+    EXTERNAL_FORECAST_ENABLED=0 \
+    MAINTENANCE_ENABLED=0 \
+    OMP_NUM_THREADS=1 \
+    OPENBLAS_NUM_THREADS=1 \
+    MKL_NUM_THREADS=1
+
+WORKDIR /app
+COPY --chown=app:app *.py /app/
+COPY --chown=app:app routers /app/routers
+COPY --chown=app:app data/locations /app/data/locations
+COPY --chown=app:app models/feature_columns.json \
+    models/model_metadata.json \
+    models/temperature_model_1h.pkl \
+    models/rain_model_1h.pkl \
+    models/temperature_model_3h.pkl \
+    models/rain_model_3h.pkl \
+    models/temperature_model_6h.pkl \
+    models/rain_model_6h.pkl /app/models/
+COPY --chown=app:app models/v3 /app/models/v3
+COPY --chown=app:app models/long_range_v2 /app/models/long_range_v2
+COPY --chown=app:app models/long_range_v2_intervals /app/models/long_range_v2_intervals
+COPY --chown=app:app scripts/check_serving_models.py /app/scripts/check_serving_models.py
+# Keep the writable ephemeral DB separate from the packaged, read-only inputs.
+RUN mkdir -p /app/data /app/models && chown app:app /app/data /app/models
+
+USER app
+# Fail the build instead of silently shipping missing models/extensions.
+RUN python scripts/check_serving_models.py
+EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+    CMD python -c "import os,urllib.request; urllib.request.urlopen('http://127.0.0.1:%s/live' % os.environ.get('PORT','8000'), timeout=4)" || exit 1
+
+# One process on purpose: the ingest scheduler runs inside the API process and must not run twice.
+# Keep one instance: ephemeral SQLite cannot share inputs with other replicas.
+# python main.py runs uvicorn with one worker (HOST/PORT from env).
+CMD ["python", "main.py"]

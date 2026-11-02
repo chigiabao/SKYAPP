@@ -206,6 +206,7 @@ def test_post_ingest_failure_never_fails_ingest(ingest_db, monkeypatch):
 
 
 def test_retention_deletes_old_rows_once_per_day(ingest_db, monkeypatch):
+    monkeypatch.setenv("MAINTENANCE_ENABLED", "1")
     ingest.connect(ingest_db).close()   # migrate
     _exec(ingest_db, "INSERT INTO feedback (created_at, kind) VALUES (?, 'bug')",
           [("2022-06-24 00:00:00",), ("2022-06-26 00:00:00",)])
@@ -221,6 +222,17 @@ def test_retention_deletes_old_rows_once_per_day(ingest_db, monkeypatch):
     monitor.post_ingest(ingest_db, NOW.replace(hour=11))
     monitor.post_ingest(ingest_db, NOW.replace(day=26))
     assert len(calls) == 2
+
+
+@pytest.mark.parametrize("ingest_enabled", ["0", "1"])
+def test_post_ingest_respects_explicit_maintenance_disable(monkeypatch, ingest_enabled):
+    monkeypatch.setenv("INGEST_ENABLED", ingest_enabled)
+    monkeypatch.setenv("MAINTENANCE_ENABLED", "0")
+    monkeypatch.setattr(monitor, "log_published_forecasts", lambda *args: 7)
+    retention = Mock()
+    monkeypatch.setattr(monitor, "maybe_run_retention", retention)
+    assert monitor.post_ingest("unused.db", NOW) == {"logged": 7}
+    retention.assert_not_called()
 
 
 @pytest.fixture

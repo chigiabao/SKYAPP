@@ -8,10 +8,10 @@ list in the same order), throttled for the free tier (CHUNK_SLEEP between reques
 weighted calls per rolling minute) and retried with backoff.
 
 - Observed/analysis hours -> hourly_weather (Historical Forecast API, same source as the original export).
-                              A series without data is backfilled BACKFILL_DAYS days.
+                              New series use INGEST_BACKFILL_DAYS (3..90; default BACKFILL_DAYS).
 - 7-day forecast (opt-in)  -> nwp_forecast, one issue per run (Forecast API); only the latest KEEP_ISSUES kept.
                               Disabled unless EXTERNAL_FORECAST_ENABLED=1; forecasts come from our trained model.
-- Air quality (optional)   -> air_quality, past AQ_PAST_DAYS + AQ_FORECAST_DAYS upserted (Air Quality API);
+- Air quality (optional)   -> air_quality, current/past hours by default; future AQ requires the same opt-in;
                               if only this call fails the weather data is still written and a WARNING is logged.
 Every valid run writes one ingest_log row. Observed data is written even if an optional forecast fetch fails.
 Failed historical (or forecast-only) series are listed in ingest_log.failed_cells and series_status, and caught
@@ -217,10 +217,14 @@ def fetch_forecast_batch(locs: list[dict], stats: Optional[dict] = None) -> list
 
 
 def fetch_air_quality_batch(locs: list[dict], stats: Optional[dict] = None) -> list[list[dict] | ValueError]:
+    external_forecast = os.getenv("EXTERNAL_FORECAST_ENABLED", "0") == "1"
+    window = ({"past_days": AQ_PAST_DAYS, "forecast_days": AQ_FORECAST_DAYS} if external_forecast else
+              {"past_hours": AQ_PAST_DAYS * 24, "forecast_hours": 1})
     params = {**_coords(locs, elevation=False), "hourly": ",".join(AIR_QUALITY_COLUMNS),
-              "timezone": TIMEZONE, "past_days": AQ_PAST_DAYS, "forecast_days": AQ_FORECAST_DAYS}
+              "timezone": TIMEZONE, **window}
     payloads = _batch(AIR_QUALITY_URL, params, len(locs),
-                      _weight(len(AIR_QUALITY_COLUMNS), AQ_PAST_DAYS + AQ_FORECAST_DAYS), stats)
+                      _weight(len(AIR_QUALITY_COLUMNS), AQ_PAST_DAYS +
+                              (AQ_FORECAST_DAYS if external_forecast else 1)), stats)
     return _parse_payloads(payloads, {c: c for c in AIR_QUALITY_COLUMNS})
 
 
@@ -396,6 +400,9 @@ def _err(e: Exception) -> str:
 def _fetch_observed(conn, series, since, hour, stats, failed) -> dict:
     """Observed rows per series id (only hours in [series' window start, hour]); failed chunks -> `failed`."""
     hi = hour.strftime(TS_FMT)
+    backfill_days = int(os.environ.get("INGEST_BACKFILL_DAYS", BACKFILL_DAYS))
+    if not 3 <= backfill_days <= BACKFILL_DAYS:
+        raise ValueError(f"INGEST_BACKFILL_DAYS must be between 3 and {BACKFILL_DAYS}")
     groups: dict[date, list[dict]] = {}   # one request covers one date range: group the series by start date
     for s in series:
         if since is not None:
@@ -404,7 +411,7 @@ def _fetch_observed(conn, series, since, hour, stats, failed) -> dict:
             last = conn.execute("SELECT MAX(timestamp) FROM hourly_weather WHERE location_id = ?",
                                 (s["series_id"],)).fetchone()[0]
             start = (datetime.fromisoformat(last) - timedelta(hours=OVERLAP_HOURS) if last
-                     else hour - timedelta(days=BACKFILL_DAYS))
+                     else hour - timedelta(days=backfill_days))
         s["lo"] = start.strftime(TS_FMT)
         groups.setdefault(start.date(), []).append(s)
     obs = {}
@@ -490,7 +497,8 @@ def _run(location_id, since, forecast_only, now, db_path, on_success) -> dict:
                         if isinstance(rows, ValueError):
                             notes.append(f"WARNING air quality skipped for {s['series_id']}: {_err(rows)}")
                             continue
-                        aq[s["series_id"]] = rows
+                        aq[s["series_id"]] = (rows if external_forecast else
+                                              [r for r in rows if r["timestamp"] <= issued_at])
                     log.info("air quality chunk %d: ok %d series", i, len(chunk))
                 except Exception as e:  # noqa: BLE001
                     log.warning("air quality chunk %d failed: %s", i, e)

@@ -40,6 +40,10 @@ class FakeAPI:
         if kind == "historical":
             start = datetime.fromisoformat(params["start_date"])
             end = datetime.fromisoformat(params["end_date"]) + timedelta(days=1)
+        elif "forecast_hours" in params:
+            hour = self.now.replace(minute=0, second=0, microsecond=0, tzinfo=None)
+            start = hour - timedelta(hours=params.get("past_hours", 0))
+            end = hour + timedelta(hours=params["forecast_hours"])
         else:
             start = datetime(self.now.year, self.now.month, self.now.day) - timedelta(days=params.get("past_days", 0))
             end = datetime(self.now.year, self.now.month, self.now.day) + timedelta(days=params["forecast_days"])
@@ -194,7 +198,10 @@ def test_default_ingest_stores_historical_without_external_forecast(db, api, mon
     assert [kind for kind, _ in api.calls] == ["historical", "air_quality"]
     assert _q(db, "SELECT MAX(timestamp) FROM hourly_weather")[0][0] == NOW_HOUR
     assert _q(db, "SELECT COUNT(*) FROM nwp_forecast")[0][0] == 0
-    assert _q(db, "SELECT COUNT(*) FROM air_quality")[0][0] == 336
+    assert _q(db, "SELECT COUNT(*), MAX(timestamp) FROM air_quality")[0] == (169, NOW_HOUR)
+    aq = [p for k, p in api.calls if k == "air_quality"][0]
+    assert aq["past_hours"] == 168 and aq["forecast_hours"] == 1
+    assert "forecast_days" not in aq
 
 
 def test_disabling_external_forecasts_preserves_existing_issues(db, api, external_forecast_enabled, monkeypatch):
@@ -207,6 +214,18 @@ def test_disabling_external_forecasts_preserves_existing_issues(db, api, externa
     assert row["status"] == "ok" and row["rows_inserted"] == 1
     assert [kind for kind, _ in api.calls] == ["historical", "air_quality"]
     assert _snapshot(db)[1] == before
+
+
+def test_current_past_aq_rejects_future_hours_even_if_upstream_returns_them(db, api, monkeypatch):
+    original = ingest.fetch_air_quality_batch
+
+    def oversized_response(locs, stats):
+        fetched = original(locs, stats)
+        return [rows + [{**rows[-1], "timestamp": "2023-06-25 11:00:00"}] for rows in fetched]
+
+    monkeypatch.setattr(ingest, "fetch_air_quality_batch", oversized_response)
+    assert ingest.run_ingest(db_path=db, now=NOW)["status"] == "ok"
+    assert _q(db, "SELECT MAX(timestamp) FROM air_quality")[0][0] == NOW_HOUR
 
 
 def test_cli_help_documents_external_forecast_opt_in(capsys):

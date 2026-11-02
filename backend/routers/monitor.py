@@ -20,6 +20,7 @@ the two back.
 """
 import json
 import logging
+import os
 import shutil
 import sqlite3
 import subprocess
@@ -252,7 +253,9 @@ def maybe_run_retention(db_path=None, now: Optional[datetime] = None) -> Optiona
 def post_ingest(db_path=None, now: Optional[datetime] = None) -> dict:
     """Ingest hook: log the published forecasts, then run the retention cleanup once per day."""
     out = {"logged": log_published_forecasts(db_path, now)}
-    retention = maybe_run_retention(db_path, now)
+    retention = (maybe_run_retention(db_path, now)
+                 if os.environ.get("MAINTENANCE_ENABLED", os.environ.get("INGEST_ENABLED", "1")) != "0"
+                 else None)
     if retention is not None:
         out["retention"] = retention
     return out

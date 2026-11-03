@@ -93,7 +93,10 @@ class AppSceneData {
     final CurrentWeather? c = provider.currentWeather;
     final WeatherScene resolved;
     if (c != null) {
-      final double? vis = c.visibilityKm;
+      // Reference visibility belongs to its own card, not the AI weather scene.
+      final double? vis = c.fieldSources.containsKey('visibility')
+          ? null
+          : c.visibilityKm;
       resolved = resolveScene(
         weatherCode: c.weatherCode ?? wmoForCondition(c.condition),
         isDay: realIsDay,

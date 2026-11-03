@@ -391,7 +391,9 @@ void main() {
       expect(find.text(kNoData), findsNWidgets(2));
       expect(find.byType(IndexScaleBar), findsNothing);
       expect(
-        find.bySemanticsLabel('Chất lượng không khí: $kNoData'),
+        find.bySemanticsLabel(
+          'Chất lượng không khí: $kNoData. Thang AQI của Mỹ (US EPA), 0–500.',
+        ),
         findsOneWidget,
       );
       handle.dispose();

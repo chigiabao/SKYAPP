@@ -9,6 +9,14 @@ import 'package:sky_weather_app/screens/home/home_details_grid.dart';
 import 'package:sky_weather_app/screens/home/home_current_snapshot.dart';
 import 'package:sky_weather_app/screens/home/home_header_info.dart';
 import 'package:sky_weather_app/ui/weather/widgets/metric_tile.dart';
+import 'package:sky_weather_app/ui/weather/app_scene.dart';
+
+class _CurrentProvider extends WeatherProvider {
+  _CurrentProvider(this.current);
+  final CurrentWeather current;
+  @override
+  CurrentWeather get currentWeather => current;
+}
 
 Map<String, dynamic> payload() => {
   'timestamp': '2026-11-03T14:00:00+07:00',
@@ -123,4 +131,19 @@ void main() {
       },
     );
   }
+
+  test('reference visibility does not change the AI weather scene', () {
+    final mixed = payload()
+      ..['weather_code'] = 0
+      ..['visibility'] = 500;
+    final onlyAi = {...mixed, 'visibility': null, 'field_sources': null};
+    final a = _CurrentProvider(CurrentWeather.fromJson(mixed));
+    final b = _CurrentProvider(CurrentWeather.fromJson(onlyAi));
+    addTearDown(a.dispose);
+    addTearDown(b.dispose);
+    expect(
+      AppSceneData.compute(provider: a).resolved,
+      AppSceneData.compute(provider: b).resolved,
+    );
+  });
 }

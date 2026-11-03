@@ -45,9 +45,15 @@ const List<Color> kUvColors = [
 const List<double> kUvStops = [0, 2.5 / 11, 5.5 / 11, 7.5 / 11, 10.5 / 11, 1];
 
 class UvCard extends StatelessWidget {
-  const UvCard({super.key, required this.uvIndex, this.sentence});
+  const UvCard({
+    super.key,
+    required this.uvIndex,
+    this.sentence,
+    this.sourceLabel,
+  });
 
   final double? uvIndex;
+  final String? sourceLabel;
 
   /// Cau giai thich (xem uvSentence trong weather_insights.dart).
   final String? sentence;
@@ -63,6 +69,7 @@ class UvCard extends StatelessWidget {
       value: value,
       label: cat?.label,
       sentence: sentence,
+      footer: sourceLabel,
       semanticsLabel: uv == null
           ? 'Chỉ số UV: $kNoData'
           : 'Chỉ số UV $value, mức ${cat!.label}'

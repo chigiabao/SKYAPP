@@ -1,6 +1,32 @@
 import '../data_source.dart';
+import '../hcm_time.dart';
 import 'weather_condition.dart';
 import 'weather_helpers.dart';
+
+class CurrentFieldSource {
+  const CurrentFieldSource({required this.source, required this.timestamp});
+
+  final String source;
+  final DateTime timestamp;
+
+  static Map<String, CurrentFieldSource> parse(dynamic value) {
+    if (value is! Map) return const {};
+    final result = <String, CurrentFieldSource>{};
+    for (final entry in value.entries) {
+      final item = entry.value;
+      if (entry.key is! String || item is! Map) continue;
+      final source = item['source'];
+      final time = item['timestamp'];
+      final parsed = time is String ? HcmTime.tryParse(time) : null;
+      if (source is! String || source.isEmpty || parsed == null) continue;
+      result[entry.key as String] = CurrentFieldSource(
+        source: source,
+        timestamp: parsed,
+      );
+    }
+    return Map.unmodifiable(result);
+  }
+}
 
 // Current weather data model (GET /weather/current)
 class CurrentWeather {
@@ -19,6 +45,7 @@ class CurrentWeather {
 
   /// Nguon so lieu (backend moi gui "observed"); null = backend cu.
   final DataSource? source;
+  final Map<String, CurrentFieldSource> fieldSources;
 
   // Tuy chon (backend moi, co the null): chi so UV, AQI (thang US), bui min.
   final double? uvIndex;
@@ -50,6 +77,7 @@ class CurrentWeather {
     this.visibilityKm,
     this.precipitationProbability,
     this.source,
+    this.fieldSources = const {},
     this.uvIndex,
     this.usAqi,
     this.pm25,
@@ -78,6 +106,7 @@ class CurrentWeather {
       ),
       lastUpdated: requireDate(json, 'timestamp'),
       source: parseDataSource(json['source']),
+      fieldSources: CurrentFieldSource.parse(json['field_sources']),
       uvIndex: toDouble(json['uv_index']),
       usAqi: toInt(json['us_aqi']),
       pm25: toDouble(json['pm2_5']),

@@ -12,7 +12,7 @@ from typing import List, Optional
 import pandas as pd
 
 from database import execute_query, execute_one, to_local
-from models import WeatherData, DailySummary
+from models import WeatherData, DailySummary, WeatherFieldSource
 import long_range_model_v2 as long_range_model
 from routers import weather_core as core, weather_climatology as clim
 from routers.weather_core import (AT_DESC, LOCATION_DESC, TS_FMT, _aq_fields, _aq_rows, _floor_hour,
@@ -23,6 +23,29 @@ from routers.weather_daily import _daily_summary, _label_confidence
 from routers.weather_ai import get_ai_forecast
 
 router = APIRouter()
+
+
+def _current_supplements(current: WeatherData, sid: str, now: datetime) -> WeatherData:
+    """Attach recent reference metrics without changing or mutating cached AI outputs."""
+    lo = now - timedelta(hours=1)
+    row = execute_one('SELECT * FROM hourly_weather WHERE location_id = ? '
+                      'AND timestamp >= ? AND timestamp <= ? ORDER BY timestamp DESC LIMIT 1',
+                      (sid, lo.strftime(TS_FMT), now.strftime(TS_FMT)))
+    aq = _aq_rows(lo, now, sid)
+    aq_row = aq[max(aq)] if aq else None
+    values, sources = {}, dict(current.field_sources)
+    for reference, provider, fields in (
+        (row, 'open_meteo', ('apparent_temperature', 'visibility', 'surface_pressure',
+                             'pressure_msl', 'uv_index')),
+        (aq_row, 'open_meteo_cams', ('us_aqi', 'pm2_5', 'pm10')),
+    ):
+        if reference is None:
+            continue
+        for field in fields:
+            if getattr(current, field) is None and field in reference.keys() and reference[field] is not None:
+                values[field] = reference[field]
+                sources[field] = WeatherFieldSource(source=provider, timestamp=to_local(reference['timestamp']))
+    return current.model_copy(update={**values, 'field_sources': sources})
 
 
 @router.get("/current", response_model=WeatherData)
@@ -37,7 +60,7 @@ def get_current_weather(at: Optional[str] = Query(default=None, description=AT_D
         current = _own_forecast_rows(sid, now).get(now)
         if current is None:
             raise HTTPException(status_code=503, detail='AI chưa có dự báo cho giờ hiện tại.')
-        return current
+        return _current_supplements(current, sid, now)
     row = execute_one("SELECT * FROM hourly_weather WHERE location_id = ? AND timestamp <= ? "
                       "ORDER BY timestamp DESC LIMIT 1", (sid, _naive(eff).strftime(TS_FMT)))
     if not row:

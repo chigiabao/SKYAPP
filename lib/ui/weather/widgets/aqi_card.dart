@@ -50,10 +50,17 @@ const List<Color> kAqiColors = [
 const List<double> kAqiStops = [0, 0.1, 0.2, 0.3, 0.4, 0.6, 1.0];
 
 class AqiCard extends StatelessWidget {
-  const AqiCard({super.key, required this.usAqi, this.pm25, this.sentence});
+  const AqiCard({
+    super.key,
+    required this.usAqi,
+    this.pm25,
+    this.sentence,
+    this.sourceLabel,
+  });
 
   final int? usAqi;
   final double? pm25;
+  final String? sourceLabel;
 
   /// Cau giai thich (xem aqiSentence trong weather_insights.dart).
   final String? sentence;
@@ -75,7 +82,7 @@ class AqiCard extends StatelessWidget {
           ? 'Chất lượng không khí: $kNoData'
           : 'Chất lượng không khí $aqi, mức ${cat!.label}'
                 '${_sentence(pm) == null ? '' : '. ${_sentence(pm)}'}',
-      footer: 'Thang AQI của Mỹ (US EPA), 0–500.',
+      footer: ['Thang AQI của Mỹ (US EPA), 0–500.', ?sourceLabel].join('\n'),
       visual: aqi == null
           ? null
           : IndexScaleBar(

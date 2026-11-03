@@ -31,7 +31,9 @@ WeatherHeaderInfo homeHeaderInfo(
   );
   final hiLo = [
     if (today != null) 'Cao ${t(today.tempMax)} · Thấp ${t(today.tempMin)}',
-    if (c.feelsLike != null) 'Cảm giác ${t(c.feelsLike!)}',
+    if (c.feelsLike != null &&
+        !c.fieldSources.containsKey('apparent_temperature'))
+      'Cảm giác ${t(c.feelsLike!)}',
   ];
   final updatedAt = c.lastUpdated;
   final sameDay = ForecastFormat.sameDay(updatedAt, provider.nowHcm);

@@ -6,6 +6,7 @@ import '../../providers/preferences_provider.dart';
 import '../../ui/weather/design_tokens.dart';
 import '../../ui/weather/widgets/metric_tile.dart';
 import '../../utils/formatters.dart';
+import 'home_current_sources.dart';
 
 /// Cot "Điều kiện hiện tại" o man rong (hai cot).
 class HomeCurrentSnapshot extends StatelessWidget {
@@ -87,6 +88,13 @@ class HomeCurrentSnapshot extends StatelessWidget {
                     color: Palette.white,
                   ),
                 ),
+                if (row.$1 == HomeMetric.feelsLike &&
+                    currentReferenceLabel(current, 'apparent_temperature') !=
+                        null)
+                  Text(
+                    currentReferenceLabel(current, 'apparent_temperature')!,
+                    style: TypeScale.small.copyWith(color: Palette.white),
+                  ),
               ],
             ),
           ),

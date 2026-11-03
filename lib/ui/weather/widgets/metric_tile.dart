@@ -61,7 +61,7 @@ class MetricTile extends StatelessWidget {
     return GlassCard(
       title: title,
       icon: icon,
-      semanticsLabel: sem,
+      semanticsLabel: [sem, ?footer].join('. '),
       footer: footer,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

@@ -321,7 +321,11 @@ def test_current_is_a_prediction_not_the_same_hour_reference(live, syn_db):
                     'precipitation = 50 WHERE timestamp >= ?', (NOW.strftime(weather_core.TS_FMT),))
     after = _get(client, 'current')
     assert after == before
-    assert after == _get(client, 'hourly', hours=1)[0]
+    hourly = _get(client, 'hourly', hours=1)[0]
+    for key in hourly:
+        if key not in after['field_sources'] and key != 'field_sources':
+            assert after[key] == hourly[key]
+    assert hourly['field_sources'] == {}
     predictor.assert_called()
     assert str(predictor.call_args.args[0].timestamp.iloc[-1]) == '2023-06-20 11:00:00'
 
@@ -334,6 +338,67 @@ def test_current_hour_input_alone_cannot_be_used_to_predict_itself(live, syn_db)
                      (NOW - timedelta(hours=4)).strftime(weather_core.TS_FMT)))
     assert client.get('/weather/current').status_code == 503
     predictor.assert_not_called()
+
+
+def test_current_reference_metrics_keep_ai_and_hourly_untouched(live, syn_db):
+    client, _ = live
+    hourly_before = _get(client, 'hourly', hours=2)
+    with sqlite3.connect(syn_db) as con:
+        con.execute('UPDATE hourly_weather SET apparent_temperature=37, visibility=25000, '
+                    'pressure_msl=1008, uv_index=0 WHERE location_id=? AND timestamp=?',
+                    ('tsn', NOW.strftime(weather_core.TS_FMT)))
+        con.execute('INSERT INTO air_quality VALUES (?, ?, ?, ?, ?)',
+                    ('tsn', NOW.strftime(weather_core.TS_FMT), 0, 0, 0))
+    current = _get(client, 'current')
+    assert current['source'] == 'ai'
+    for key in ('temperature', 'humidity', 'precipitation', 'rain_probability', 'weather_code',
+                'wind_speed', 'cloud_cover', 'issued_at', 'model_version'):
+        assert current[key] == hourly_before[0][key]
+        assert key not in current['field_sources']
+    assert current['apparent_temperature'] == 37
+    assert current['visibility'] == 25000
+    assert current['pressure_msl'] == 1008
+    assert current['uv_index'] == current['us_aqi'] == current['pm2_5'] == 0
+    assert current['field_sources']['uv_index'] == {
+        'source': 'open_meteo', 'timestamp': NOW.isoformat()}
+    assert current['field_sources']['us_aqi'] == {
+        'source': 'open_meteo_cams', 'timestamp': NOW.isoformat()}
+    assert _get(client, 'hourly', hours=2) == hourly_before
+    assert _get(client, 'bundle')['current'] == current
+
+
+@pytest.mark.parametrize('age', [0, 1, 2])
+def test_reference_metrics_only_use_recent_same_location_data(live, syn_db, age):
+    client, _ = live
+    target = (NOW - timedelta(hours=age)).strftime(weather_core.TS_FMT)
+    with sqlite3.connect(syn_db) as con:
+        con.execute('DELETE FROM hourly_weather WHERE location_id=? AND timestamp>?', ('tsn', target))
+        con.execute('UPDATE hourly_weather SET uv_index=2 WHERE location_id=? AND timestamp=?', ('tsn', target))
+        con.execute('INSERT INTO air_quality VALUES (?, ?, ?, ?, ?)', ('tsn', target, 42, 10, 15))
+        # Future references and another cell must never supply the current metrics.
+        con.execute('INSERT INTO air_quality VALUES (?, ?, ?, ?, ?)',
+                    ('tsn', (NOW + timedelta(hours=1)).strftime(weather_core.TS_FMT), 999, 99, 99))
+        con.execute('INSERT INTO air_quality VALUES (?, ?, ?, ?, ?)',
+                    ('another-cell', NOW.strftime(weather_core.TS_FMT), 888, 88, 88))
+    current = _get(client, 'current')
+    if age <= 1:
+        assert current['us_aqi'] == 42 and current['uv_index'] == 2
+        assert current['field_sources']['us_aqi']['timestamp'] == (NOW - timedelta(hours=age)).isoformat()
+    else:
+        assert current['us_aqi'] is None and current['uv_index'] is None
+        assert current['field_sources'] == {}
+
+
+def test_missing_reference_values_stay_null_without_provenance(live, syn_db):
+    client, _ = live
+    with sqlite3.connect(syn_db) as con:
+        con.execute('UPDATE hourly_weather SET apparent_temperature=NULL, visibility=NULL, '
+                    'pressure_msl=NULL, surface_pressure=NULL, uv_index=NULL WHERE location_id=?', ('tsn',))
+    current = _get(client, 'current')
+    assert current['source'] == 'ai'
+    assert all(current[k] is None for k in ('apparent_temperature', 'visibility', 'pressure_msl',
+                                           'uv_index', 'us_aqi'))
+    assert current['field_sources'] == {}
 
 
 def test_wrong_model_issue_cannot_bypass_current_hour_input_cutoff(live):

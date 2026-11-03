@@ -1,9 +1,14 @@
 """
 Pydantic models for API request/response.
 """
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List, Optional
 from datetime import datetime
+
+
+class WeatherFieldSource(BaseModel):
+    source: str
+    timestamp: datetime
 
 
 class WeatherData(BaseModel):
@@ -32,6 +37,8 @@ class WeatherData(BaseModel):
     # AI provenance: input ends at issued_at, strictly before the current-hour target.
     issued_at: Optional[datetime] = None
     model_version: Optional[str] = None
+    # Overrides the row source for supplementary current metrics only.
+    field_sources: dict[str, WeatherFieldSource] = Field(default_factory=dict)
     uv_index: Optional[float] = None
     # Open-Meteo Air Quality (CAMS) at the same hour; null for climatology hours
     us_aqi: Optional[float] = None

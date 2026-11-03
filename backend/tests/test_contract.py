@@ -10,7 +10,7 @@ WEATHER_FIELDS = {"timestamp", "temperature", "humidity", "dew_point", "apparent
                   "precipitation_probability", "precipitation", "rain", "weather_code", "visibility",
                   "cloud_cover", "surface_pressure", "pressure_msl", "wind_speed", "wind_direction",
                   "wind_gusts", "rain_probability", "precipitation_median", "source",
-                  "uv_index", "us_aqi", "pm2_5", "pm10", "issued_at", "model_version",
+                  "uv_index", "us_aqi", "pm2_5", "pm10", "issued_at", "model_version", "field_sources",
                   # own long-range AI hours only (null elsewhere): calibrated 80 % range, not accuracy
                   "temperature_p10", "temperature_p90", "humidity_p10", "humidity_p90", "wind_speed_p10",
                   "wind_speed_p90", "cloud_cover_p10", "cloud_cover_p90", "precipitation_p90",

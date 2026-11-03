@@ -14,6 +14,7 @@ import '../../ui/weather/widgets/metric_tile.dart';
 import '../../ui/weather/widgets/uv_card.dart';
 import '../../utils/formatters.dart';
 import '../../utils/forecast_format.dart';
+import 'home_current_sources.dart';
 
 /// Luoi "Chi tiết" 2 cot o gan vuong: AQI (ca hang), cam giac, UV, gio, do
 /// am, tam nhin, ap suat, luong mua, may, mat troi (ca hang).
@@ -35,10 +36,17 @@ class HomeDetailsGrid extends StatelessWidget {
     final cloud = c.cloudCover;
     final p = c.pressure;
     final rain = rainTotals(hours, nowHcm: now);
-    final sourceLine = c.source == null ? null : 'Nguồn: ${c.source!.label}';
+    final sourceLine = c.source == null
+        ? null
+        : c.fieldSources.isEmpty
+        ? 'Nguồn: ${c.source!.label}'
+        : 'Thời tiết: ${c.source!.label} · Chỉ số tham khảo ghi nguồn tại từng mục.';
 
     final aqi = AqiCard(
       usAqi: c.usAqi,
+      sourceLabel:
+          currentReferenceLabel(c, 'us_aqi') ??
+          currentReferenceLabel(c, 'pm2_5'),
       pm25: c.pm25,
       sentence: aqiSentence(
         aqi: c.usAqi,
@@ -69,6 +77,7 @@ class HomeDetailsGrid extends StatelessWidget {
           );
         case HomeMetric.feelsLike:
           return MetricTile(
+            footer: currentReferenceLabel(c, 'apparent_temperature'),
             title: 'Cảm giác như',
             icon: Icons.thermostat_outlined,
             value: feels == null ? null : '${u.tempNumber(feels)}°',
@@ -84,6 +93,7 @@ class HomeDetailsGrid extends StatelessWidget {
         case HomeMetric.uv:
           return UvCard(
             uvIndex: c.uvIndex,
+            sourceLabel: currentReferenceLabel(c, 'uv_index'),
             sentence: uvSentence(hours, nowHcm: now),
           );
         case HomeMetric.wind:
@@ -124,6 +134,7 @@ class HomeDetailsGrid extends StatelessWidget {
           );
         case HomeMetric.visibility:
           return MetricTile(
+            footer: currentReferenceLabel(c, 'visibility'),
             title: 'Tầm nhìn',
             icon: Icons.visibility_outlined,
             value: vis == null ? null : u.distanceText(vis),
@@ -136,6 +147,9 @@ class HomeDetailsGrid extends StatelessWidget {
           );
         case HomeMetric.pressure:
           return MetricTile(
+            footer:
+                currentReferenceLabel(c, 'pressure_msl') ??
+                currentReferenceLabel(c, 'surface_pressure'),
             title: 'Áp suất',
             icon: Icons.speed_rounded,
             value: pres?.value,

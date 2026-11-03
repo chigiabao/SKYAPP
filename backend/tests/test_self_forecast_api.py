@@ -40,7 +40,7 @@ def _predict(history, cell_id):
     assert cell_id == CELL
     assert len(history) >= 48
     assert history.timestamp.is_monotonic_increasing
-    assert issue <= weather_core.now_local()
+    assert issue < weather_core.now_local().replace(minute=0, second=0, microsecond=0)
     return {
         "issued_at": issue.isoformat(), "source": "ai", "cell_id": cell_id,
         "model_version": "synthetic-own-168h",
@@ -86,11 +86,13 @@ def test_live_hourly_uses_ai_not_future_database_rows(live):
     client, predictor = live
     rows = _get(client, "hourly", hours=168)
     assert len(rows) == 168
-    assert rows[0]["source"] == "observed"
+    assert rows[0]["source"] == "ai"
     assert rows[0]["timestamp"] == NOW.isoformat()
-    for h, row in enumerate(rows[1:], start=1):
+    for h, row in enumerate(rows, start=1):
         expected = _values(h)
-        assert row["timestamp"] == (NOW + timedelta(hours=h)).isoformat()
+        assert row["timestamp"] == (NOW + timedelta(hours=h - 1)).isoformat()
+        assert row['issued_at'] == (NOW - timedelta(hours=1)).isoformat()
+        assert row['model_version'] == 'synthetic-own-168h'
         assert row["source"] == "ai"
         for field in ("temperature", "humidity", "wind_speed", "cloud_cover", "rain_probability"):
             assert row[field] == expected[field]
@@ -98,12 +100,12 @@ def test_live_hourly_uses_ai_not_future_database_rows(live):
         assert row["rain"] == expected["precipitation_mm"]
         assert row["precipitation_probability"] == pytest.approx(expected["rain_probability"] * 100)
         assert all(row[field] is None for field in UNSUPPORTED)
-    assert all(rows[1][field] == 0.0 for field in (
+    assert all(rows[0][field] == 0.0 for field in (
         "temperature", "humidity", "rain_probability", "precipitation_probability",
         "precipitation", "rain", "wind_speed", "cloud_cover", "weather_code",
     ))
     predictor.assert_called_once()
-    assert str(predictor.call_args.args[0].timestamp.iloc[-1]) == "2023-06-20 12:00:00"
+    assert str(predictor.call_args.args[0].timestamp.iloc[-1]) == "2023-06-20 11:00:00"
 
 
 def test_live_daily_seven_days_aggregate_observed_and_own_ai(live, syn_rows):
@@ -117,11 +119,11 @@ def test_live_daily_seven_days_aggregate_observed_and_own_ai(live, syn_rows):
         expected = []
         for h in range(24):
             t = date_start + timedelta(hours=h)
-            if t <= NOW:
+            if t < NOW:
                 row = observed[t.strftime(weather_core.TS_FMT)]
                 expected.append({**row, "rain_probability": float(row["precipitation"] >= 0.1)})
             else:
-                v = _values(int((t - NOW).total_seconds() / 3600))
+                v = _values(int((t - NOW).total_seconds() / 3600) + 1)
                 expected.append({**v, "precipitation": v["precipitation_mm"]})
         assert day["date"] == date_start.date().isoformat()
         assert day["source"] == "ai"
@@ -180,20 +182,14 @@ def test_wal_reads_keep_forecast_cache_but_writes_refresh_it(live, syn_db):
 
 
 @pytest.mark.parametrize("error", ["untrained: no artifact", "unavailable: broken artifact"])
-def test_unavailable_model_fails_closed_but_bundle_retains_current(live, error):
+def test_unavailable_model_fails_closed_including_current_and_bundle(live, error):
     client, predictor = live
     predictor.side_effect = ValueError(error)
-    failures = [client.get(f"/weather/{route}") for route in ("hourly", "daily")]
+    failures = [client.get(f"/weather/{route}") for route in ("current", "hourly", "daily", "bundle")]
     for response in failures:
         assert response.status_code == 503
         assert error not in response.json()["detail"]   # logged server-side only
         assert response.json()["detail"].startswith("Dự báo AI riêng chưa sẵn sàng")
-    bundle = _get(client, "bundle")
-    assert bundle["current"] == _get(client, "current")
-    assert bundle["current"]["timestamp"] == NOW.isoformat()
-    assert bundle["hourly"] == []
-    assert bundle["daily"] == []
-    assert bundle["forecast_error"] == failures[0].json()["detail"]
 
 
 def test_stale_input_over_three_hours_rejected_even_with_model(live, syn_db):
@@ -201,15 +197,11 @@ def test_stale_input_over_three_hours_rejected_even_with_model(live, syn_db):
     with sqlite3.connect(syn_db) as con:
         con.execute("DELETE FROM hourly_weather WHERE timestamp > ? AND timestamp <= ?",
                     ((NOW - timedelta(hours=4)).strftime(weather_core.TS_FMT), NOW.strftime(weather_core.TS_FMT)))
-    for route in ("hourly", "daily"):
+    for route in ("current", "hourly", "daily", "bundle"):
         response = client.get(f"/weather/{route}")
         assert response.status_code == 503
         assert response.json()["detail"]
     predictor.assert_not_called()
-    bundle = _get(client, "bundle")
-    assert bundle["current"]["timestamp"] == (NOW - timedelta(hours=4)).isoformat()
-    assert bundle["hourly"] == bundle["daily"] == []
-    assert bundle["forecast_error"]
 
 
 @pytest.mark.parametrize("field", ["humidity", "rain_probability", "precipitation_mm", "wind_speed", "cloud_cover"])
@@ -221,7 +213,7 @@ def test_unsupported_model_targets_remain_null(live, field):
             prediction[field] = None
         return result
     predictor.side_effect = partial
-    row = _get(client, "hourly", hours=2)[1]
+    row = _get(client, "current")
     api_fields = {
         "precipitation_mm": ("precipitation", "rain"),
         "rain_probability": ("rain_probability", "precipitation_probability"),
@@ -241,17 +233,16 @@ def test_map_current_outlook_and_future_frame_are_own_ai(live):
         populated = [c for c in cells if c["source"] is not None]
         assert len(populated) == 1
         row = populated[0]
-        assert row["source"] == ("observed" if offset == 0 else "ai")
+        assert row["source"] == "ai"
         assert row["outlook_source"] == "ai"
         assert row["valid_time"] == (NOW + timedelta(hours=offset)).isoformat()
-        assert row["rain_probability_next_3h"] == max(_values(offset + h)["rain_probability"] for h in (1, 2, 3))
-        assert row["precipitation_next_3h"] == pytest.approx(round(sum(_values(offset + h)["precipitation_mm"] for h in (1, 2, 3)), 2))
-        if offset:
-            assert row["temperature"] == _values(offset)["temperature"]
-            assert row["observed_at"] is None
-            assert row["wind_direction"] is None
-            assert row["wind_gusts"] is None
-        assert all(c["source"] in (None, "observed", "ai") for c in cells)
+        assert row["rain_probability_next_3h"] == max(_values(offset + h + 1)["rain_probability"] for h in (1, 2, 3))
+        assert row["precipitation_next_3h"] == pytest.approx(round(sum(_values(offset + h + 1)["precipitation_mm"] for h in (1, 2, 3)), 2))
+        assert row["temperature"] == _values(offset + 1)["temperature"]
+        assert row["observed_at"] is None
+        assert row["wind_direction"] is None
+        assert row["wind_gusts"] is None
+        assert all(c["source"] in (None, "ai") for c in cells)
 
 
 @pytest.mark.parametrize("hour", [0, 23])
@@ -299,12 +290,11 @@ def test_exact_three_hour_input_age_and_remaining_horizon(live, syn_db):
 def test_daily_exact_horizon_boundary_and_beyond(live, monkeypatch):
     client, _ = live
     freeze_now(monkeypatch, NOW.replace(hour=23))
-    days = _get(client, "daily", days=8)
-    assert len(days) == 8
-    assert days[-1]["date"] == "2023-06-27"
-    assert days[-1]["temperature_max"] == _values(168)["temperature"]
+    days = _get(client, "daily", days=7)
+    assert len(days) == 7
+    assert days[-1]["date"] == "2023-06-26"
     assert days[-1]["source"] == "ai"
-    assert client.get("/weather/daily", params={"days": 9}).status_code == 503
+    assert client.get("/weather/daily", params={"days": 8}).status_code == 503
 
 
 def test_missing_current_hour_is_consistent_for_one_and_two_hour_requests(live, syn_db):
@@ -316,6 +306,44 @@ def test_missing_current_hour_is_consistent_for_one_and_two_hour_requests(live, 
     assert one[0] == two[0]
     assert one[0]['source'] == 'ai'
     assert one[0]['timestamp'] == NOW.isoformat()
+
+
+def test_current_is_a_prediction_not_the_same_hour_reference(live, syn_db):
+    client, predictor = live
+    before = _get(client, 'current')
+    assert before['source'] == 'ai'
+    assert before['temperature'] == _values(1)['temperature']
+    assert datetime.fromisoformat(before['issued_at']) < NOW
+    history = predictor.call_args.args[0]
+    assert str(history.timestamp.iloc[-1]) == '2023-06-20 11:00:00'
+    with sqlite3.connect(syn_db) as con:
+        con.execute('UPDATE hourly_weather SET temperature = 99, weather_code = 51, '
+                    'precipitation = 50 WHERE timestamp >= ?', (NOW.strftime(weather_core.TS_FMT),))
+    after = _get(client, 'current')
+    assert after == before
+    assert after == _get(client, 'hourly', hours=1)[0]
+    predictor.assert_called()
+    assert str(predictor.call_args.args[0].timestamp.iloc[-1]) == '2023-06-20 11:00:00'
+
+
+def test_current_hour_input_alone_cannot_be_used_to_predict_itself(live, syn_db):
+    client, predictor = live
+    with sqlite3.connect(syn_db) as con:
+        con.execute('DELETE FROM hourly_weather WHERE timestamp < ? AND timestamp > ?',
+                    (NOW.strftime(weather_core.TS_FMT),
+                     (NOW - timedelta(hours=4)).strftime(weather_core.TS_FMT)))
+    assert client.get('/weather/current').status_code == 503
+    predictor.assert_not_called()
+
+
+def test_wrong_model_issue_cannot_bypass_current_hour_input_cutoff(live):
+    client, predictor = live
+    def wrong_issue(history, cell_id):
+        result = _predict(history, cell_id)
+        result['issued_at'] = NOW.isoformat()
+        return result
+    predictor.side_effect = wrong_issue
+    assert client.get('/weather/current').status_code == 503
 
 
 def test_replay_map_does_not_bypass_training_cutoff(live, monkeypatch):
@@ -354,12 +382,12 @@ def test_history_revision_at_same_issue_invalidates_prediction_cache(live, syn_d
         result['predictions']['1h']['temperature'] = float(history.temperature.iloc[-1])
         return result
     predictor.side_effect = based_on_input
-    before = _get(client, 'hourly', hours=2)[1]
+    before = _get(client, 'current')
     assert predictor.call_count == 1
     with sqlite3.connect(syn_db) as con:
         con.execute('UPDATE hourly_weather SET temperature = temperature + 1 WHERE timestamp = ?',
-                    (NOW.strftime(weather_core.TS_FMT),))
-    after = _get(client, 'hourly', hours=2)[1]
+                    ((NOW - timedelta(hours=1)).strftime(weather_core.TS_FMT),))
+    after = _get(client, 'current')
     assert predictor.call_count == 2
     assert after['timestamp'] == before['timestamp']
     assert after['temperature'] == before['temperature'] + 1
@@ -393,11 +421,11 @@ def test_old_hour_revision_and_ingest_invalidate_prediction_cache(live, syn_db):
         result['predictions']['1h']['temperature'] = float(row.temperature.iloc[0])
         return result
     predictor.side_effect = based_on_old_hour
-    first = _get(client, 'hourly', hours=2)[1]['temperature']
+    first = _get(client, 'current')['temperature']
     with sqlite3.connect(syn_db) as con:   # a past hour revised in place (same rowid, same issue time)
         con.execute('UPDATE hourly_weather SET temperature = temperature + 1 WHERE timestamp = ?',
                     (old.strftime(weather_core.TS_FMT),))
-    second = _get(client, 'hourly', hours=2)[1]['temperature']
+    second = _get(client, 'current')['temperature']
     assert predictor.call_count == 2 and second == first + 1
     with sqlite3.connect(syn_db) as con:   # the ingest upsert path (ON CONFLICT DO UPDATE)
         con.row_factory = sqlite3.Row
@@ -405,5 +433,5 @@ def test_old_hour_revision_and_ingest_invalidate_prediction_cache(live, syn_db):
                                (old.strftime(weather_core.TS_FMT),)).fetchone())
         row['temperature'] += 1
         assert ingest.upsert_hourly(con, row['location_id'], [row]) == (0, 1)
-    third = _get(client, 'hourly', hours=2)[1]['temperature']
+    third = _get(client, 'current')['temperature']
     assert predictor.call_count == 3 and third == first + 2

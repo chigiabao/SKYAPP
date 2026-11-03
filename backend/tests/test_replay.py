@@ -88,8 +88,8 @@ def test_current_replay_never_after_at(client, syn_db):
 
 
 def test_current_live_source(client):
-    body = client.get("/weather/current").json()
-    assert body["source"] == "observed" and _ts(body["timestamp"]) == LAST_TS.replace(tzinfo=LOCAL_TZ)
+    # Stale input cannot be relabelled as current AI weather.
+    assert client.get("/weather/current").status_code == 503
 
 
 # --- /hourly + /daily: sources ------------------------------------------------------------------------
@@ -193,10 +193,13 @@ def test_daily_live_ai_aggregation(client, live_nwp, monkeypatch):
         forecast[t] = WeatherData(timestamp=t.replace(tzinfo=LOCAL_TZ), temperature=25.0 + k % 24 / 10,
                                  rain_probability=(40 + k % 24) / 100, precipitation=0.0,
                                  weather_code=codes.get(t, 3), source='ai')
+    forecast[LAST_TS] = WeatherData(timestamp=LAST_TS.replace(tzinfo=LOCAL_TZ),
+                                   temperature=25.0, rain_probability=0.2,
+                                   precipitation=0.0, weather_code=3, source='ai')
     monkeypatch.setattr(weather_series, '_own_forecast_rows', lambda sid, now: forecast)
     days = client.get("/weather/daily", params={"days": 4}).json()
     assert [d["date"] for d in days] == ["2023-06-24", "2023-06-25", "2023-06-26", "2023-06-27"]
-    assert days[0]["source"] == "observed"
+    assert days[0]["source"] == "ai"
     assert [d['source'] for d in days[1:]] == ['ai'] * 3
     assert [d["weather_code"] for d in days[1:]] == [3, 53, 95]
     for d in days[1:]:
@@ -346,7 +349,7 @@ def test_current_air_quality_same_hour_and_uv(client, live_nwp):
     with sqlite3.connect(live_nwp) as con:
         con.execute("UPDATE hourly_weather SET uv_index = 0.5 WHERE timestamp = '2023-06-24 23:00:00'")
     con.close()
-    body = client.get("/weather/current").json()
+    body = client.get("/weather/current", params={'at': LAST_TS.isoformat()}).json()
     assert (body["us_aqi"], body["pm2_5"], body["pm10"], body["uv_index"]) == (55, 15.5, 30, 0.5)
 
 
@@ -368,7 +371,7 @@ def test_own_forecast_never_borrows_external_uv_aqi(client, live_nwp, monkeypatc
     from models import WeatherData
     forecast = {LAST_TS + timedelta(hours=h): WeatherData(
         timestamp=(LAST_TS + timedelta(hours=h)).replace(tzinfo=LOCAL_TZ), temperature=28.0,
-        rain_probability=0.2, precipitation=0.0, source='ai') for h in range(1, 169)}
+        rain_probability=0.2, precipitation=0.0, source='ai') for h in range(0, 169)}
     monkeypatch.setattr(weather_series, '_own_forecast_rows', lambda sid, now: forecast)
     items = client.get("/weather/hourly", params={"hours": 6}).json()
     assert all(x['us_aqi'] is None and x['uv_index'] is None for x in items)

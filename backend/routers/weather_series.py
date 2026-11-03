@@ -73,11 +73,11 @@ def _series(times: List[datetime], obs_until: Optional[datetime], use_forecast: 
     lo, hi = times[0], times[-1]
     if use_forecast:
         now = _naive(_floor_hour(to_local(core.now_local())))
-        obs_until = min(obs_until, now) if obs_until is not None else None
+        obs_until = min(obs_until, now - timedelta(hours=1)) if obs_until is not None else None
         obs = _observed_rows(lo, min(hi, obs_until), sid) if obs_until is not None and lo <= obs_until else {}
         missing = [t for t in times if t not in obs]
         fc = _own_forecast_rows(sid, now) if missing else {}
-        aq = _aq_rows(lo, min(hi, now), sid) if lo <= now else {}
+        aq = _aq_rows(lo, min(hi, now - timedelta(hours=1)), sid) if lo < now else {}
         items = [_observed_item(obs[t], aq.get(t)) if t in obs else fc.get(t) for t in times]
         if any(i is None for i in items):
             raise HTTPException(status_code=503, detail='Dự báo AI chưa phủ đủ khoảng thời gian yêu cầu; '
@@ -114,6 +114,8 @@ def _own_issue(db_path: str, sid: str, cell_id: str, issued_at: str,
                                           location_id=sid)
     result = long_range_model.predict(history, cell_id)
     issue_time = _naive(to_local(result['issued_at']))
+    if issue_time != _naive(datetime.fromisoformat(issued_at)):
+        raise ValueError('Model issue does not match the selected input cutoff')
     level = result.get('interval_level')
     out = {}
     for horizon, p in result['predictions'].items():
@@ -123,6 +125,7 @@ def _own_issue(db_path: str, sid: str, cell_id: str, issued_at: str,
         bounds['precipitation_p90'] = p.get('precipitation_mm_p90')
         has_interval = level is not None and any(v is not None for v in bounds.values())
         out[t] = WeatherData(timestamp=to_local(t), temperature=p['temperature'],
+                             issued_at=to_local(issue_time), model_version=result.get('model_version'),
                              humidity=p.get('humidity'), precipitation=amount, rain=amount,
                              wind_speed=p.get('wind_speed'), cloud_cover=cloud,
                              rain_probability=prob,
@@ -134,8 +137,10 @@ def _own_issue(db_path: str, sid: str, cell_id: str, issued_at: str,
 
 
 def _own_forecast_rows(sid: str, now: datetime) -> Dict[datetime, WeatherData]:
+    # Forecast the current hour too: never feed its reference value into the model.
+    cutoff = now - timedelta(hours=1)
     row = execute_one('SELECT MAX(timestamp) FROM hourly_weather WHERE location_id = ? AND timestamp <= ?',
-                      (sid, now.strftime(TS_FMT)))
+                      (sid, cutoff.strftime(TS_FMT)))
     issued = datetime.fromisoformat(row[0]) if row and row[0] else None
     if issued is None or now - issued > timedelta(hours=3):
         raise HTTPException(status_code=503, detail='Chưa có dữ liệu đầu vào trong 3 giờ gần nhất để chạy AI riêng.')

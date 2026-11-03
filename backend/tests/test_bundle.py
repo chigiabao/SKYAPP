@@ -16,7 +16,8 @@ def _singles(client, params, hours=48, days=7):
     }
 
 
-def test_bundle_equals_singles_live(client):
+def test_bundle_equals_singles_live(own_model_client):
+    client = own_model_client
     r = client.get("/weather/bundle")
     assert r.status_code == 200
     assert r.headers["cache-control"] == "max-age=60"
@@ -28,10 +29,11 @@ def test_bundle_equals_singles_live(client):
     assert body["ai_error"] == ai.json()["detail"]
     assert body['current'] == client.get('/weather/current').json()
     assert body['ai_forecast'] is None
-    assert body['hourly'] == [] and body['daily'] == []
+    assert body['hourly'] == client.get('/weather/hourly', params={'hours': 48}).json()
+    assert body['daily'] == client.get('/weather/daily', params={'days': 7}).json()
     assert body['forecast_provider'] == 'sky_weather_ai'
-    assert body['forecast_error'] == client.get('/weather/hourly').json()['detail']
-    assert client.get('/weather/daily').status_code == 503
+    assert body['forecast_error'] is None
+    assert body['current']['source'] == 'ai'
 
 
 @pytest.mark.parametrize("params", [{"at": T_ISO}, {"at": T_ISO, "location_id": "tsn"}])
@@ -45,7 +47,8 @@ def test_bundle_equals_singles_replay(client, params):
     assert len(body["hourly"]) == 12 and len(body["daily"]) == 3
 
 
-def test_bundle_ai_503_is_null(client, syn_db):
+def test_bundle_ai_503_is_null(own_model_client, syn_db):
+    client = own_model_client
     with sqlite3.connect(syn_db) as con:
         con.execute("DELETE FROM hourly_weather WHERE timestamp = '2023-06-24 10:00:00'")
     con.close()

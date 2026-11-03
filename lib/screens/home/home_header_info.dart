@@ -40,7 +40,11 @@ WeatherHeaderInfo homeHeaderInfo(
     city: location.name,
     detail: detail,
     temperature: t(c.temperature),
-    condition: c.condition.description,
+    condition: switch (c.source) {
+      DataSource.ai => 'AI dự báo: ${c.condition.description}',
+      DataSource.observed => 'Ước tính: ${c.condition.description}',
+      _ => c.condition.description,
+    },
     // Mot dong: Cao · Thap · Cam giac.
     highLow: hiLo.isEmpty ? null : hiLo.join(' · '),
     today:
@@ -55,7 +59,9 @@ WeatherHeaderInfo homeHeaderInfo(
         !summary.contains('không mưa') &&
         !summary.startsWith('Không mưa'),
     refreshing: provider.isRefreshing && provider.isFromCache,
-    updated: provider.isRefreshing && provider.isFromCache && cachedAt != null
+    updated: c.source == DataSource.ai
+        ? 'Dự báo cho ${sameDay ? ForecastFormat.hourMinute(updatedAt) : ForecastFormat.dateTime(updatedAt)}'
+        : provider.isRefreshing && provider.isFromCache && cachedAt != null
         ? 'Cập nhật lúc ${ForecastFormat.hourMinute(cachedAt)}'
         : 'Cập nhật ${sameDay ? ForecastFormat.hourMinute(updatedAt) : ForecastFormat.dateTime(updatedAt)}',
     isStale: provider.isStale,
@@ -64,9 +70,9 @@ WeatherHeaderInfo homeHeaderInfo(
         : null,
     sourceLabel: switch (c.source) {
       null => null,
-      DataSource.observed => DataCopy.observedInline,
+      DataSource.observed => 'ước tính mô hình theo giờ',
       DataSource.forecast => 'dự báo mô hình',
-      DataSource.ai => 'dự báo AI',
+      DataSource.ai => 'AI của nhóm · theo giờ',
       DataSource.climatology => 'trung bình nhiều năm',
     },
     cachedNote: provider.isFromCache && cachedAt != null

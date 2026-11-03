@@ -67,10 +67,9 @@ List<HourlyForecast> _upcoming(
 /// Mot cau tom tat cho the "Theo giờ" (24 gio toi).
 ///
 /// Quy tac (theo thu tu):
-///   1. Co gio mua (xac suat >= 50 % hoac gio thuc te >= 0,1 mm):
-///      dang mua -> "Đang có mưa, kéo dài đến khoảng HH:00." / "Có khả năng
-///      mưa ngay bây giờ (P%)."; sau do -> "Có khả năng mưa từ khoảng HH:00
-///      (P%)." (P = xac suat cua gio do; gio thuc te khong ghi %).
+///   1. Co gio mua (xac suat >= 50 % hoac uoc tinh >= 0,1 mm):
+///      gio da ghi nhan chi duoc goi la uoc tinh mo hinh, khong xac nhan
+///      mua tai cho; gio du bao hien kha nang mua va xac suat.
 ///   2. Khong gio nao >= 50 % nhung dinh >= 30 % hoac tong >= 2 mm:
 ///      "Có thể mưa rải rác, khả năng cao nhất khoảng HH:00 (P%)."
 ///   3. Khong mua: mo ta dieu kien hien tai "… đến hết ngày." neu moi gio
@@ -94,21 +93,15 @@ String? hourlySummary(
   if (rainIdx >= 0) {
     final h = next[rainIdx];
     if (h.time == start && h.isObserved) {
-      var last = 0;
-      while (last + 1 < next.length &&
-          next[last + 1].time ==
-              next[last].time.add(const Duration(hours: 1)) &&
-          _isRainHour(next[last + 1], 0.5)) {
-        last++;
-      }
-      final endT = next[last].time.add(const Duration(hours: 1));
-      parts.add('Đang có mưa, kéo dài đến khoảng ${_hh(endT)}.');
+      parts.add(
+        'Mô hình ước tính có mưa lúc ${_hh(h.time)}; chưa xác nhận tại chỗ.',
+      );
     } else if (h.time == start) {
       parts.add('Có khả năng mưa ngay bây giờ (${h.rainPercent}%).');
     } else {
       parts.add(
         h.isObserved
-            ? 'Có mưa từ khoảng ${_hh(h.time)}.'
+            ? 'Mô hình ước tính có mưa lúc ${_hh(h.time)}.'
             : 'Có khả năng mưa từ khoảng ${_hh(h.time)} (${h.rainPercent}%).',
       );
     }
@@ -379,35 +372,32 @@ String? humiditySentence(double? dewPoint) {
   );
 }
 
-/// Mot o tren "dòng thời gian mưa": xac suat 0..1 (gio thuc te: 1 neu co
-/// mua >= 0,1 mm, 0 neu khong), luong mua (mm) va co dong hay khong.
+/// Mot o du bao tren dong thoi gian mua: xac suat 0..1 va luong mua mm.
 typedef RainSlot = ({DateTime time, double? p, double? mm, bool thunder});
 
-/// [count] gio toi (tu gio hien tai) cho the dong thoi gian mua.
+/// [count] gio toi; bo gio da ghi nhan, khong bien luong mua thanh xac suat.
 List<RainSlot> rainTimeline(
   List<HourlyForecast> hours, {
   required DateTime nowHcm,
   int count = 24,
 }) => [
   for (final h in _upcoming(hours, nowHcm, count))
-    (
-      time: h.time,
-      p: h.isObserved
-          ? (h.precipitationMm == null
-                ? null
-                : (h.precipitationMm! >= 0.1 ? 1.0 : 0.0))
-          : h.rainProbability?.clamp(0.0, 1.0).toDouble(),
-      mm: h.precipitationMm ?? h.precipitationMedian,
-      thunder: isThunderCode(h.weatherCode),
-    ),
+    if (!h.isObserved)
+      (
+        time: h.time,
+        p: _hasRainReading(h) ? h.rainProbability : null,
+        mm: h.precipitationMm ?? h.precipitationMedian,
+        thunder: isThunderCode(h.weatherCode),
+      ),
 ];
 
 /// Cau tom tat HANH DONG duoi so nhiet do o dau trang (mot dong), vd.
-/// "Dông 12–13h, mưa đến 20h · mang áo mưa khi về" / "Không mưa đến tối".
+/// "Dự báo mưa 12–13h · nhớ mang ô" / "Không mưa đến tối".
 ///
 /// Cua so xet: den 24:00 hom nay (truoc 18h) hoac den 06:00 sang mai.
-/// Gio mua = xac suat >= 30 % / gio thuc te >= 0,1 mm / ma dong. Chi gop
-/// gio lien tiep hoac mot gio ngat da co so lieu. Khong ket luan kho khi
+/// Gio du bao mua = xac suat >= 30 % / ma dong. Chi gop gio lien tiep.
+/// Gio da ghi nhan chi la uoc tinh, khong xac nhan dang mua tai cho.
+/// Khong ket luan kho khi
 /// thieu nguon, so lieu, gio phu cua so, hoac du lieu cu.
 String? heroRainSummary(
   List<HourlyForecast> hours, {
@@ -423,10 +413,16 @@ String? heroRainSummary(
   final next = _upcoming(hours, nowHcm, end.difference(start).inHours);
   if (next.isEmpty) return null;
   bool rain(HourlyForecast h) =>
-      _isRainHour(h, 0.3) ||
-      (_hasRainSource(h) && isThunderCode(h.weatherCode));
+      !h.isObserved &&
+      (_isRainHour(h, 0.3) ||
+          (_hasRainSource(h) && isThunderCode(h.weatherCode)));
   final i = next.indexWhere(rain);
   if (i < 0) {
+    if (next.first.time == start &&
+        next.first.isObserved &&
+        _isRainHour(next.first, 0.3)) {
+      return 'Ước tính có mưa lúc ${_hh(start)} · chưa xác nhận tại chỗ';
+    }
     if (!_completeRainWindow(next, start, end) ||
         next.any((h) => (h.precipitationMm ?? 0) >= 0.1)) {
       return null;
@@ -434,17 +430,12 @@ String? heroRainSummary(
     return evening ? 'Đêm nay không mưa' : 'Không mưa đến tối';
   }
 
-  // Dot mua dau tien (gop khoang ngat 1 gio).
+  // Khong noi mua lien tuc qua mot gio duoi nguong.
   var last = i;
   for (var k = i + 1; k < next.length; k++) {
     if (next[k].time != next[k - 1].time.add(const Duration(hours: 1))) break;
     if (rain(next[k])) {
       last = k;
-    } else if (_hasRainReading(next[k]) &&
-        k + 1 < next.length &&
-        next[k + 1].time == next[k].time.add(const Duration(hours: 1)) &&
-        rain(next[k + 1])) {
-      continue;
     } else {
       break;
     }
@@ -457,29 +448,20 @@ String? heroRainSummary(
   String hr(DateTime t) => ForecastFormat.clock(t.hour, 0);
   DateTime endOf(HourlyForecast h) => h.time.add(const Duration(hours: 1));
   final blockEnd = endOf(block.last);
-  final nowRaining = block.first.time == start;
-  final certain = block.any(
-    (h) => h.isObserved || (h.rainProbability ?? 0) >= 0.7,
-  );
+  final likely = block.any((h) => (h.rainProbability ?? 0) >= 0.7);
 
   final String what;
   if (thunder.isNotEmpty) {
     final tEnd = endOf(thunder.last);
-    final tPart = nowRaining && thunder.first == block.first
-        ? 'Đang có dông đến ${hr(tEnd)}'
-        : 'Dông ${hr(thunder.first.time)}–${hr(tEnd)}';
+    final tPart = 'Dự báo dông ${hr(thunder.first.time)}–${hr(tEnd)}';
     what = blockEnd.isAfter(tEnd) ? '$tPart, mưa đến ${hr(blockEnd)}' : tPart;
-  } else if (nowRaining) {
-    what = block.first.isObserved
-        ? 'Đang mưa, đến khoảng ${hr(blockEnd)}'
-        : 'Sắp mưa, đến khoảng ${hr(blockEnd)}';
   } else {
     final range = '${hr(block.first.time)}–${hr(blockEnd)}';
     var maxP = 0;
     for (final h in block) {
       if (!h.isObserved && h.rainPercent > maxP) maxP = h.rainPercent;
     }
-    what = certain ? 'Mưa $range' : 'Có thể mưa $range ($maxP%)';
+    what = likely ? 'Dự báo mưa $range' : 'Có thể mưa $range ($maxP%)';
   }
 
   // Loi khuyen theo gio di / ve (16–19h) va muc do.
@@ -497,7 +479,7 @@ String? heroRainSummary(
   } else if (overlaps(6, 9)) {
     tip = 'mang áo mưa khi đi';
   } else {
-    tip = certain ? 'nhớ mang ô' : 'nên mang ô';
+    tip = likely ? 'nhớ mang ô' : 'nên mang ô';
   }
   return '$what · $tip';
 }
@@ -511,10 +493,8 @@ int? maxRainPercent(
 }) {
   int? best;
   for (final h in _upcoming(hours, nowHcm, hoursAhead)) {
-    final int p = h.isObserved
-        ? ((h.precipitationMm ?? 0) >= 0.1 ? 100 : 0)
-        : (h.rainProbability == null ? -1 : h.rainPercent);
-    if (p < 0) continue;
+    if (h.isObserved || !_hasRainReading(h)) continue;
+    final p = h.rainPercent;
     if (best == null || p > best) best = p;
   }
   return best;

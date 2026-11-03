@@ -77,6 +77,8 @@ def _seed(db):
         con.execute("INSERT INTO hourly_weather (location_id, timestamp, temperature, weather_code, precipitation, "
                     "wind_speed, wind_direction, wind_gusts) VALUES (?, '2024-06-10 14:00:00', 31.2, 2, 0.0, "
                     "12.34, 225.4, 30.06)", (OTHER,))
+        con.execute("INSERT INTO hourly_weather (location_id, timestamp, temperature) "
+                    "VALUES (?, '2024-06-10 13:00:00', 30.0)", (OTHER,))
         con.commit()
     con.close()
     old = [(OTHER, "2024-06-10 06:00:00", f"2024-06-10 {h}:00:00", 20.0, 0, 0.0, 0.0, 1.0, 0.0, 2.0)
@@ -86,9 +88,9 @@ def _seed(db):
     _nwp(db, old + new)
 
 
-def test_offset0_observed_with_wind(client, syn_db):
+def test_replay_offset0_keeps_reference_wind(client, syn_db):
     _seed(syn_db)
-    cells = {c["cell_id"]: c for c in client.get("/weather/map").json()}
+    cells = {c["cell_id"]: c for c in client.get("/weather/map", params={'at': '2024-06-10T14:00'}).json()}
     vt = cells[OTHER]
     assert vt["source"] == "observed" and vt["observed_at"].startswith("2024-06-10T14:00")
     assert vt["valid_time"] == "2024-06-10T14:00:00+07:00"
@@ -108,13 +110,13 @@ def test_offset_uses_own_model_not_latest_nwp(client, syn_db, own_model):
     assert r.status_code == 200
     cells = {c["cell_id"]: c for c in r.json()}
     assert len(cells) == 67
-    vt = cells[OTHER]   # t = 16:00, horizon 2 of our 14:00 issue
+    vt = cells[OTHER]   # t = 16:00, horizon 3 of our 13:00 issue
     assert vt["source"] == "ai" and vt["valid_time"] == "2024-06-10T16:00:00+07:00"
     assert vt["observed_at"] is None
-    assert vt["temperature"] == 25.2 and vt["weather_code"] == 3 and vt["precipitation"] == 2.0
-    assert (vt["wind_speed"], vt["wind_direction"], vt["wind_gusts"]) == (7.0, None, None)
+    assert vt["temperature"] == 25.3 and vt["weather_code"] == 80 and vt["precipitation"] == 3.0
+    assert (vt["wind_speed"], vt["wind_direction"], vt["wind_gusts"]) == (8.0, None, None)
     # Outlook t+1..t+3 = 17..19 h: 3+4+5 mm, max prob 0.5; >= 10 mm -> alert.
-    assert vt["precipitation_next_3h"] == 12.0 and vt["rain_probability_next_3h"] == 0.5
+    assert vt["precipitation_next_3h"] == 15.0 and vt["rain_probability_next_3h"] == 0.6
     assert vt["outlook_source"] == "ai" and vt["alert"] is True
     own_model.assert_called_once()
     # Cells with no own model input: no frame.
@@ -146,7 +148,7 @@ def test_meta_capped_at_72(client, syn_db, own_model):
     _nwp(syn_db, [(OTHER, "2024-06-10 12:00:00", "2024-06-20 00:00:00") + (None,) * 7])
     meta = client.get("/weather/map/meta").json()
     assert meta["max_offset_hours"] == 72
-    assert meta["issued_at"] == "2024-06-10T14:00:00+07:00"
+    assert meta["issued_at"] == "2024-06-10T13:00:00+07:00"
     assert meta["forecast_source"] == "ai"
     frame = client.get("/weather/map", params={"offset_hours": 72}).json()
     vt = next(c for c in frame if c["cell_id"] == OTHER)

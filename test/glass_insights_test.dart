@@ -70,7 +70,7 @@ void main() {
       ];
       expect(
         hourlySummary(hours, nowHcm: DateTime.utc(2026, 10, 7, 12)),
-        'Đang có mưa, kéo dài đến khoảng 15:00.',
+        'Mô hình ước tính có mưa lúc 12:00; chưa xác nhận tại chỗ.',
       );
     });
 
@@ -184,7 +184,7 @@ void main() {
       final sparse = [hours[2], hours[4]];
       expect(
         heroRainSummary(sparse, nowHcm: _now),
-        'Mưa 14:00–15:00 · nhớ mang ô',
+        'Dự báo mưa 14:00–15:00 · nhớ mang ô',
       );
       expect(
         hourlySummary(sparse, nowHcm: _now),

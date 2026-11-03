@@ -177,6 +177,28 @@ def client(syn_db, monkeypatch):
     yield TestClient(main.app)
 
 
+@pytest.fixture
+def own_model_client(client, monkeypatch):
+    """Explicit synthetic own-model dependency for HTTP composition tests."""
+    import long_range_model_v2
+    freeze_now(monkeypatch, LAST_TS.replace(tzinfo=LOCAL_TZ) + timedelta(hours=1))
+
+    def predict(history, cell_id):
+        issue = database.to_local(history.timestamp.iloc[-1])
+        return {
+            'issued_at': issue.isoformat(), 'model_version': 'synthetic-composition',
+            'predictions': {f'{h}h': {
+                'temperature': float(history.temperature.iloc[-1]),
+                'humidity': 70.0, 'rain_probability': 0.2,
+                'precipitation_mm': 0.0, 'wind_speed': 5.0, 'cloud_cover': 40.0,
+            } for h in range(1, 169)},
+        }
+
+    monkeypatch.setattr(long_range_model_v2, 'predict', predict)
+    monkeypatch.setattr(long_range_model_v2, 'artifact_revision', lambda: ('synthetic-composition', 1))
+    return client
+
+
 def _file_stamp(path: Path, digest: bool) -> tuple | None:
     if not path.exists():
         return None

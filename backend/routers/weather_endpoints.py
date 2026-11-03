@@ -18,7 +18,7 @@ from routers import weather_core as core, weather_climatology as clim
 from routers.weather_core import (AT_DESC, LOCATION_DESC, TS_FMT, _aq_fields, _aq_rows, _floor_hour,
                                   _latest_observed, _naive, _resolve_at, _resolve_location, row_to_weather_data)
 from routers.weather_climatology import _clim_series
-from routers.weather_series import _series
+from routers.weather_series import _series, _own_forecast_rows
 from routers.weather_daily import _daily_summary, _label_confidence
 from routers.weather_ai import get_ai_forecast
 
@@ -28,16 +28,18 @@ router = APIRouter()
 @router.get("/current", response_model=WeatherData)
 def get_current_weather(at: Optional[str] = Query(default=None, description=AT_DESC),
                         location_id: Optional[str] = Query(default=None, description=LOCATION_DESC)):
-    """Latest record of the location's series (replay: latest record <= floor-to-hour(at))."""
+    """Live: own AI predicts this hour from earlier inputs. Replay: historical reference."""
     loc = _resolve_location(location_id)
     sid = loc.series_id
     eff = _resolve_at(at, sid)
     if eff is None:
-        row = execute_one('SELECT * FROM hourly_weather WHERE location_id = ? AND timestamp <= ? '
-                          'ORDER BY timestamp DESC LIMIT 1', (sid, _naive(core.now_local()).strftime(TS_FMT)))
-    else:
-        row = execute_one("SELECT * FROM hourly_weather WHERE location_id = ? AND timestamp <= ? "
-                          "ORDER BY timestamp DESC LIMIT 1", (sid, _naive(eff).strftime(TS_FMT)))
+        now = _naive(_floor_hour(to_local(core.now_local())))
+        current = _own_forecast_rows(sid, now).get(now)
+        if current is None:
+            raise HTTPException(status_code=503, detail='AI chưa có dự báo cho giờ hiện tại.')
+        return current
+    row = execute_one("SELECT * FROM hourly_weather WHERE location_id = ? AND timestamp <= ? "
+                      "ORDER BY timestamp DESC LIMIT 1", (sid, _naive(eff).strftime(TS_FMT)))
     if not row:
         raise HTTPException(status_code=404, detail="Chưa có dữ liệu thời tiết.")
     # Air quality at the same hour, else the nearest within +-1 h, never after the effective now.
@@ -54,7 +56,7 @@ def get_hourly_forecast(
     at: Optional[str] = Query(default=None, description=AT_DESC),
     location_id: Optional[str] = Query(default=None, description=LOCATION_DESC),
 ):
-    """N hours from now: current analysis then our own AI, without external forecast fallback.
+    """N hours from now, including current: only our own AI, without external forecast fallback.
     Replay is historical analysis/climatology, not an AI backtest."""
     sid = _resolve_location(location_id).series_id
     eff = _resolve_at(at, sid)

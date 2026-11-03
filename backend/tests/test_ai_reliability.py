@@ -81,7 +81,8 @@ def test_replay_cannot_bypass_live_freshness(client, monkeypatch, predictor):
     predictor.assert_not_called()
 
 
-def test_stale_short_range_ai_is_null_in_bundle(client, predictor):
+def test_stale_short_range_ai_is_null_in_bundle(own_model_client, predictor):
+    client = own_model_client
     response = client.get("/weather/bundle")
     assert response.status_code == 200
     assert response.json()["ai_forecast"] is None
@@ -251,7 +252,8 @@ def test_required_policy_failure_is_503_for_other_cell(client, syn_db, monkeypat
 @pytest.mark.parametrize("error", [FileNotFoundError("missing"), OSError("unreadable"),
                                     RuntimeError("bad booster"), EOFError("truncated"),
                                     pickle.UnpicklingError("corrupt")])
-def test_missing_or_corrupt_v2_does_not_break_weather_bundle(client, monkeypatch, error):
+def test_missing_or_corrupt_v2_does_not_break_weather_bundle(own_model_client, monkeypatch, error):
+    client = own_model_client
     freeze_now(monkeypatch, LAST_TS.replace(tzinfo=LOCAL_TZ))
     monkeypatch.setattr(ai_model, "_load_v3", lambda: False)
     monkeypatch.setattr(ai_model, "predict_from_history", Mock(side_effect=error))

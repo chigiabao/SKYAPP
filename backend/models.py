@@ -24,11 +24,14 @@ class WeatherData(BaseModel):
     wind_speed: Optional[float] = None
     wind_direction: Optional[float] = None
     wind_gusts: Optional[float] = None
-    # /weather/hourly only (forecast/observed: derived; climatology: multi-year stats); null on /current, /history
+    # Own AI probabilities on live /current and /hourly; event flags for historical reference hours.
     rain_probability: Optional[float] = None
     precipitation_median: Optional[float] = None
     # "observed" | "ai" | "forecast" (legacy reference) | "climatology" (replay)
     source: Optional[str] = None
+    # AI provenance: input ends at issued_at, strictly before the current-hour target.
+    issued_at: Optional[datetime] = None
+    model_version: Optional[str] = None
     uv_index: Optional[float] = None
     # Open-Meteo Air Quality (CAMS) at the same hour; null for climatology hours
     us_aqi: Optional[float] = None

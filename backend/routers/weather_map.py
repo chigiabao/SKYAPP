@@ -54,7 +54,7 @@ def _map_meta(now: datetime, replay: bool) -> dict:
     try:
         rows = execute_query('SELECT DISTINCT c.series_id, '
                              '(SELECT MAX(timestamp) FROM hourly_weather h '
-                             'WHERE h.location_id = c.series_id AND h.timestamp <= ?) '
+                             'WHERE h.location_id = c.series_id AND h.timestamp < ?) '
                              'FROM cells c',
                              (now.strftime(TS_FMT),)) if info['status'] == 'available' and not replay else []
     except sqlite3.OperationalError:
@@ -90,7 +90,7 @@ def get_weather_map_meta(at: Optional[str] = Query(default=None, description=AT_
 def get_weather_map(at: Optional[str] = Query(default=None, description=AT_DESC),
                     offset_hours: int = Query(default=0, ge=0, le=MAP_MAX_OFFSET_HOURS,
                                               description="Map frame t = now + offset (hours, 0..72)")):
-    """One item per grid cell. Live outlook and future frames use only our trained AI.
+    """One item per grid cell. All live frames, including now, use only our trained AI.
     Unsupported cells have null forecasts, never an external forecast fallback.
     Replay + offset > 0 is rejected with 400: a future frame would need data issued after `at`.
     source/numeric fields are null for a cell with no data at t. max_offset_hours (same on every item, also
@@ -113,7 +113,7 @@ def get_weather_map(at: Optional[str] = Query(default=None, description=AT_DESC)
         raise HTTPException(status_code=503, detail="Chưa nạp danh sách ô lưới")
     cols = ("h.location_id, h.temperature, h.weather_code, h.wind_speed, h.wind_direction, h.wind_gusts, "
             "h.precipitation, h.timestamp")
-    if offset_hours == 0:
+    if offset_hours == 0 and eff is not None:
         cur = {r["location_id"]: r for r in execute_query(
             f'SELECT {cols} FROM cells c JOIN hourly_weather h ON h.location_id = c.series_id '
             'AND h.timestamp = (SELECT MAX(timestamp) FROM hourly_weather latest '
@@ -133,13 +133,13 @@ def get_weather_map(at: Optional[str] = Query(default=None, description=AT_DESC)
                 if exc.status_code != 503:
                     raise
                 continue
-            if offset_hours > 0 and t in forecast:
+            if t in forecast:
                 cur[sid] = forecast[t].model_dump()
             nxt[sid] = [(forecast[v].precipitation, forecast[v].rain_probability, forecast[v].weather_code)
                         for v in (t + timedelta(hours=h) for h in (1, 2, 3)) if v in forecast]
     revision = (str(core.DATABASE_PATH), *long_range_model.artifact_revision(), *weather_data_revision(core.DATABASE_PATH))
     ai_probs = _replay_ai_rain(now, tuple((sid, c['cell_id']) for sid, c in merged.items()), revision) if eff else {}
-    source = "observed" if offset_hours == 0 else "ai"
+    source = "observed" if eff is not None else "ai"
     valid_time = to_local(t).isoformat()
     out = []
     for c in sorted(merged.values(), key=lambda m: m["cell_id"]):

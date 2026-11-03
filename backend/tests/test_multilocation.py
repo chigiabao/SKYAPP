@@ -78,9 +78,10 @@ def test_default_is_tsn(client):
 
 def test_series_are_isolated(client, syn_db):
     _add_series(syn_db, OTHER, offset=5.0)
-    tsn = client.get("/weather/current").json()
-    ward = client.get("/weather/current", params={"location_id": WARD}).json()
-    cell = client.get("/weather/current", params={"location_id": OTHER}).json()
+    at = '2023-06-20T12:00'
+    tsn = client.get("/weather/current", params={'at': at}).json()
+    ward = client.get("/weather/current", params={"location_id": WARD, 'at': at}).json()
+    cell = client.get("/weather/current", params={"location_id": OTHER, 'at': at}).json()
     assert ward == cell
     assert ward["timestamp"] == tsn["timestamp"]
     assert abs(ward["temperature"] - tsn["temperature"] - 5.0) < 0.05
@@ -185,7 +186,7 @@ def test_health_cells(client, syn_db):
 
 
 def test_map_live_ignores_latest_nwp_issue_when_own_unavailable(client, syn_db):
-    # Live current stays observed; neither NWP issue may become the outlook.
+    # Without our model neither raw current input nor NWP may become a live frame.
     _insert_hour(syn_db, OTHER, "2024-06-10 14:00:00", temperature=31.2, weather_code=2.0)
     old = [(OTHER, "2024-06-10 06:00:00", f"2024-06-10 {h}:00:00", 0.0, 0.0, 1.0) for h in (15, 16, 17)]
     new = [(OTHER, "2024-06-10 12:00:00", f"2024-06-10 {h}:00:00", p, pp, c)
@@ -202,15 +203,15 @@ def test_map_live_ignores_latest_nwp_issue_when_own_unavailable(client, syn_db):
     cells = {c["cell_id"]: c for c in r.json()}
     assert len(cells) == 67
     vt = cells[OTHER]
-    assert vt["observed_at"].startswith("2024-06-10T14:00") and vt["temperature"] == 31.2
-    assert vt["weather_code"] == 2
-    assert vt["source"] == "observed"
+    assert vt["observed_at"] is None and vt["temperature"] is None
+    assert vt["weather_code"] is None
+    assert vt["source"] is None
     assert vt["precipitation_next_3h"] is None and vt["rain_probability_next_3h"] is None
     assert vt["outlook_source"] is None and vt["alert"] is False
     # Cells without fresh own-model input have no outlook either.
     tsn_cell = next(c for c in cells.values() if "tsn" in c["location_ids"] or c["cell_id"] == "tsn")
     assert tsn_cell["precipitation_next_3h"] is None and tsn_cell["rain_probability_next_3h"] is None
-    assert tsn_cell["observed_at"].startswith("2023-06-24T23:00") and tsn_cell["alert"] is False
+    assert tsn_cell["observed_at"] is None and tsn_cell["alert"] is False
     future = client.get("/weather/map", params={"offset_hours": 1})
     assert future.status_code == 200
     vt_future = next(c for c in future.json() if c["cell_id"] == OTHER)

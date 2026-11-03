@@ -32,7 +32,7 @@ def test_start_without_weather(tmp_path, monkeypatch, existing):
         assert body["data_age_hours"] is None
         assert body["cells"]["fresh"] == 0
         assert len(client.get("/locations").json()) == 169
-        assert client.get("/weather/current").status_code == 404
+        assert client.get("/weather/current").status_code == 503
 
 
 def test_existing_weather_still_warms_climatology(syn_db, monkeypatch):
